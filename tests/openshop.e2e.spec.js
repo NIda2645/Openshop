@@ -10,7 +10,7 @@ test('loads the editor shell and supports core UI interactions', async ({ page }
 
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#editor-canvas')).toBeVisible();
-  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
   await expect(page.locator('#welcome-overlay')).toHaveClass(/hidden/);
   await expect(page.locator('.tool-btn[data-tool="select"]').first()).toHaveClass(/active/);
 
@@ -37,7 +37,7 @@ test('loads the editor shell and supports core UI interactions', async ({ page }
 
 test('applies a one-click pixel filter to an active image layer', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
     const source = document.createElement('canvas');
@@ -95,7 +95,7 @@ test('applies a one-click pixel filter to an active image layer', async ({ page 
 
 test('creates a pixel selection from a mocked AI segment mask', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
     OS.activateSegmentSelect();
@@ -148,7 +148,7 @@ test('creates a pixel selection from a mocked AI segment mask', async ({ page })
 
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   await page.locator('button[title="New Layer"]').click();
 

@@ -2,6 +2,13 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Reimagine the editor as a high-contrast precision studio with a floating tool dock, structured inspector cards, technical canvas workspace, local-only trust indicator, and compact ready state
+- Replace the welcome screen with a responsive local-first workspace launcher whose templates and primary actions remain reachable from phone through desktop widths
+- Make mobile inspector groups independently usable through a bounded, scrollable drawer with no horizontal page overflow
+
 ## [v0.19.1] - 2026-07-01
 
 ### Fixed

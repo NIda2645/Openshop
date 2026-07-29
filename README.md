@@ -75,7 +75,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 
 | Feature | Description |
 |---------|-------------|
-| **Dark Theme** | Professional dark UI with depth-layered panels (default, midnight, OLED variants) |
+| **Precision Studio UI** | High-contrast dark workspace with a floating tool dock, structured inspector cards, responsive local-first launcher, and default, midnight, and OLED variants |
 | **Command Palette** | `Ctrl+K` to search and run any command |
 | **Context Menus** | Right-click for contextual actions |
 | **Rulers & Guides** | Draggable guides with snapping and pixel grid at high zoom |
