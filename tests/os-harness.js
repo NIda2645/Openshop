@@ -165,6 +165,8 @@ export function mountEditorDom() {
     <div id="measure-overlay" style="display:none"></div>
     <div id="selection-overlay" style="display:none"></div>
     <div id="canvas-area" role="application" aria-describedby="canvas-a11y-summary"></div>
+    <div id="guides-container"></div>
+    <div id="canvas-dims"></div>
     <section id="canvas-a11y-tree">
       <p id="canvas-a11y-summary"></p>
       <p id="canvas-a11y-tool"></p>

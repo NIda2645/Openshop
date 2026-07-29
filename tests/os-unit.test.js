@@ -69,7 +69,7 @@ describe('OpenShop core object', () => {
     expect(OS.saveHistory).toHaveBeenCalledWith('Delete Layer');
   });
 
-  it('restores prior snapshots through undo and redo', () => {
+  it('restores prior snapshots through undo and redo', async () => {
     const OS = loadOpenShop();
     const canvas = createCanvasMock();
     let snapshotName = 'Initial';
@@ -77,7 +77,7 @@ describe('OpenShop core object', () => {
     const restored = [];
     canvas.loadFromJSON = vi.fn((json, callback) => {
       restored.push(json.objects[0].name);
-      callback();
+      callback?.();
     });
     OS.canvas = canvas;
     quietUiMethods(OS);
@@ -88,8 +88,8 @@ describe('OpenShop core object', () => {
     snapshotName = 'Edited';
     OS.saveHistory('Edited');
 
-    OS.undo();
-    OS.redo();
+    await OS.undo();
+    await OS.redo();
 
     expect(restored).toEqual(['Initial', 'Edited']);
     expect(OS.historyIdx).toBe(1);
@@ -500,11 +500,12 @@ describe('OpenShop core object', () => {
     expect(modal.querySelector('[onclick]')).toBeNull();
 
     modal.querySelector('.btn-primary').click();
+    await vi.waitFor(() => expect(OS.toast).toHaveBeenCalledWith('Project restored from auto-save', 'success'));
     expect(canvas.loadFromJSON).toHaveBeenCalledWith(
-      expect.objectContaining({ _openShop: { w: 640, h: 480 } }),
-      expect.any(Function)
+      expect.objectContaining({
+        objects: [expect.objectContaining({ name: 'alert(1)' })]
+      })
     );
-    expect(OS.toast).toHaveBeenCalledWith('Project restored from auto-save', 'success');
 
     OS._getRecoveryInfo = vi.fn().mockResolvedValue({
       supported: true,
@@ -545,12 +546,13 @@ describe('OpenShop core object', () => {
     OS.saveHistory = vi.fn();
     OS._clearAutoSave = vi.fn();
 
-    const json = canvas.toJSON();
-    json._openShop = { version: '0.18.13', w: OS.canvasW, h: OS.canvasH, layers: OS.layers.map(l => ({ name: l.name, visible: l.visible, opacity: l.opacity, blend: l.blend })) };
-    expect(json._openShop.version).toBe('0.18.13');
-    expect(json._openShop.w).toBe(800);
-    expect(json._openShop.h).toBe(600);
-    expect(json._openShop.layers).toHaveLength(1);
+    const state = OS._captureDocumentState();
+    expect(state.kind).toBe('openshop-document');
+    expect(state.schemaVersion).toBe(1);
+    expect(state.canvas.width).toBe(800);
+    expect(state.canvas.height).toBe(600);
+    expect(state.layers).toHaveLength(1);
+    expect(state.layers[0].objectIds).toHaveLength(2);
 
     const clicks = [];
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
@@ -570,7 +572,7 @@ describe('OpenShop core object', () => {
     expect(hostile.objects[0].src).not.toContain('javascript:');
   });
 
-  it('offers recovery with event-delegated buttons and restores or discards', () => {
+  it('offers recovery with event-delegated buttons and restores or discards', async () => {
     const OS = loadOpenShop();
     const canvas = createCanvasMock();
     OS.canvas = canvas;
@@ -589,8 +591,8 @@ describe('OpenShop core object', () => {
     expect(overlay.textContent).toContain('Recover Unsaved Work');
 
     overlay.querySelector('[data-recovery-restore]').click();
+    await vi.waitFor(() => expect(OS.toast).toHaveBeenCalledWith('Project restored from auto-save', 'success'));
     expect(canvas.loadFromJSON).toHaveBeenCalled();
-    expect(OS.toast).toHaveBeenCalledWith('Project restored from auto-save', 'success');
 
     OS._offerRecovery(project);
     const overlay2 = document.querySelector('.modal-overlay');

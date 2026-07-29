@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -154,6 +155,17 @@ test('loads legacy Fabric 5 documents without geometry or metadata drift', async
   const result = await page.evaluate(async () => {
     const legacyDocument = {
       version: '5.3.1',
+      _openShop: {
+        version: '0.18.13',
+        w: 320,
+        h: 200,
+        activeLayerIdx: 2,
+        layers: [
+          { name: 'Legacy rectangle', visible: true, locked: false, opacity: 100, blend: 'source-over' },
+          { name: 'Legacy text', visible: true, locked: false, opacity: 100, blend: 'source-over' },
+          { name: 'Legacy group', visible: true, locked: false, opacity: 100, blend: 'source-over' }
+        ]
+      },
       objects: [
         {
           type: 'rect',
@@ -203,10 +215,7 @@ test('loads legacy Fabric 5 documents without geometry or metadata drift', async
       ]
     };
 
-    await new Promise((resolve, reject) => {
-      OS.canvas.loadFromJSON(legacyDocument, () => resolve()).catch(reject);
-    });
-    OS.canvas.renderAll();
+    const migrated = await OS._loadDocumentState(legacyDocument);
     const objects = OS.canvas.getObjects();
     const cloneName = await new Promise((resolve, reject) => {
       objects[0].clone((clone) => resolve(clone.name)).catch(reject);
@@ -215,6 +224,7 @@ test('loads legacy Fabric 5 documents without geometry or metadata drift', async
 
     return {
       version: fabric.version,
+      migratedFrom: migrated.migratedFrom,
       cloneName,
       objects: objects.map((object) => ({
         type: object.type,
@@ -226,11 +236,17 @@ test('loads legacy Fabric 5 documents without geometry or metadata drift', async
         text: object.text,
         children: object.getObjects?.().length || 0
       })),
-      serializedNames: serialized.objects.map((object) => object.name)
+      serializedNames: serialized.objects.map((object) => object.name),
+      layers: OS.layers.map((layer) => ({
+        name: layer.name,
+        objects: layer.objects.map((object) => object.name)
+      })),
+      activeLayer: OS.layers[OS.activeLayerIdx].name
     };
   });
 
   expect(result.version).toBe('7.4.0');
+  expect(result.migratedFrom).toBe('0.18.13');
   expect(result.cloneName).toBe('Legacy rectangle');
   expect(result.objects).toEqual([
     expect.objectContaining({ type: 'rect', name: 'Legacy rectangle', left: 17, top: 23, originX: 'left', originY: 'top' }),
@@ -238,6 +254,12 @@ test('loads legacy Fabric 5 documents without geometry or metadata drift', async
     expect.objectContaining({ type: 'group', name: 'Legacy group', left: 140, top: 90, children: 1 })
   ]);
   expect(result.serializedNames).toEqual(['Legacy rectangle', 'Legacy text', 'Legacy group']);
+  expect(result.layers).toEqual([
+    { name: 'Legacy rectangle', objects: ['Legacy rectangle'] },
+    { name: 'Legacy text', objects: ['Legacy text'] },
+    { name: 'Legacy group', objects: ['Legacy group'] }
+  ]);
+  expect(result.activeLayer).toBe('Legacy group');
   expect(pageErrors).toEqual([]);
 });
 
@@ -291,6 +313,173 @@ test('keeps hostile Fabric object ids and gradient colors inert in SVG export', 
     unsafeLinks: false,
     injectedFlags: false
   });
+});
+
+test('round-trips one document state through save, open, recovery, undo, and redo', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  await page.evaluate(() => {
+    OS.createNewDocument(320, 240);
+    OS._docName = 'Golden Document';
+
+    const rect = new fabric.Rect({
+      left: 14,
+      top: 18,
+      width: 90,
+      height: 60,
+      fill: '#336699',
+      name: 'Masked subject',
+      opacity: 0.65,
+      visible: false,
+      selectable: false,
+      evented: false,
+      globalCompositeOperation: 'multiply'
+    });
+    rect.clipPath = new fabric.Rect({
+      originX: 'center',
+      originY: 'center',
+      width: 64,
+      height: 36
+    });
+    rect._hasMask = true;
+    OS.canvas.add(rect);
+    Object.assign(OS.layers[1], {
+      name: 'Subject',
+      visible: false,
+      locked: true,
+      opacity: 65,
+      blend: 'multiply',
+      objects: [rect]
+    });
+
+    OS.addLayer();
+    const text = new fabric.IText('Top label', {
+      left: 130,
+      top: 42,
+      fontSize: 22,
+      fill: '#ffffff',
+      name: 'Top label',
+      opacity: 0.8,
+      globalCompositeOperation: 'screen'
+    });
+    OS.canvas.add(text);
+    Object.assign(OS.layers[2], {
+      name: 'Labels',
+      visible: true,
+      locked: false,
+      opacity: 80,
+      blend: 'screen',
+      objects: [text]
+    });
+    OS.activeLayerIdx = 2;
+    OS.canvas.setActiveObject(text);
+
+    OS.addGuide('horizontal', 37, { silent: true, recordHistory: false });
+    OS.addGuide('vertical', 91, { silent: true, recordHistory: false });
+    const mask = new Uint8Array(64);
+    [9, 10, 17, 18].forEach((index) => { mask[index] = 1; });
+    OS._selectionMask = { w: 8, h: 8, mask };
+    OS._selectionBounds = { x: 1, y: 1, w: 2, h: 2 };
+    const frame = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3MxZ5wAAAABJRU5ErkJggg==';
+    OS._animFrames = [frame, frame];
+    OS._animIdx = 1;
+    OS.saveHistory('Golden document');
+    window.showSaveFilePicker = undefined;
+  });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.evaluate(() => OS.saveProject());
+  const download = await downloadPromise;
+  const savedPath = await download.path();
+  const projectText = await readFile(savedPath, 'utf8');
+  const savedState = JSON.parse(projectText);
+  expect(savedState).toEqual(expect.objectContaining({
+    kind: 'openshop-document',
+    schemaVersion: 1,
+    canvas: expect.objectContaining({ width: 320, height: 240 }),
+    layers: expect.any(Array)
+  }));
+  expect(savedState.layers).toHaveLength(3);
+
+  const summarize = () => page.evaluate(() => ({
+    dimensions: [OS.canvasW, OS.canvasH],
+    documentName: OS._docName,
+    layers: OS.layers.map((layer) => ({
+      name: layer.name,
+      visible: layer.visible,
+      locked: layer.locked,
+      opacity: layer.opacity,
+      blend: layer.blend,
+      objects: layer.objects.filter((object) => !object.excludeFromExport).map((object) => object.name)
+    })),
+    zOrder: OS.canvas.getObjects().filter((object) => !object.excludeFromExport).map((object) => object.name),
+    masked: Boolean(OS.layers[1]?.objects[0]?._hasMask && OS.layers[1]?.objects[0]?.clipPath),
+    guides: OS.guides.map((guide) => [guide.orientation, guide.pos]),
+    selection: {
+      bounds: OS._selectionBounds,
+      selected: OS._selectionMask ? [...OS._selectionMask.mask].filter(Boolean).length : 0
+    },
+    activeLayer: OS.layers[OS.activeLayerIdx]?.name,
+    activeObject: OS.canvas.getActiveObject()?.name || null,
+    animation: [OS._animFrames.length, OS._animIdx]
+  }));
+
+  await page.evaluate(() => OS.createNewDocument(64, 64));
+  await page.locator('#project-input').setInputFiles({
+    name: 'golden.openshop.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(projectText)
+  });
+  await expect(page.locator('#toast-container')).toContainText('Project loaded');
+  const opened = await summarize();
+
+  await page.evaluate(async (text) => {
+    OS.createNewDocument(80, 80);
+    await OS._restoreRecoveryText(text);
+  }, projectText);
+  const recovered = await summarize();
+
+  await page.evaluate(() => {
+    OS.layers[2].name = 'Changed labels';
+    OS.activeLayerIdx = 1;
+    OS.canvas.discardActiveObject();
+    OS._selectionMask = null;
+    OS._selectionBounds = null;
+    OS.guides[0].pos = 123;
+    OS.saveHistory('Mutated document');
+  });
+  await page.evaluate(() => OS.undo());
+  const undone = await summarize();
+  await page.evaluate(() => OS.redo());
+  const redone = await summarize();
+
+  const golden = {
+    dimensions: [320, 240],
+    documentName: 'Golden Document',
+    layers: [
+      { name: 'Background', visible: true, locked: true, opacity: 100, blend: 'source-over', objects: ['__boundary__'] },
+      { name: 'Subject', visible: false, locked: true, opacity: 65, blend: 'multiply', objects: ['Masked subject'] },
+      { name: 'Labels', visible: true, locked: false, opacity: 80, blend: 'screen', objects: ['Top label'] }
+    ],
+    zOrder: ['__boundary__', 'Masked subject', 'Top label'],
+    masked: true,
+    guides: [['horizontal', 37], ['vertical', 91]],
+    selection: { bounds: { x: 1, y: 1, w: 2, h: 2 }, selected: 4 },
+    activeLayer: 'Labels',
+    activeObject: 'Top label',
+    animation: [2, 1]
+  };
+  expect(opened).toEqual(golden);
+  expect(recovered).toEqual(golden);
+  expect(undone).toEqual(golden);
+  expect(redone).toEqual(expect.objectContaining({
+    layers: expect.arrayContaining([expect.objectContaining({ name: 'Changed labels' })]),
+    activeLayer: 'Subject',
+    activeObject: null,
+    selection: { bounds: null, selected: 0 },
+    guides: [['horizontal', 123], ['vertical', 91]]
+  }));
 });
 
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {

@@ -145,6 +145,8 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | [Photon 0.3.3](https://github.com/silvia-odwyer/photon) | Optional WASM acceleration for supported pixel filters (loaded on demand) |
 | [Google Fonts](https://fonts.google.com/) | JetBrains Mono + DM Sans |
 
+OpenShop JSON files use document schema v1. The same envelope drives project save/open, recovery, and undo/redo so layer membership and order, masks, guides, selections, animation frames, and active state stay synchronized. Legacy Fabric 5 / OpenShop 0.18.13 project JSON is migrated on load.
+
 ## Security
 
 - Core startup CDN scripts are loaded with [Subresource Integrity (SRI)](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hashes

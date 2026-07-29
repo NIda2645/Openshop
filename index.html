@@ -21,7 +21,7 @@
 
     api.FabricObject.ownDefaults.originX = 'left';
     api.FabricObject.ownDefaults.originY = 'top';
-    api.FabricObject.customProperties = ['name', 'excludeFromExport'];
+    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow'];
     api.Image.filters = api.filters;
 
     const reportAsyncError = error => {
@@ -2678,6 +2678,9 @@ const OS = {
         });
     },
     canvas: null, layers: [], activeLayerIdx: 0,
+    _documentSchemaVersion: 1,
+    _idSequence: 0,
+    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow'],
     history: [], historyIdx: -1, maxHistory: 60,
     zoom: 1, canvasW: 1920, canvasH: 1080,
     _shapeStart: null, _tempShape: null,
@@ -2828,8 +2831,18 @@ const OS = {
         this.canvas.setBackgroundColor(null, this.canvas.renderAll.bind(this.canvas));
         const boundary = this._createCheckerBoundary(w, h);
         this.canvas.add(boundary);
-        this.layers.push({ name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:[boundary] });
-        this.addLayer(); this.zoomFit();
+        this.layers.push(
+            { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:[boundary] },
+            { id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }
+        );
+        this.activeLayerIdx = 1;
+        this._restoreGuidesState([]);
+        this._restoreSelectionState({ bounds:null, mask:null });
+        this._animFrames = [];
+        this._animIdx = 0;
+        this._renderFrames();
+        this._docName = 'Untitled';
+        this.zoomFit();
         this.history=[]; this.historyIdx=-1; this.saveHistory('New Document'); this.updateLayersPanel();
         document.getElementById('canvas-dims').textContent = `${w} x ${h}`;
         this._captureBA();
@@ -2921,7 +2934,392 @@ const OS = {
             obj._openShop.w = w;
             obj._openShop.h = h;
         }
+        if (obj?.kind === 'openshop-document') {
+            const schemaVersion = Math.round(Number(obj.schemaVersion || 0));
+            if (schemaVersion < 1 || schemaVersion > this._documentSchemaVersion) {
+                throw new Error(`Unsupported OpenShop document schema ${schemaVersion || 'unknown'}`);
+            }
+            const w = Math.round(Number(obj.canvas?.width || 0));
+            const h = Math.round(Number(obj.canvas?.height || 0));
+            if (w < 1 || h < 1 || w > this._importLimits.maxImageDimension || h > this._importLimits.maxImageDimension || w * h > this._importLimits.maxImagePixels) {
+                throw new Error('Project dimensions exceed import limits');
+            }
+            if (!obj.canvas?.fabric || typeof obj.canvas.fabric !== 'object' || !Array.isArray(obj.canvas.fabric.objects)) {
+                throw new Error('Project canvas data is missing');
+            }
+            if (!Array.isArray(obj.layers) || obj.layers.length < 1 || obj.layers.length > this._importLimits.maxProjectLayers) {
+                throw new Error('Project layer data is invalid');
+            }
+            obj.schemaVersion = schemaVersion;
+            obj.canvas.width = w;
+            obj.canvas.height = h;
+        }
         return obj;
+    },
+    _newDocumentId(prefix) {
+        this._idSequence += 1;
+        const random = globalThis.crypto?.randomUUID?.().replace(/-/g, '').slice(0, 12);
+        return `${prefix}-${random || `${Date.now().toString(36)}-${this._idSequence.toString(36)}`}`;
+    },
+    _coerceDocumentId(value, prefix) {
+        const clean = String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100);
+        return clean || this._newDocumentId(prefix);
+    },
+    _ensureObjectId(object, usedIds) {
+        let id = this._coerceDocumentId(object?._openShopObjectId, 'object');
+        if (usedIds?.has(id)) id = this._newDocumentId('object');
+        if (object) object._openShopObjectId = id;
+        if (usedIds) usedIds.add(id);
+        return id;
+    },
+    _ensureLayerId(layer, usedIds) {
+        let id = this._coerceDocumentId(layer?.id, 'layer');
+        if (usedIds?.has(id)) id = this._newDocumentId('layer');
+        if (layer) layer.id = id;
+        if (usedIds) usedIds.add(id);
+        return id;
+    },
+    _encodeSelectionMask(selection) {
+        if (!selection?.mask || !Number.isInteger(selection.w) || !Number.isInteger(selection.h)) return null;
+        const pixelCount = selection.w * selection.h;
+        if (pixelCount < 1 || pixelCount > this._importLimits.maxImagePixels || selection.mask.length < pixelCount) return null;
+        const bytes = new Uint8Array(Math.ceil(pixelCount / 8));
+        for (let i = 0; i < pixelCount; i++) {
+            if (selection.mask[i]) bytes[i >> 3] |= 1 << (i & 7);
+        }
+        let binary = '';
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+            binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+        }
+        return {
+            width: selection.w,
+            height: selection.h,
+            encoding: 'bitset-v1',
+            data: `data:application/vnd.openshop.selection;base64,${btoa(binary)}`
+        };
+    },
+    _decodeSelectionMask(encoded) {
+        if (!encoded) return null;
+        const w = Math.round(Number(encoded.width || 0));
+        const h = Math.round(Number(encoded.height || 0));
+        const pixelCount = w * h;
+        if (encoded.encoding !== 'bitset-v1' || w < 1 || h < 1 || pixelCount > this._importLimits.maxImagePixels) {
+            throw new Error('Project selection mask is invalid');
+        }
+        const prefix = 'data:application/vnd.openshop.selection;base64,';
+        if (typeof encoded.data !== 'string' || !encoded.data.startsWith(prefix)) throw new Error('Project selection data is invalid');
+        const binary = atob(encoded.data.slice(prefix.length));
+        const expectedBytes = Math.ceil(pixelCount / 8);
+        if (binary.length !== expectedBytes) throw new Error('Project selection data is truncated');
+        const mask = new Uint8Array(pixelCount);
+        for (let i = 0; i < pixelCount; i++) mask[i] = (binary.charCodeAt(i >> 3) >> (i & 7)) & 1;
+        return { w, h, mask };
+    },
+    _captureDocumentState() {
+        const canvasObjects = this.canvas.getObjects().filter(object => !object.excludeFromExport);
+        const usedObjectIds = new Set();
+        canvasObjects.forEach(object => this._ensureObjectId(object, usedObjectIds));
+
+        const fabricState = this.canvas.toJSON(this._fabricDocumentProperties);
+        const serializedObjects = Array.isArray(fabricState.objects) ? fabricState.objects : [];
+        serializedObjects.forEach((object, index) => {
+            if (!object._openShopObjectId && canvasObjects[index]) object._openShopObjectId = canvasObjects[index]._openShopObjectId;
+        });
+        const persistedIds = new Set(serializedObjects.map(object => object._openShopObjectId).filter(Boolean));
+
+        const usedLayerIds = new Set();
+        const claimedIds = new Set();
+        const layers = this.layers.map((layer, index) => {
+            const objectIds = [];
+            (layer.objects || []).forEach(object => {
+                const id = object?._openShopObjectId;
+                if (id && persistedIds.has(id) && !claimedIds.has(id)) {
+                    claimedIds.add(id);
+                    objectIds.push(id);
+                }
+            });
+            return {
+                id: this._ensureLayerId(layer, usedLayerIds),
+                name: this._safeText(layer.name || `Layer ${index}`, 120),
+                visible: layer.visible !== false,
+                locked: Boolean(layer.locked),
+                opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
+                blend: this._safeText(layer.blend || 'source-over', 40),
+                objectIds
+            };
+        });
+        if (!layers.length) {
+            const layer = { name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] };
+            this.layers.push(layer);
+            layers.push({ id:this._ensureLayerId(layer, usedLayerIds), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objectIds:[] });
+            this.activeLayerIdx = 0;
+        }
+        const activeLayerIndex = Math.max(0, Math.min(this.activeLayerIdx, layers.length - 1));
+        canvasObjects.forEach(object => {
+            const id = object._openShopObjectId;
+            if (persistedIds.has(id) && !claimedIds.has(id)) {
+                layers[activeLayerIndex].objectIds.push(id);
+                claimedIds.add(id);
+            }
+        });
+
+        const activeObjects = this.canvas.getActiveObjects?.() || [this.canvas.getActiveObject?.()].filter(Boolean);
+        const activeObjectIds = activeObjects.map(object => object._openShopObjectId).filter(id => persistedIds.has(id));
+        const bounds = this._selectionBounds ? {
+            x: Number(this._selectionBounds.x),
+            y: Number(this._selectionBounds.y),
+            w: Number(this._selectionBounds.w),
+            h: Number(this._selectionBounds.h)
+        } : null;
+
+        return {
+            kind: 'openshop-document',
+            schemaVersion: this._documentSchemaVersion,
+            appVersion: '0.20.0',
+            document: { name: this._safeText(this._docName || 'Untitled', 100) },
+            canvas: {
+                width: this.canvasW,
+                height: this.canvasH,
+                fabric: fabricState
+            },
+            layers,
+            active: {
+                layerId: layers[activeLayerIndex].id,
+                objectIds: activeObjectIds
+            },
+            guides: this.guides.map(guide => ({
+                orientation: guide.orientation === 'vertical' ? 'vertical' : 'horizontal',
+                position: Number(guide.pos)
+            })).filter(guide => Number.isFinite(guide.position)),
+            selection: {
+                bounds,
+                mask: this._encodeSelectionMask(this._selectionMask)
+            },
+            animation: {
+                frames: this._animFrames.filter(frame => typeof frame === 'string' && frame.startsWith('data:image/')),
+                activeFrameIndex: Math.max(0, Math.min(this._animIdx || 0, Math.max(0, this._animFrames.length - 1)))
+            },
+            workspace: {
+                tool: this.state.tool,
+                zoom: this.zoom,
+                viewportTransform: Array.isArray(this.canvas.viewportTransform) ? this.canvas.viewportTransform.slice(0, 6) : [1,0,0,1,0,0]
+            }
+        };
+    },
+    _migrateLegacyProject(project) {
+        const meta = project?._openShop && typeof project._openShop === 'object' ? project._openShop : {};
+        const fabricState = { ...project };
+        delete fabricState._openShop;
+        if (!Array.isArray(fabricState.objects)) fabricState.objects = [];
+
+        const usedObjectIds = new Set();
+        fabricState.objects.forEach(object => {
+            let id = this._coerceDocumentId(object._openShopObjectId, 'object');
+            if (usedObjectIds.has(id)) id = this._newDocumentId('object');
+            usedObjectIds.add(id);
+            object._openShopObjectId = id;
+        });
+
+        const legacyLayers = Array.isArray(meta.layers) && meta.layers.length ? meta.layers : [
+            { name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over' }
+        ];
+        const usedLayerIds = new Set();
+        const layers = legacyLayers.slice(0, this._importLimits.maxProjectLayers).map((layer, index) => ({
+            id: (() => {
+                let id = this._coerceDocumentId(layer.id, 'layer');
+                if (usedLayerIds.has(id)) id = this._newDocumentId('layer');
+                usedLayerIds.add(id);
+                return id;
+            })(),
+            name: this._safeText(layer.name || `Layer ${index}`, 120),
+            visible: layer.visible !== false,
+            locked: Boolean(layer.locked),
+            opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
+            blend: this._safeText(layer.blend || 'source-over', 40),
+            objectIds: []
+        }));
+        const backgroundLayerIndex = Math.max(0, layers.findIndex(layer => /background/i.test(layer.name)));
+        const assigned = new Set();
+        fabricState.objects.forEach(object => {
+            const explicitIndex = Number(object._openShopLayerIndex ?? object.layerIndex);
+            if (Number.isInteger(explicitIndex) && layers[explicitIndex]) {
+                layers[explicitIndex].objectIds.push(object._openShopObjectId);
+                assigned.add(object._openShopObjectId);
+            } else if (object.name === '__boundary__') {
+                layers[backgroundLayerIndex].objectIds.push(object._openShopObjectId);
+                assigned.add(object._openShopObjectId);
+            }
+        });
+        fabricState.objects.forEach(object => {
+            if (assigned.has(object._openShopObjectId)) return;
+            const nameMatch = layers.findIndex(layer => layer.name === object.name);
+            if (nameMatch >= 0) {
+                layers[nameMatch].objectIds.push(object._openShopObjectId);
+                assigned.add(object._openShopObjectId);
+            }
+        });
+        const remainingObjects = fabricState.objects.filter(object => !assigned.has(object._openShopObjectId));
+        const emptyLayerIndexes = layers.map((layer, index) => ({ layer, index }))
+            .filter(({ layer, index }) => layer.objectIds.length === 0 && (index !== backgroundLayerIndex || !fabricState.objects.some(object => object.name === '__boundary__')))
+            .map(({ index }) => index);
+        if (remainingObjects.length === emptyLayerIndexes.length) {
+            remainingObjects.forEach((object, index) => layers[emptyLayerIndexes[index]].objectIds.push(object._openShopObjectId));
+        } else {
+            const fallbackIndex = Math.max(0, Math.min(Number(meta.activeLayerIdx ?? layers.length - 1), layers.length - 1));
+            remainingObjects.forEach(object => layers[fallbackIndex].objectIds.push(object._openShopObjectId));
+        }
+
+        const width = Math.round(Number(meta.w || project.width || this.canvasW));
+        const height = Math.round(Number(meta.h || project.height || this.canvasH));
+        const activeLayerIndex = Math.max(0, Math.min(Number(meta.activeLayerIdx ?? layers.length - 1), layers.length - 1));
+        return {
+            kind: 'openshop-document',
+            schemaVersion: 1,
+            appVersion: this._safeText(meta.version || fabricState.version || 'legacy', 40),
+            migratedFrom: this._safeText(meta.version || fabricState.version || 'legacy-fabric', 40),
+            document: { name: this._safeText(meta.name || this._docName || 'Untitled', 100) },
+            canvas: { width, height, fabric: fabricState },
+            layers,
+            active: {
+                layerId: layers[activeLayerIndex].id,
+                objectIds: Array.isArray(meta.activeObjectIds) ? meta.activeObjectIds.map(id => this._coerceDocumentId(id, 'object')) : []
+            },
+            guides: Array.isArray(meta.guides) ? meta.guides : [],
+            selection: meta.selection || { bounds:null, mask:null },
+            animation: meta.animation || { frames:[], activeFrameIndex:0 },
+            workspace: meta.workspace || { tool:this.state.tool, zoom:this.zoom, viewportTransform:this.canvas.viewportTransform?.slice(0, 6) }
+        };
+    },
+    _normalizeDocumentState(project) {
+        if (!project || typeof project !== 'object') throw new Error('Project data is invalid');
+        this._sanitizeProjectJSON(project);
+        const state = project.kind === 'openshop-document' ? project : this._migrateLegacyProject(project);
+        this._sanitizeProjectJSON(state);
+        return state;
+    },
+    _restoreSelectionState(selection) {
+        this._selectionMask = null;
+        this._selectionBounds = null;
+        const overlay = document.getElementById('selection-overlay');
+        if (overlay) overlay.style.display = 'none';
+        if (selection?.bounds) {
+            const bounds = {
+                x: Number(selection.bounds.x),
+                y: Number(selection.bounds.y),
+                w: Number(selection.bounds.w),
+                h: Number(selection.bounds.h)
+            };
+            if (Object.values(bounds).every(Number.isFinite) && bounds.w > 0 && bounds.h > 0) this._selectionBounds = bounds;
+        }
+        this._selectionMask = this._decodeSelectionMask(selection?.mask);
+        if (this._selectionMask && !this._selectionBounds) this._recalcSelectionBounds(this._selectionMask);
+        if (this._selectionBounds && overlay) {
+            overlay.style.display = 'block';
+            overlay.style.left = this._selectionBounds.x + 'px';
+            overlay.style.top = this._selectionBounds.y + 'px';
+            overlay.style.width = this._selectionBounds.w + 'px';
+            overlay.style.height = this._selectionBounds.h + 'px';
+            overlay.style.borderRadius = '0';
+        }
+        if (this._selectionMask) this._showMaskOverlay(this._selectionMask);
+    },
+    _restoreGuidesState(guides) {
+        this.guides.forEach(guide => guide._cleanup?.());
+        const container = document.getElementById('guides-container');
+        if (container) container.innerHTML = '';
+        this.guides = [];
+        (Array.isArray(guides) ? guides : []).forEach(guide => {
+            if ((guide.orientation === 'horizontal' || guide.orientation === 'vertical') && Number.isFinite(Number(guide.position))) {
+                this.addGuide(guide.orientation, Number(guide.position), { silent:true, recordHistory:false });
+            }
+        });
+    },
+    async _loadDocumentState(project, { fitToViewport = false } = {}) {
+        const state = this._normalizeDocumentState(project);
+        this.canvasW = state.canvas.width;
+        this.canvasH = state.canvas.height;
+        const loadResult = this.canvas.loadFromJSON(state.canvas.fabric);
+        if (loadResult?.then) await loadResult;
+
+        const objects = this.canvas.getObjects();
+        const usedObjectIds = new Set();
+        const objectsById = new Map();
+        objects.forEach(object => {
+            const id = this._ensureObjectId(object, usedObjectIds);
+            if (object.clipPath) object._hasMask = true;
+            objectsById.set(id, object);
+        });
+
+        const claimedIds = new Set();
+        const usedLayerIds = new Set();
+        this.layers = state.layers.map((layer, index) => {
+            const restored = {
+                id: (() => {
+                    let id = this._coerceDocumentId(layer.id, 'layer');
+                    if (usedLayerIds.has(id)) id = this._newDocumentId('layer');
+                    usedLayerIds.add(id);
+                    return id;
+                })(),
+                name: this._safeText(layer.name || `Layer ${index}`, 120),
+                visible: layer.visible !== false,
+                locked: Boolean(layer.locked),
+                opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
+                blend: this._safeText(layer.blend || 'source-over', 40),
+                objects: []
+            };
+            (Array.isArray(layer.objectIds) ? layer.objectIds : []).forEach(id => {
+                const object = objectsById.get(id);
+                if (!object || claimedIds.has(id)) return;
+                claimedIds.add(id);
+                restored.objects.push(object);
+            });
+            restored.objects.forEach(object => {
+                if (restored.visible === false) object.visible = false;
+                if (restored.locked && object.name !== '__boundary__') {
+                    object.selectable = false;
+                    object.evented = false;
+                }
+            });
+            return restored;
+        });
+        if (!this.layers.length) this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
+        const activeLayerId = state.active?.layerId;
+        this.activeLayerIdx = Math.max(0, this.layers.findIndex(layer => layer.id === activeLayerId));
+        objects.forEach(object => {
+            if (!claimedIds.has(object._openShopObjectId) && !object.excludeFromExport) {
+                this.layers[this.activeLayerIdx].objects.push(object);
+                claimedIds.add(object._openShopObjectId);
+            }
+        });
+
+        this._docName = this._safeText(state.document?.name || 'Untitled', 100);
+        this._restoreGuidesState(state.guides);
+        this._restoreSelectionState(state.selection);
+        this._animFrames = Array.isArray(state.animation?.frames)
+            ? state.animation.frames.filter(frame => typeof frame === 'string' && frame.startsWith('data:image/'))
+            : [];
+        this._animIdx = Math.max(0, Math.min(Number(state.animation?.activeFrameIndex || 0), Math.max(0, this._animFrames.length - 1)));
+        this._renderFrames();
+
+        const activeObjects = (state.active?.objectIds || []).map(id => objectsById.get(id)).filter(Boolean);
+        this.canvas.discardActiveObject();
+        if (activeObjects.length === 1) this.canvas.setActiveObject(activeObjects[0]);
+        else if (activeObjects.length > 1 && fabric.ActiveSelection) this.canvas.setActiveObject(new fabric.ActiveSelection(activeObjects, { canvas:this.canvas }));
+
+        if (fitToViewport) this.zoomFit();
+        else if (Array.isArray(state.workspace?.viewportTransform) && state.workspace.viewportTransform.length === 6) {
+            this.canvas.setViewportTransform(state.workspace.viewportTransform.map(Number));
+            this.zoom = Number(state.workspace.zoom) || this.zoom;
+        }
+        if (state.workspace?.tool) this.setTool(state.workspace.tool);
+        this.canvas.renderAll();
+        this.updateLayersPanel();
+        this.updateStatus();
+        this.updateMinimap();
+        this.updateHistogram();
+        const dims = document.getElementById('canvas-dims');
+        if (dims) dims.textContent = `${this.canvasW} x ${this.canvasH}`;
+        return state;
     },
     _sanitizePaletteColors(colors) {
         return (Array.isArray(colors) ? colors : []).map(c => this._validHexColor(c)).filter(Boolean).slice(0, this._importLimits.maxPaletteColors);
@@ -3114,9 +3512,7 @@ const OS = {
     },
     _projectFileHandle: null,
     async saveProject() {
-        const json = this.canvas.toJSON(['name','excludeFromExport','globalCompositeOperation']);
-        json._openShop = { version:'0.20.0', w:this.canvasW, h:this.canvasH, layers:this.layers.map(l=>({name:l.name,visible:l.visible,opacity:l.opacity,blend:l.blend})) };
-        const data = JSON.stringify(json);
+        const data = JSON.stringify(this._captureDocumentState());
         if (this._projectFileHandle) {
             try {
                 const writable = await this._projectFileHandle.createWritable();
@@ -3149,15 +3545,14 @@ const OS = {
     handleProjectOpen(e) {
         const file = e.target.files[0]; if (!file) return;
         try { this._assertJsonFileBudget(file, 'Project'); } catch(err) { this.toast(err.message, 'error'); e.target.value=''; return; }
-        const r = new FileReader(); r.onload = ev => {
+        const r = new FileReader(); r.onload = async ev => {
             try {
                 const json = JSON.parse(ev.target.result);
-                this._sanitizeProjectJSON(json);
-                if (json._openShop) { this.canvasW=json._openShop.w; this.canvasH=json._openShop.h; }
-                this.canvas.loadFromJSON(json, () => {
-                    this.canvas.renderAll(); this.rebuildLayersFromCanvas();
-                    this.zoomFit(); this.saveHistory('Open Project'); this.toast(this._t('Project loaded'),'success');
-                });
+                await this._loadDocumentState(json, { fitToViewport:true });
+                this.history = [];
+                this.historyIdx = -1;
+                this.saveHistory('Open Project');
+                this.toast(this._t('Project loaded'),'success');
             } catch(err) { this.toast('Invalid project: ' + err.message,'error'); }
         }; r.readAsText(file); e.target.value='';
     },
@@ -3357,7 +3752,7 @@ self.onmessage = function(e) {
     // ====================== LAYERS ======================
     addLayer() {
         const idx = this.layers.length;
-        this.layers.push({ name:`Layer ${idx}`, visible:true, opacity:100, blend:'source-over', objects:[] });
+        this.layers.push({ id:this._newDocumentId('layer'), name:`Layer ${idx}`, visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
         this.activeLayerIdx = idx; this.updateLayersPanel(); this.saveHistory('New Layer');
     },
     deleteLayer() {
@@ -3367,7 +3762,7 @@ self.onmessage = function(e) {
         layer.objects.forEach(o => this.canvas.remove(o));
         this.layers.splice(this.activeLayerIdx, 1);
         if (this.layers.length === 0) {
-            this.layers.push({ name:'Layer 0', visible:true, opacity:100, blend:'source-over', objects:[] });
+            this.layers.push({ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
             this.activeLayerIdx = 0;
         } else {
             this.activeLayerIdx = Math.min(this.activeLayerIdx, this.layers.length-1);
@@ -3376,7 +3771,7 @@ self.onmessage = function(e) {
     },
     duplicateLayer() {
         const src = this.layers[this.activeLayerIdx];
-        const nl = { name:src.name+' Copy', visible:true, opacity:src.opacity, blend:src.blend, objects:[] };
+        const nl = { id:this._newDocumentId('layer'), name:src.name+' Copy', visible:src.visible !== false, locked:Boolean(src.locked), opacity:src.opacity, blend:src.blend, objects:[] };
         const toClone = src.objects.filter(o => o.name !== '__boundary__');
         if (toClone.length === 0) {
             this.layers.splice(this.activeLayerIdx+1, 0, nl); this.activeLayerIdx++;
@@ -3490,7 +3885,7 @@ self.onmessage = function(e) {
         inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); });
     },
     rebuildLayersFromCanvas() {
-        this.layers = [{ name:'Layer 0', visible:true, opacity:100, blend:'source-over', objects:[] }];
+        this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
         this.canvas.getObjects().forEach(o => this.layers[0].objects.push(o));
         this.activeLayerIdx = 0; this.updateLayersPanel();
     },
@@ -4984,7 +5379,7 @@ self.onmessage = function(e) {
     // ====================== HISTORY ======================
     saveHistory(action) {
         if(this.historyIdx<this.history.length-1) this.history=this.history.slice(0,this.historyIdx+1);
-        const snap=JSON.stringify(this.canvas.toJSON(['name','excludeFromExport','globalCompositeOperation']));
+        const snap=JSON.stringify(this._captureDocumentState());
         this.history.push({action,snapshot:snap});
         if(this.history.length>this.maxHistory) this.history.shift();
         this._lastAction = action;
@@ -4992,14 +5387,19 @@ self.onmessage = function(e) {
         this.recordMacroStep(action);
         this.updateHistogram();
     },
-    undo() { if(this.historyIdx<=0){ this.toast(this._t('Nothing to undo'),'info'); return; } this.historyIdx--; this._restoreHistory(); },
-    redo() { if(this.historyIdx>=this.history.length-1){ this.toast(this._t('Nothing to redo'),'info'); return; } this.historyIdx++; this._restoreHistory(); },
-    _restoreHistory() {
+    undo() { if(this.historyIdx<=0){ this.toast(this._t('Nothing to undo'),'info'); return Promise.resolve(false); } this.historyIdx--; return this._restoreHistory(); },
+    redo() { if(this.historyIdx>=this.history.length-1){ this.toast(this._t('Nothing to redo'),'info'); return Promise.resolve(false); } this.historyIdx++; return this._restoreHistory(); },
+    async _restoreHistory() {
         const e=this.history[this.historyIdx];
-        this.canvas.loadFromJSON(JSON.parse(e.snapshot), () => {
-            this.canvas.renderAll(); this.rebuildLayersFromCanvas();
-            this.setTool(this.state.tool); this.updateHistoryPanel(); this.updateStatus();
-        });
+        try {
+            await this._loadDocumentState(JSON.parse(e.snapshot));
+            this.updateHistoryPanel();
+            this.updateStatus();
+            return true;
+        } catch (error) {
+            this.toast('History restore failed: ' + error.message, 'error');
+            return false;
+        }
     },
     updateHistoryPanel() {
         const list=document.getElementById('history-list'); list.innerHTML='';
@@ -5621,16 +6021,14 @@ self.onmessage = function(e) {
         if (!this._recoveryData) { overlay.remove(); return; }
         this._restoreRecoveryText(this._recoveryData, overlay);
     },
-    _restoreRecoveryText(jsonText, overlay) {
+    async _restoreRecoveryText(jsonText, overlay) {
         try {
             const json = JSON.parse(jsonText);
-            this._sanitizeProjectJSON(json);
-            if (json._openShop) { this.canvasW = json._openShop.w; this.canvasH = json._openShop.h; }
-            this.canvas.loadFromJSON(json, () => {
-                this.canvas.renderAll(); this.rebuildLayersFromCanvas();
-                this.zoomFit(); this.saveHistory('Recovered Project');
-                this.toast('Project restored from auto-save', 'success');
-            });
+            await this._loadDocumentState(json, { fitToViewport:true });
+            this.history = [];
+            this.historyIdx = -1;
+            this.saveHistory('Recovered Project');
+            this.toast('Project restored from auto-save', 'success');
         } catch(e) { this.toast('Recovery failed: ' + e.message, 'error'); }
         this._recoveryData = null;
         if (overlay) overlay.remove();
@@ -5676,9 +6074,7 @@ self.onmessage = async function(e) {
         if (this.historyIdx <= 0) return;
         if (!navigator.storage || !navigator.storage.getDirectory) return;
         try {
-            const json = this.canvas.toJSON(['name','excludeFromExport','globalCompositeOperation']);
-            json._openShop = { version:'0.20.0', w:this.canvasW, h:this.canvasH, layers:this.layers.map(l=>({name:l.name,visible:l.visible,opacity:l.opacity,blend:l.blend})) };
-            const data = JSON.stringify(json);
+            const data = JSON.stringify(this._captureDocumentState());
             try {
                 const root = await navigator.storage.getDirectory();
                 const file = await root.getFileHandle('openshop-autosave.json', { create: true });
@@ -6238,42 +6634,50 @@ self.onmessage = async function(e) {
     },
 
     // ====================== GUIDES ======================
-    addGuide(orientation) {
+    addGuide(orientation, position = null, { silent = false, recordHistory = true } = {}) {
         const area = document.getElementById('canvas-area');
-        const pos = orientation === 'horizontal' ? area.clientHeight / 2 : area.clientWidth / 2;
+        const fallback = orientation === 'horizontal' ? area.clientHeight / 2 : area.clientWidth / 2;
+        const pos = Number.isFinite(Number(position)) ? Number(position) : fallback;
         const guide = { orientation, pos, el: null };
         const el = document.createElement('div');
         el.className = `guide-line ${orientation}`;
         if (orientation === 'horizontal') el.style.top = pos + 'px';
         else el.style.left = pos + 'px';
         guide.el = el;
-        let dragging = false, startPos;
-        el.addEventListener('mousedown', e => { dragging = true; startPos = orientation === 'horizontal' ? e.clientY : e.clientX; e.stopPropagation(); });
+        let dragging = false, startPos, moved = false;
+        el.addEventListener('mousedown', e => { dragging = true; moved = false; startPos = orientation === 'horizontal' ? e.clientY : e.clientX; e.stopPropagation(); });
         const onMove = e => {
             if (!dragging) return;
             const delta = (orientation === 'horizontal' ? e.clientY : e.clientX) - startPos;
             guide.pos += delta;
+            moved = moved || delta !== 0;
             if (orientation === 'horizontal') el.style.top = guide.pos + 'px';
             else el.style.left = guide.pos + 'px';
             startPos = orientation === 'horizontal' ? e.clientY : e.clientX;
         };
-        const onUp = () => { dragging = false; };
+        const onUp = () => {
+            if (dragging && moved && recordHistory) this.saveHistory('Move Guide');
+            dragging = false;
+        };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
         guide._cleanup = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
         el.addEventListener('dblclick', () => {
             el.remove(); guide._cleanup(); this.guides = this.guides.filter(g => g !== guide);
-            this.toast('Guide removed', 'info');
+            if (recordHistory) this.saveHistory('Remove Guide');
+            if (!silent) this.toast('Guide removed', 'info');
         });
         document.getElementById('guides-container').appendChild(el);
         this.guides.push(guide);
-        this.toast(`${orientation} guide added (double-click to remove)`, 'info');
+        if (recordHistory) this.saveHistory('Add Guide');
+        if (!silent) this.toast(`${orientation} guide added (double-click to remove)`, 'info');
     },
-    clearGuides() {
+    clearGuides({ silent = false, recordHistory = true } = {}) {
         this.guides.forEach(g => { if (g._cleanup) g._cleanup(); });
         document.getElementById('guides-container').innerHTML = '';
         this.guides = [];
-        this.toast('All guides cleared', 'info');
+        if (recordHistory) this.saveHistory('Clear Guides');
+        if (!silent) this.toast('All guides cleared', 'info');
     },
 
     // ====================== TEXT EFFECTS ======================
@@ -8892,7 +9296,7 @@ self.onmessage = async function(e) {
             this.canvas.add(boundary);
             img.set({ left: 0, top: 0, selectable: true, name: `Frame ${idx}` });
             this.canvas.add(img);
-            this.layers = [{ name: `Frame ${idx}`, visible: true, opacity: 100, blend: 'source-over', objects: [boundary, img] }];
+            this.layers = [{ id:this._newDocumentId('layer'), name: `Frame ${idx}`, visible: true, locked:false, opacity: 100, blend: 'source-over', objects: [boundary, img] }];
             this.activeLayerIdx = 0;
             this.canvas.renderAll();
             this.updateLayersPanel();
