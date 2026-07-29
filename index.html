@@ -10,7 +10,7 @@
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src blob:;">
-<title>OpenShop v0.19.1 — Online Image Editor</title>
+<title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js" integrity="sha384-sLpuECXYCB5TUyTbC06pftm/rgurDambREZmV4eRHwEqJzCQtU6lxI2Ve00z4XW5" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js" integrity="sha384-kla4KJzEnshZnuWyJ8+AF8KEX0YZ2rpxTaQpDtDUmDdUv7jK94knsRx/lcRZ/HF4" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js" integrity="sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3" crossorigin="anonymous"></script>
@@ -593,7 +593,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 
 <!-- ===== TOP MENU ===== -->
 <div id="topbar" role="menubar" aria-label="Main menu">
-    <div class="logo" aria-hidden="true">OpenShop<span>v0.19.1</span></div>
+    <div class="logo" aria-hidden="true">OpenShop<span>v0.20.0</span></div>
     <button class="mobile-panel-toggle" onclick="document.getElementById('panels').classList.toggle('mobile-open')" aria-label="Toggle panels" style="display:none;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--border);border-radius:4px;background:var(--bg-depth-3);color:var(--text-secondary);cursor:pointer;margin-left:auto;font-size:14px">&#9776;</button>
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
         <div class="menu-dropdown">
@@ -1430,7 +1430,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 
 <script>
 // ================================================================
-//  OpenShop v0.19.1 — Core Engine (Phase 10: Pro Toolbar)
+//  OpenShop v0.20.0 — Core Engine (Phase 10: Pro Toolbar)
 // ================================================================
 const OS = {
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
@@ -1439,7 +1439,243 @@ const OS = {
         const a = document.createElement('a'); a.download = filename; a.href = url; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
     },
-    _locales: { en: {} },
+    _locales: { en: {}, zh: {
+        "Actions / Macros": "动作 / 宏",
+        "Add Horizontal Guide": "添加水平参考线",
+        "Add Noise...": "添加杂色...",
+        "Add Vertical Guide": "添加垂直参考线",
+        "Add Watermark...": "添加水印...",
+        "Adjustments": "调整",
+        "Align": "对齐",
+        "All": "全部",
+        "Animation Timeline": "动画时间轴",
+        "Auto Contrast": "自动对比度",
+        "Auto Enhance": "自动增强",
+        "Auto Levels": "自动色阶",
+        "Background Remove": "背景移除",
+        "Batch Export...": "批量导出...",
+        "Before / After Compare": "前后对比",
+        "Black & White": "黑白",
+        "Blur": "模糊",
+        "Blur...": "模糊...",
+        "Border...": "边框...",
+        "Both Axes": "双轴",
+        "Brightness...": "亮度...",
+        "Canvas Rotation": "画布旋转",
+        "Channel Mixer...": "通道混合器...",
+        "Chromatic Aberration...": "色差...",
+        "Clear All Filters": "清除所有滤镜",
+        "Clear All Guides": "清除所有参考线",
+        "Color": "颜色",
+        "Color Balance...": "色彩平衡...",
+        "Color Mode": "颜色模式",
+        "Color Range...": "色彩范围...",
+        "Contiguous": "连续",
+        "Contract...": "收缩...",
+        "Contrast...": "对比度...",
+        "Copy": "复制",
+        "Curved Text...": "弧形文字...",
+        "Curves...": "曲线...",
+        "Dark (Default)": "深色（默认）",
+        "Dash": "虚线",
+        "Delete": "删除",
+        "Density": "密度",
+        "Depth Map": "深度图",
+        "Deselect": "取消选择",
+        "Detect Objects": "检测对象",
+        "Distort": "扭曲",
+        "Duotone...": "双色调...",
+        "Duplicate": "创建副本",
+        "Edge Detect": "边缘检测",
+        "Edit": "编辑",
+        "Emboss": "浮雕",
+        "Expand...": "扩展...",
+        "Export As": "导出为",
+        "Export Settings...": "导出设置...",
+        "Exposure": "曝光",
+        "Exposure...": "曝光...",
+        "Feather...": "羽化...",
+        "File": "文件",
+        "Fill": "填充",
+        "Filled": "实心",
+        "Filter": "滤镜",
+        "Fit to Screen": "适合屏幕",
+        "Flatten Image": "拼合图像",
+        "Flip Horizontal": "水平翻转",
+        "Flip Vertical": "垂直翻转",
+        "Flow": "流量",
+        "Font": "字体",
+        "Free Transform...": "自由变换...",
+        "From": "从",
+        "Fullscreen Mode": "全屏模式",
+        "Gamma...": "伽马...",
+        "Generate Noise...": "生成杂色...",
+        "Gradient Map...": "渐变映射...",
+        "Grayscale": "灰度",
+        "Grow": "扩大",
+        "Guides": "参考线",
+        "Halftone...": "半调...",
+        "History": "历史记录",
+        "Horizontal": "水平",
+        "Hue Rotation...": "色相旋转...",
+        "Image": "图像",
+        "Image Info...": "图像信息...",
+        "Image Rotation": "图像旋转",
+        "Info": "信息",
+        "Inner R": "内半径",
+        "Inverse": "反选",
+        "Invert": "反相",
+        "Keyboard Shortcuts...": "键盘快捷键...",
+        "Layers": "图层",
+        "Lens Correction...": "镜头校正...",
+        "Levels...": "色阶...",
+        "Liquify...": "液化...",
+        "Midnight": "午夜",
+        "Mode": "模式",
+        "Modify": "修改",
+        "Navigator": "导航器",
+        "New": "新建",
+        "Noise": "杂色",
+        "OLED Black": "OLED 纯黑",
+        "Off": "关闭",
+        "Oil Paint...": "油画...",
+        "Opacity": "不透明度",
+        "Open Image": "打开图像",
+        "Open PSD": "打开 PSD",
+        "Open Project": "打开项目",
+        "Panels": "面板",
+        "Paste": "粘贴",
+        "Pattern": "图案",
+        "Perspective...": "透视...",
+        "Photo Filter...": "照片滤镜...",
+        "Photo Presets...": "照片预设...",
+        "Pixel Grid": "像素网格",
+        "Pixelate...": "像素化...",
+        "Points": "顶点数",
+        "Posterize...": "色调分离...",
+        "Preferences...": "首选项...",
+        "Preset": "预设",
+        "Properties": "属性",
+        "Radial (6-fold)": "径向（6 重）",
+        "Range": "范围",
+        "Ratio": "比例",
+        "Redo": "重做",
+        "Remove Background (AI)": "移除背景（AI）",
+        "Replace Color...": "替换颜色...",
+        "Reselect": "重新选择",
+        "Resize Canvas": "调整画布大小",
+        "Rotate 90° CCW": "逆时针旋转 90°",
+        "Rotate 90° CW": "顺时针旋转 90°",
+        "Saturation...": "饱和度...",
+        "Save Project (JSON)": "保存项目 (JSON)",
+        "Scale": "缩放",
+        "Segment Select": "分割选择",
+        "Select": "选择",
+        "Selective Color...": "可选颜色...",
+        "Sepia": "怀旧褐色",
+        "Shadows / Highlights...": "阴影 / 高光...",
+        "Sharpen": "锐化",
+        "Show": "显示",
+        "Sides": "边数",
+        "Similar": "选取相似",
+        "Size": "大小",
+        "Skew...": "斜切...",
+        "Smart Upscale 2x": "智能放大 2x",
+        "Smart Upscale 4x": "智能放大 4x",
+        "Smooth": "平滑",
+        "Solarize": "曝光过度",
+        "Strength": "强度",
+        "Stroke": "描边",
+        "Stylize": "风格化",
+        "Swatches": "色板",
+        "Symmetry": "对称",
+        "Templates...": "模板...",
+        "Theme": "主题",
+        "Threshold...": "阈值...",
+        "Tilt Shift...": "移轴...",
+        "To": "到",
+        "Toggle Grid": "切换网格",
+        "Toggle Rulers": "切换标尺",
+        "Toggle Snap to Grid": "切换对齐网格",
+        "Tolerance": "容差",
+        "Tone": "色调",
+        "Transform": "变换",
+        "Type": "类型",
+        "Undo": "撤销",
+        "Unsharp Mask...": "USM 锐化...",
+        "Vertical": "垂直",
+        "Vibrance...": "自然饱和度...",
+        "View": "视图",
+        "Vignette...": "晕影...",
+        "Width": "宽度",
+        "Zoom": "缩放",
+        "Zoom In": "放大",
+        "Zoom Out": "缩小",
+        "AI Segment Select": "AI 分割选择",
+        "Arrow": "箭头",
+        "Brush": "画笔",
+        "Brush (B)": "画笔 (B)",
+        "Burn (Darken)": "加深",
+        "Clone Stamp": "仿制图章",
+        "Clone Stamp (S)": "仿制图章 (S)",
+        "Crop": "裁剪",
+        "Crop (C)": "裁剪 (C)",
+        "Dodge": "减淡",
+        "Dodge (Lighten)": "减淡",
+        "Ellipse": "椭圆",
+        "Ellipse Marquee": "椭圆选框",
+        "Eraser (E)": "橡皮擦 (E)",
+        "Eyedropper (I)": "吸管 (I)",
+        "Fill Bucket": "油漆桶",
+        "Gradient": "渐变",
+        "Gradient (G)": "渐变 (G)",
+        "Healing Brush": "修复画笔",
+        "Lasso": "套索",
+        "Line (L)": "直线 (L)",
+        "Magic Wand (W)": "魔棒 (W)",
+        "Measure": "测量",
+        "Move / Select (V)": "移动 / 选择 (V)",
+        "Pan": "平移",
+        "Pan (H)": "平移 (H)",
+        "Pattern Fill": "图案填充",
+        "Pen (P)": "钢笔 (P)",
+        "Pencil": "铅笔",
+        "Polygon": "多边形",
+        "Rect Marquee": "矩形选框",
+        "Rect Marquee (M)": "矩形选框 (M)",
+        "Rectangle": "矩形",
+        "Rectangle (R)": "矩形 (R)",
+        "Smudge": "涂抹",
+        "Sponge": "海绵",
+        "Spray / Airbrush": "喷枪",
+        "Star": "星形",
+        "Sticky Note": "便签",
+        "Text (T)": "文字 (T)",
+        "Triangle": "三角形",
+        "Zoom (Z)": "缩放 (Z)",
+        "Adjustments applied": "已应用调整",
+        "Already at the bottom layer": "已经是最底层图层",
+        "Clone source set": "已设置仿制源",
+        "Color replaced": "已替换颜色",
+        "Crop region too small": "裁剪区域太小",
+        "Curved text created": "已创建弧形文字",
+        "Exposure applied": "已应用曝光",
+        "Filters cleared": "已清除滤镜",
+        "Lens correction applied": "已应用镜头校正",
+        "Liquify applied": "已应用液化",
+        "No actions recorded": "没有已录制的动作",
+        "Nothing to redo": "没有可重做的操作",
+        "Nothing to undo": "没有可撤销的操作",
+        "Photo filter applied": "已应用照片滤镜",
+        "Preferences saved": "首选项已保存",
+        "Project loaded": "项目已加载",
+        "Project saved": "项目已保存",
+        "Select an image first": "请先选择图像",
+        "Select an object first": "请先选择对象",
+        "Selective color applied": "已应用可选颜色",
+        "Shadows/Highlights applied": "已应用阴影/高光",
+        "Vibrance applied": "已应用自然饱和度"
+    } },
     _lang: 'en',
     _t(key) { return (this._locales[this._lang] || {})[key] || key; },
     _initI18n() {
@@ -1462,16 +1698,17 @@ const OS = {
         const dict = this._locales[lang] || {};
         document.querySelectorAll('[data-i18n]').forEach(el => {
             const key = el.dataset.i18n;
-            const val = dict[key];
-            if (!val) return;
+            // Fall back to the key itself (the original English text) so
+            // switching back to English restores the UI.
+            const val = dict[key] || key;
             const tn = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
             if (tn) tn.textContent = val;
             else el.textContent = val;
         });
         document.querySelectorAll('[data-i18n-tip]').forEach(el => {
             const key = el.dataset.i18nTip;
-            const val = dict[key];
-            if (val) { el.dataset.tip = val; el.setAttribute('aria-label', val); }
+            const val = dict[key] || key;
+            el.dataset.tip = val; el.setAttribute('aria-label', val);
         });
     },
     canvas: null, layers: [], activeLayerIdx: 0,
@@ -1912,7 +2149,7 @@ const OS = {
     _projectFileHandle: null,
     async saveProject() {
         const json = this.canvas.toJSON(['name','excludeFromExport','globalCompositeOperation']);
-        json._openShop = { version:'0.19.1', w:this.canvasW, h:this.canvasH, layers:this.layers.map(l=>({name:l.name,visible:l.visible,opacity:l.opacity,blend:l.blend})) };
+        json._openShop = { version:'0.20.0', w:this.canvasW, h:this.canvasH, layers:this.layers.map(l=>({name:l.name,visible:l.visible,opacity:l.opacity,blend:l.blend})) };
         const data = JSON.stringify(json);
         if (this._projectFileHandle) {
             try {
@@ -4058,6 +4295,10 @@ self.onmessage = function(e) {
         this.loadSavedPalette();
         this._initKeyboardShortcuts();
         this._initI18n();
+        try {
+            const savedLang = localStorage.getItem('os_lang');
+            if (savedLang && savedLang !== 'en') this.setLocale(savedLang);
+        } catch(e) { console.warn('Language restore failed:', e.message); }
         this.updateMinimap();
     },
     populateTemplates() {
@@ -4470,7 +4711,7 @@ self.onmessage = async function(e) {
         if (!navigator.storage || !navigator.storage.getDirectory) return;
         try {
             const json = this.canvas.toJSON(['name','excludeFromExport','globalCompositeOperation']);
-            json._openShop = { version:'0.19.1', w:this.canvasW, h:this.canvasH, layers:this.layers.map(l=>({name:l.name,visible:l.visible,opacity:l.opacity,blend:l.blend})) };
+            json._openShop = { version:'0.20.0', w:this.canvasW, h:this.canvasH, layers:this.layers.map(l=>({name:l.name,visible:l.visible,opacity:l.opacity,blend:l.blend})) };
             const data = JSON.stringify(json);
             try {
                 const root = await navigator.storage.getDirectory();
@@ -5466,7 +5707,7 @@ self.onmessage = async function(e) {
             <div class="pref-section">
                 <h4>Interface</h4>
                 <div class="pref-row"><label>Accent Color</label><input id="pref-accent" type="color" value="#6c8cff"></div>
-                <div class="pref-row"><label>Language</label><select id="pref-lang"><option value="en">English</option></select></div>
+                <div class="pref-row"><label>Language</label><select id="pref-lang"><option value="en" ${this._lang === 'en' ? 'selected' : ''}>English</option><option value="zh" ${this._lang === 'zh' ? 'selected' : ''}>简体中文</option></select></div>
             </div>
             <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
             <button class="btn btn-primary" data-modal-action>Apply</button></div></div>`;
@@ -5483,6 +5724,7 @@ self.onmessage = async function(e) {
         document.documentElement.style.setProperty('--accent', accent);
         const lang = overlay.querySelector('#pref-lang')?.value || 'en';
         if (lang !== this._lang) this.setLocale(lang);
+        try { localStorage.setItem('os_lang', lang); } catch(e) { console.warn('Language save failed:', e.message); }
         if (this.gridVisible) this.drawGrid();
         overlay.remove(); this.toast(this._t('Preferences saved'), 'success');
     },
