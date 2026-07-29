@@ -10,6 +10,7 @@ All notable changes to Openshop will be documented in this file.
 - Make mobile inspector groups independently usable through a bounded, scrollable drawer with no horizontal page overflow
 
 ### Security
+- Upgrade Fabric.js from 5.3.1 to 7.4.0 with legacy project adapters and browser regressions for stored-SVG injection through object IDs and gradient colors
 - Refresh the contributor lock to PostCSS 8.5.25 and Nano ID 3.3.16, synchronize its root version, and add a release test command that fails on high or critical npm advisories
 
 ## [v0.19.1] - 2026-07-01

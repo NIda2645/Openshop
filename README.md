@@ -138,7 +138,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 
 | Library | Purpose |
 |---------|---------|
-| [Fabric.js 5.3.1](http://fabricjs.com/) | Canvas rendering, object manipulation, serialization |
+| [Fabric.js 7.4.0](https://fabricjs.com/) | Canvas rendering, object manipulation, serialization |
 | [ag-psd 22.0.2](https://github.com/Agamnentzar/ag-psd) | Photoshop PSD file import and export |
 | [jsPDF 4.2.1](https://github.com/parallax/jsPDF) | PDF document generation |
 | [Transformers.js 4.0](https://huggingface.co/docs/transformers.js) | Client-side AI inference via WebGPU/WASM (loaded on demand) |

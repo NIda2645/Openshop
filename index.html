@@ -11,7 +11,86 @@
 <meta name="theme-color" content="#0a0c10">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js" integrity="sha384-sLpuECXYCB5TUyTbC06pftm/rgurDambREZmV4eRHwEqJzCQtU6lxI2Ve00z4XW5" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
+<script>
+// Keep existing project files and editing commands stable across Fabric's
+// Promise-based v7 API while each call site is migrated independently.
+(() => {
+    const api = window.fabric;
+    if (!api || api.version !== '7.4.0') throw new Error('OpenShop requires Fabric.js 7.4.0');
+
+    api.FabricObject.ownDefaults.originX = 'left';
+    api.FabricObject.ownDefaults.originY = 'top';
+    api.FabricObject.customProperties = ['name', 'excludeFromExport'];
+    api.Image.filters = api.filters;
+
+    const reportAsyncError = error => {
+        console.error('Fabric operation failed:', error);
+        window.dispatchEvent(new CustomEvent('openshop:fabric-error', { detail: error }));
+    };
+    const fromURL = api.FabricImage.fromURL.bind(api.FabricImage);
+    api.FabricImage.fromURL = function(url, callbackOrOptions, imageOptions, legacyCrossOrigin) {
+        if (typeof callbackOrOptions !== 'function') {
+            return fromURL(url, callbackOrOptions, imageOptions);
+        }
+        const loadOptions = legacyCrossOrigin ? { crossOrigin: legacyCrossOrigin } : {};
+        const promise = fromURL(url, loadOptions, imageOptions || {});
+        promise.then(callbackOrOptions).catch(reportAsyncError);
+        return promise;
+    };
+
+    const clone = api.FabricObject.prototype.clone;
+    api.FabricObject.prototype.clone = function(callbackOrProperties) {
+        const promise = clone.call(this, typeof callbackOrProperties === 'function' ? undefined : callbackOrProperties);
+        if (typeof callbackOrProperties === 'function') promise.then(callbackOrProperties).catch(reportAsyncError);
+        return promise;
+    };
+
+    const loadFromJSON = api.StaticCanvas.prototype.loadFromJSON;
+    api.StaticCanvas.prototype.loadFromJSON = function(json, callbackOrReviver, options) {
+        if (typeof callbackOrReviver === 'function' && callbackOrReviver.length === 0) {
+            const promise = loadFromJSON.call(this, json, undefined, options);
+            return promise.then(() => {
+                callbackOrReviver();
+                return this;
+            }).catch(error => {
+                reportAsyncError(error);
+                throw error;
+            });
+        }
+        return loadFromJSON.call(this, json, callbackOrReviver, options);
+    };
+
+    api.Canvas.prototype.getPointer = function(event) {
+        return this.getScenePoint(event);
+    };
+    api.StaticCanvas.prototype.setWidth = function(width, options) {
+        return this.setDimensions({ width }, options);
+    };
+    api.StaticCanvas.prototype.setHeight = function(height, options) {
+        return this.setDimensions({ height }, options);
+    };
+    api.StaticCanvas.prototype.setBackgroundColor = function(color, callback) {
+        this.backgroundColor = color;
+        if (typeof callback === 'function') callback();
+        else this.requestRenderAll();
+        return this;
+    };
+
+    const stackingMethods = {
+        bringToFront: 'bringObjectToFront',
+        bringForward: 'bringObjectForward',
+        sendBackwards: 'sendObjectBackwards',
+        sendToBack: 'sendObjectToBack'
+    };
+    Object.entries(stackingMethods).forEach(([legacyName, canvasMethod]) => {
+        api.FabricObject.prototype[legacyName] = function() {
+            if (this.canvas) this.canvas[canvasMethod](this);
+            return this;
+        };
+    });
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js" integrity="sha384-kla4KJzEnshZnuWyJ8+AF8KEX0YZ2rpxTaQpDtDUmDdUv7jK94knsRx/lcRZ/HF4" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js" integrity="sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -5401,7 +5480,7 @@ self.onmessage = function(e) {
         try {
             const cache = await caches.open('openshop-cdn-v1');
             const urls = [
-                'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js',
+                'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js',
                 'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
                 'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js',
                 'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',

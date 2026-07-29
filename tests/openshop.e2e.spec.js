@@ -146,6 +146,153 @@ test('creates a pixel selection from a mocked AI segment mask', async ({ page })
   expect(result.bounds.h).toBeGreaterThan(0);
 });
 
+test('loads legacy Fabric 5 documents without geometry or metadata drift', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+
+  const result = await page.evaluate(async () => {
+    const legacyDocument = {
+      version: '5.3.1',
+      objects: [
+        {
+          type: 'rect',
+          version: '5.3.1',
+          originX: 'left',
+          originY: 'top',
+          left: 17,
+          top: 23,
+          width: 80,
+          height: 40,
+          fill: '#336699',
+          name: 'Legacy rectangle'
+        },
+        {
+          type: 'i-text',
+          version: '5.3.1',
+          originX: 'left',
+          originY: 'top',
+          left: 41,
+          top: 79,
+          text: 'Legacy text',
+          fontSize: 24,
+          fill: '#ffffff',
+          name: 'Legacy text'
+        },
+        {
+          type: 'group',
+          version: '5.3.1',
+          originX: 'left',
+          originY: 'top',
+          left: 140,
+          top: 90,
+          width: 24,
+          height: 24,
+          name: 'Legacy group',
+          objects: [{
+            type: 'circle',
+            version: '5.3.1',
+            originX: 'left',
+            originY: 'top',
+            left: -12,
+            top: -12,
+            radius: 12,
+            fill: '#cc3344'
+          }]
+        }
+      ]
+    };
+
+    await new Promise((resolve, reject) => {
+      OS.canvas.loadFromJSON(legacyDocument, () => resolve()).catch(reject);
+    });
+    OS.canvas.renderAll();
+    const objects = OS.canvas.getObjects();
+    const cloneName = await new Promise((resolve, reject) => {
+      objects[0].clone((clone) => resolve(clone.name)).catch(reject);
+    });
+    const serialized = OS.canvas.toJSON(['name']);
+
+    return {
+      version: fabric.version,
+      cloneName,
+      objects: objects.map((object) => ({
+        type: object.type,
+        name: object.name,
+        left: object.left,
+        top: object.top,
+        originX: object.originX,
+        originY: object.originY,
+        text: object.text,
+        children: object.getObjects?.().length || 0
+      })),
+      serializedNames: serialized.objects.map((object) => object.name)
+    };
+  });
+
+  expect(result.version).toBe('7.4.0');
+  expect(result.cloneName).toBe('Legacy rectangle');
+  expect(result.objects).toEqual([
+    expect.objectContaining({ type: 'rect', name: 'Legacy rectangle', left: 17, top: 23, originX: 'left', originY: 'top' }),
+    expect.objectContaining({ type: 'i-text', name: 'Legacy text', left: 41, top: 79, text: 'Legacy text' }),
+    expect.objectContaining({ type: 'group', name: 'Legacy group', left: 140, top: 90, children: 1 })
+  ]);
+  expect(result.serializedNames).toEqual(['Legacy rectangle', 'Legacy text', 'Legacy group']);
+  expect(pageErrors).toEqual([]);
+});
+
+test('keeps hostile Fabric object ids and gradient colors inert in SVG export', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+
+  const result = await page.evaluate(() => {
+    const payload = 'red"><img src="x" onerror="window.__fabricGradientXss=1">';
+    const canvas = new fabric.StaticCanvas(null, { width: 32, height: 32 });
+    const rect = new fabric.Rect({
+      width: 20,
+      height: 20,
+      id: 'shape"><img src="x" onerror="window.__fabricIdXss=1">',
+      fill: new fabric.Gradient({
+        type: 'linear',
+        coords: { x1: 0, y1: 0, x2: 20, y2: 0 },
+        colorStops: [
+          { offset: 0, color: payload },
+          { offset: 1, color: '#336699' }
+        ]
+      })
+    });
+    canvas.add(rect);
+
+    const cleanSvg = OS._sanitizeSVG(canvas.toSVG());
+    const parsed = new DOMParser().parseFromString(cleanSvg, 'image/svg+xml');
+    const elements = [...parsed.querySelectorAll('*')];
+    const eventAttributes = elements.flatMap((element) =>
+      [...element.attributes].filter((attribute) => attribute.name.toLowerCase().startsWith('on'))
+    );
+    const unsafeLinks = elements.some((element) => {
+      const href = element.getAttribute('href') || element.getAttribute('xlink:href') || '';
+      return /^(javascript:|data:text\/html)/i.test(href);
+    });
+
+    return {
+      fabricVersion: fabric.version,
+      parserErrors: parsed.querySelectorAll('parsererror').length,
+      executableNodes: parsed.querySelectorAll('script, foreignObject, img').length,
+      eventAttributes: eventAttributes.length,
+      unsafeLinks,
+      injectedFlags: Boolean(window.__fabricGradientXss || window.__fabricIdXss)
+    };
+  });
+
+  expect(result).toEqual({
+    fabricVersion: '7.4.0',
+    parserErrors: 0,
+    executableNodes: 0,
+    eventAttributes: 0,
+    unsafeLinks: false,
+    injectedFlags: false
+  });
+});
+
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
