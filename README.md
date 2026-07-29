@@ -182,9 +182,11 @@ The app still ships as a single HTML file. The Node tooling is only for local co
 npm install
 npm test
 npm run test:e2e
+npm run test:release
 ```
 
 `npm test` runs Vitest unit coverage for the core editor object with canvas mocks. `npm run test:e2e` runs Playwright against `index.html` and checks the editor shell screenshot.
+`npm run test:release` adds a high/critical advisory gate before running both suites.
 
 ## Browser Support
 

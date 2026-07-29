@@ -9,6 +9,9 @@ All notable changes to Openshop will be documented in this file.
 - Replace the welcome screen with a responsive local-first workspace launcher whose templates and primary actions remain reachable from phone through desktop widths
 - Make mobile inspector groups independently usable through a bounded, scrollable drawer with no horizontal page overflow
 
+### Security
+- Refresh the contributor lock to PostCSS 8.5.25 and Nano ID 3.3.16, synchronize its root version, and add a release test command that fails on high or critical npm advisories
+
 ## [v0.19.1] - 2026-07-01
 
 ### Fixed
