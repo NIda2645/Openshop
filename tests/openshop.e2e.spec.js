@@ -3382,3 +3382,101 @@ test('persists preferences across a reload instead of only saying it did', async
 
   await page.evaluate(() => localStorage.removeItem('os_prefs'));
 });
+
+test('previews Levels and Color Balance without a full-resolution PNG per tick', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    // A source large enough to trip the proxy threshold.
+    const width = 1600, height = 1000;
+    const oc = document.createElement('canvas');
+    oc.width = width; oc.height = height;
+    const ctx = oc.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, '#202020');
+    gradient.addColorStop(1, '#d0d0d0');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    const image = await new Promise(resolve => {
+      const el = new Image();
+      el.onload = () => resolve(new fabric.Image(el, { left: 0, top: 0 }));
+      el.src = oc.toDataURL();
+    });
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+
+    const displayedBefore = [image.getScaledWidth(), image.getScaledHeight()];
+
+    // Count full-resolution PNG encodes: the old preview did one per tick.
+    // Count encodes at exactly the layer's own size — that is what the old
+    // preview did every tick. The navigator and histogram legitimately capture
+    // the composite at document size, which is a different shape.
+    let encodes = 0;
+    const realToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      if (this.width === width && this.height === height) encodes++;
+      return realToDataURL.apply(this, args);
+    };
+
+    OS.showLevelsDialog();
+    const panel = document.getElementById('levels-dialog-overlay');
+    const proxyPixels = OS._lvlProxy.width * OS._lvlProxy.height;
+
+    // Ignore any encode the editor's own chrome did while the dialog opened;
+    // what matters is that ticks add none.
+    const encodesBeforeTicks = encodes;
+    for (let tick = 0; tick < 8; tick++) {
+      panel.querySelector('#lvl-mid').value = String(60 + tick * 20);
+      OS._levelsPreview();
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+    const encodesDuringPreview = encodes - encodesBeforeTicks;
+    const previewElementWidth = OS.canvas.getActiveObject().getElement().width;
+    const displayedDuringPreview = [
+      OS.canvas.getActiveObject().getScaledWidth(),
+      OS.canvas.getActiveObject().getScaledHeight()
+    ];
+
+    OS._levelsApply();
+    const applied = OS.canvas.getActiveObject();
+    const appliedElementWidth = applied.getElement().width;
+
+    HTMLCanvasElement.prototype.toDataURL = realToDataURL;
+
+    // The LUT has to reproduce the old per-pixel maths exactly.
+    const params = { shadow: 20, mid: 1.6, high: 240, oBlack: 10, oWhite: 250 };
+    const lut = OS._levelsLUT(params);
+    let worst = 0;
+    for (let v = 0; v < 256; v++) {
+      const normalized = Math.max(0, Math.min(1, (v - params.shadow) / (params.high - params.shadow)));
+      const expected = Math.round(params.oBlack + Math.pow(normalized, 1 / params.mid) * (params.oWhite - params.oBlack));
+      worst = Math.max(worst, Math.abs(lut[v] - expected));
+    }
+
+    return {
+      sourcePixels: width * height,
+      proxyPixels,
+      encodesDuringPreview,
+      previewElementWidth,
+      appliedElementWidth,
+      displayedBefore,
+      displayedDuringPreview,
+      lutWorstError: worst
+    };
+  });
+
+  // Preview runs on a proxy, not the 1.6 MP original.
+  expect(result.proxyPixels).toBeLessThan(result.sourcePixels);
+  expect(result.previewElementWidth).toBeLessThan(1600);
+  // Eight slider ticks, zero full-resolution PNG encodes.
+  expect(result.encodesDuringPreview).toBe(0);
+  // Swapping in a smaller bitmap must not resize the layer on the canvas.
+  expect(result.displayedDuringPreview[0]).toBeCloseTo(result.displayedBefore[0], 3);
+  expect(result.displayedDuringPreview[1]).toBeCloseTo(result.displayedBefore[1], 3);
+  // Apply commits at full resolution even though the preview was a proxy.
+  expect(result.appliedElementWidth).toBe(1600);
+  expect(result.lutWorstError).toBe(0);
+});

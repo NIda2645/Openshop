@@ -4,6 +4,9 @@ All notable changes to Openshop will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+- Keep the Levels and Color Balance sliders interactive on large photos: each tick used to run a full-resolution pixel pass, encode the result to a PNG data URL, and decode it again. Previews now run on a downscaled proxy, swap the working canvas straight into the layer, and use a 256-entry lookup table instead of three `Math.pow` calls per pixel; Apply still commits at full resolution
+
 ### Fixed
 - Honour the New Image background choice: the colour picker was read by nothing, so every new document came out transparent whatever was selected. The dialog now offers Transparent, White, or a custom colour, and the swatch is enabled only when it applies
 - Save every preference, not just the language: default canvas size, grid size, snap tolerance, history cap, and accent colour now survive a reload, and a corrupted store is clamped on the way in rather than being able to disable undo

@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-0gaZlag/vNk/c9PoOVRS8WZuZFJyfGNXpV7JGECXzUI=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-eTOKvWS4Pnxoz322b/HBWNr+tqmO6TZBzy1NluVlMDA=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -10658,6 +10658,106 @@ self.onmessage = async function(event) {
         await this._commitImageData(info, 'Curves', { success:'Curves applied' });
     },
 
+    // Levels and Color Balance used to re-encode the whole image to a PNG data
+    // URL and decode it again on every slider tick — hundreds of milliseconds
+    // per tick on a 12 MP photo. Swap the working canvas straight into the
+    // Fabric image instead, and preview on a proxy when the source is large.
+    _previewProxyLimit: 1200000,
+    _makePreviewProxy(source) {
+        const pixels = source.width * source.height;
+        if (pixels <= this._previewProxyLimit) return source;
+        const scale = Math.sqrt(this._previewProxyLimit / pixels);
+        const proxy = document.createElement('canvas');
+        proxy.width = Math.max(1, Math.round(source.width * scale));
+        proxy.height = Math.max(1, Math.round(source.height * scale));
+        proxy.getContext('2d').drawImage(source, 0, 0, proxy.width, proxy.height);
+        return proxy;
+    },
+    // Keeps the object's on-canvas size fixed even when the swapped-in bitmap
+    // has different pixel dimensions, which is what makes proxy preview safe.
+    _swapImageElement(target, source) {
+        if (!target || !source) return;
+        const displayedW = target.getScaledWidth();
+        const displayedH = target.getScaledHeight();
+        target.setElement(source);
+        target.set({
+            width: source.width,
+            height: source.height,
+            scaleX: displayedW / (source.width || 1),
+            scaleY: displayedH / (source.height || 1)
+        });
+        target.setCoords();
+        target.applyFilters();
+        this.canvas.renderAll();
+    },
+    _readLevelsParams(panel) {
+        const value = id => +panel.querySelector(id).value;
+        const params = {
+            shadow: value('#lvl-shadow'),
+            mid: value('#lvl-mid') / 100,
+            high: value('#lvl-high'),
+            oBlack: value('#lvl-oblack'),
+            oWhite: value('#lvl-owhite')
+        };
+        panel.querySelector('#lvl-shadow').nextElementSibling.textContent = params.shadow;
+        panel.querySelector('#lvl-mid').nextElementSibling.textContent = params.mid.toFixed(2);
+        panel.querySelector('#lvl-high').nextElementSibling.textContent = params.high;
+        panel.querySelector('#lvl-oblack').nextElementSibling.textContent = params.oBlack;
+        panel.querySelector('#lvl-owhite').nextElementSibling.textContent = params.oWhite;
+        return params;
+    },
+    // One 256-entry table instead of three Math.pow calls per pixel.
+    _levelsLUT({ shadow, mid, high, oBlack, oWhite }) {
+        const lut = new Uint8ClampedArray(256);
+        const range = high - shadow || 1;
+        const gamma = 1 / (mid || 1);
+        for (let i = 0; i < 256; i++) {
+            const normalized = Math.max(0, Math.min(1, (i - shadow) / range));
+            lut[i] = Math.round(oBlack + Math.pow(normalized, gamma) * (oWhite - oBlack));
+        }
+        return lut;
+    },
+    _renderLevels(source, lut) {
+        const oc = document.createElement('canvas');
+        oc.width = source.width; oc.height = source.height;
+        const ctx = oc.getContext('2d');
+        ctx.drawImage(source, 0, 0);
+        const imgData = ctx.getImageData(0, 0, oc.width, oc.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]];
+        }
+        ctx.putImageData(imgData, 0, 0);
+        return oc;
+    },
+    _readColorBalanceParams(panel) {
+        const value = id => +panel.querySelector(id).value;
+        panel.querySelectorAll('input[type="range"]').forEach(input => {
+            if (input.nextElementSibling) input.nextElementSibling.textContent = input.value;
+        });
+        return {
+            sr: value('#cb-sr'), sg: value('#cb-sg'), sb: value('#cb-sb'),
+            mr: value('#cb-mr'), mg: value('#cb-mg'), mb: value('#cb-mb')
+        };
+    },
+    _renderColorBalance(source, { sr, sg, sb, mr, mg, mb }) {
+        const oc = document.createElement('canvas');
+        oc.width = source.width; oc.height = source.height;
+        const ctx = oc.getContext('2d');
+        ctx.drawImage(source, 0, 0);
+        const imgData = ctx.getImageData(0, 0, oc.width, oc.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            const lum = (d[i] + d[i + 1] + d[i + 2]) / 3 / 255;
+            const shadowW = Math.max(0, 1 - lum * 3);
+            const midW = 1 - Math.abs(lum - 0.5) * 2;
+            d[i] = Math.max(0, Math.min(255, d[i] + sr * shadowW / 100 * 80 + mr * midW / 100 * 80));
+            d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + sg * shadowW / 100 * 80 + mg * midW / 100 * 80));
+            d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + sb * shadowW / 100 * 80 + mb * midW / 100 * 80));
+        }
+        ctx.putImageData(imgData, 0, 0);
+        return oc;
+    },
     // ====================== LEVELS DIALOG ======================
     showLevelsDialog() {
         const active = this.canvas.getActiveObject();
@@ -10667,6 +10767,7 @@ self.onmessage = async function(event) {
         const snapOC = document.createElement('canvas'); snapOC.width = snapW; snapOC.height = snapH;
         snapOC.getContext('2d').drawImage(el, 0, 0);
         this._lvlSnap = snapOC;
+        this._lvlProxy = this._makePreviewProxy(snapOC);
         this._lvlTarget = active;
         const body = `
             <div class="modal-row"><label>Shadow</label><input id="lvl-shadow" type="range" min="0" max="255" value="0" data-os-input="input-024"><span class="opt-val">0</span></div>
@@ -10681,65 +10782,28 @@ self.onmessage = async function(event) {
         clearTimeout(this._lvlDebounce);
         this._lvlDebounce = setTimeout(() => {
             const panel = document.getElementById('levels-dialog-overlay');
-            if (!panel || !this._lvlSnap || !this._lvlTarget) return;
-            const shadow = +panel.querySelector('#lvl-shadow').value;
-            const mid = +panel.querySelector('#lvl-mid').value / 100;
-            const high = +panel.querySelector('#lvl-high').value;
-            const oBlack = +panel.querySelector('#lvl-oblack').value;
-            const oWhite = +panel.querySelector('#lvl-owhite').value;
-            // Update labels
-            panel.querySelector('#lvl-shadow').nextElementSibling.textContent = shadow;
-            panel.querySelector('#lvl-mid').nextElementSibling.textContent = mid.toFixed(2);
-            panel.querySelector('#lvl-high').nextElementSibling.textContent = high;
-            panel.querySelector('#lvl-oblack').nextElementSibling.textContent = oBlack;
-            panel.querySelector('#lvl-owhite').nextElementSibling.textContent = oWhite;
-            // Process from snapshot
-            const snap = this._lvlSnap;
-            const oc = document.createElement('canvas'); oc.width = snap.width; oc.height = snap.height;
-            const ctx = oc.getContext('2d'); ctx.drawImage(snap, 0, 0);
-            const imgData = ctx.getImageData(0, 0, oc.width, oc.height); const d = imgData.data;
-            const range = high - shadow || 1;
-            for (let i = 0; i < d.length; i += 4) {
-                for (let c = 0; c < 3; c++) {
-                    let v = (d[i + c] - shadow) / range;
-                    v = Math.max(0, Math.min(1, v));
-                    v = Math.pow(v, 1 / mid);
-                    d[i + c] = Math.round(oBlack + v * (oWhite - oBlack));
-                }
-            }
-            ctx.putImageData(imgData, 0, 0);
-            // Update image on canvas via element swap
-            const active = this._lvlTarget;
-            const img = new Image();
-            img.onload = () => {
-                active.setElement(img);
-                active.set({ width: img.width, height: img.height });
-                active.applyFilters();
-                this.canvas.renderAll();
-            };
-            img.src = oc.toDataURL();
+            if (!panel || !this._lvlProxy || !this._lvlTarget) return;
+            const lut = this._levelsLUT(this._readLevelsParams(panel));
+            this._swapImageElement(this._lvlTarget, this._renderLevels(this._lvlProxy, lut));
         }, 60);
     },
     _levelsCancel() {
-        if (this._lvlSnap && this._lvlTarget) {
-            const active = this._lvlTarget;
-            const img = new Image();
-            img.onload = () => {
-                active.setElement(img);
-                active.set({ width: img.width, height: img.height });
-                active.applyFilters();
-                this.canvas.renderAll();
-            };
-            img.src = this._lvlSnap.toDataURL();
-        }
+        if (this._lvlSnap && this._lvlTarget) this._swapImageElement(this._lvlTarget, this._lvlSnap);
         this._removeFilterPanel('levels-dialog-overlay');
-        this._lvlSnap = null; this._lvlTarget = null;
+        this._lvlSnap = null; this._lvlProxy = null; this._lvlTarget = null;
     },
     _levelsApply() {
+        // The preview may have been a proxy, so commit the full-resolution
+        // render rather than whatever happens to be on screen.
+        const panel = document.getElementById('levels-dialog-overlay');
+        if (panel && this._lvlSnap && this._lvlTarget) {
+            const lut = this._levelsLUT(this._readLevelsParams(panel));
+            this._swapImageElement(this._lvlTarget, this._renderLevels(this._lvlSnap, lut));
+        }
         this.saveHistory('Levels');
         this.toast('Levels applied', 'success');
         this._removeFilterPanel('levels-dialog-overlay');
-        this._lvlSnap = null; this._lvlTarget = null;
+        this._lvlSnap = null; this._lvlProxy = null; this._lvlTarget = null;
     },
 
     // ====================== COLOR BALANCE ======================
@@ -10751,6 +10815,7 @@ self.onmessage = async function(event) {
         const snapOC = document.createElement('canvas'); snapOC.width = snapW; snapOC.height = snapH;
         snapOC.getContext('2d').drawImage(el, 0, 0);
         this._cbSnap = snapOC;
+        this._cbProxy = this._makePreviewProxy(snapOC);
         this._cbTarget = active;
         const body = `
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-align:center">Shadows</div>
@@ -10768,56 +10833,26 @@ self.onmessage = async function(event) {
         clearTimeout(this._cbDebounce);
         this._cbDebounce = setTimeout(() => {
             const panel = document.getElementById('cb-dialog-overlay');
-            if (!panel || !this._cbSnap || !this._cbTarget) return;
-            const sr = +panel.querySelector('#cb-sr').value, sg = +panel.querySelector('#cb-sg').value, sb = +panel.querySelector('#cb-sb').value;
-            const mr = +panel.querySelector('#cb-mr').value, mg = +panel.querySelector('#cb-mg').value, mb = +panel.querySelector('#cb-mb').value;
-            panel.querySelectorAll('input[type="range"]').forEach(inp => {
-                if (inp.nextElementSibling) inp.nextElementSibling.textContent = inp.value;
-            });
-            const snap = this._cbSnap;
-            const oc = document.createElement('canvas'); oc.width = snap.width; oc.height = snap.height;
-            const ctx = oc.getContext('2d'); ctx.drawImage(snap, 0, 0);
-            const imgData = ctx.getImageData(0, 0, oc.width, oc.height); const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-                const lum = (d[i] + d[i+1] + d[i+2]) / 3 / 255;
-                const shadowW = Math.max(0, 1 - lum * 3);
-                const midW = 1 - Math.abs(lum - 0.5) * 2;
-                d[i] = Math.max(0, Math.min(255, d[i] + sr * shadowW / 100 * 80 + mr * midW / 100 * 80));
-                d[i+1] = Math.max(0, Math.min(255, d[i+1] + sg * shadowW / 100 * 80 + mg * midW / 100 * 80));
-                d[i+2] = Math.max(0, Math.min(255, d[i+2] + sb * shadowW / 100 * 80 + mb * midW / 100 * 80));
-            }
-            ctx.putImageData(imgData, 0, 0);
-            const active = this._cbTarget;
-            const img = new Image();
-            img.onload = () => {
-                active.setElement(img);
-                active.set({ width: img.width, height: img.height });
-                active.applyFilters();
-                this.canvas.renderAll();
-            };
-            img.src = oc.toDataURL();
+            if (!panel || !this._cbProxy || !this._cbTarget) return;
+            const params = this._readColorBalanceParams(panel);
+            this._swapImageElement(this._cbTarget, this._renderColorBalance(this._cbProxy, params));
         }, 60);
     },
     _cbCancel() {
-        if (this._cbSnap && this._cbTarget) {
-            const active = this._cbTarget;
-            const img = new Image();
-            img.onload = () => {
-                active.setElement(img);
-                active.set({ width: img.width, height: img.height });
-                active.applyFilters();
-                this.canvas.renderAll();
-            };
-            img.src = this._cbSnap.toDataURL();
-        }
+        if (this._cbSnap && this._cbTarget) this._swapImageElement(this._cbTarget, this._cbSnap);
         this._removeFilterPanel('cb-dialog-overlay');
-        this._cbSnap = null; this._cbTarget = null;
+        this._cbSnap = null; this._cbProxy = null; this._cbTarget = null;
     },
     _cbApply() {
+        const panel = document.getElementById('cb-dialog-overlay');
+        if (panel && this._cbSnap && this._cbTarget) {
+            const params = this._readColorBalanceParams(panel);
+            this._swapImageElement(this._cbTarget, this._renderColorBalance(this._cbSnap, params));
+        }
         this.saveHistory('Color Balance');
         this.toast('Color balance applied', 'success');
         this._removeFilterPanel('cb-dialog-overlay');
-        this._cbSnap = null; this._cbTarget = null;
+        this._cbSnap = null; this._cbProxy = null; this._cbTarget = null;
     },
 
     // ====================== AUTO ENHANCEMENTS ======================
