@@ -4,6 +4,9 @@ All notable changes to Openshop will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Stop the import sanitizer from rewriting the editor's own snapshots: undo, redo, transaction rollback, project open, and recovery restore now preserve multi-line text, text longer than 500 characters, and base64 image sources exactly
+
 ### Changed
 - Reimagine the editor as a high-contrast precision studio with a floating tool dock, structured inspector cards, technical canvas workspace, local-only trust indicator, and compact ready state
 - Replace the welcome screen with a responsive local-first workspace launcher whose templates and primary actions remain reachable from phone through desktop widths
@@ -18,6 +21,7 @@ All notable changes to Openshop will be documented in this file.
 - Preserve nested PSD groups, supported blends, 0–1 opacity, visibility, locks, and basic editable text across import/export/reimport; avoid composite-layer duplication and report precise whole-document or per-layer raster fallbacks for unsupported semantics
 - Replace the singleton autosave with checksum-verified immutable OPFS generations, staged promotion, bounded retention, corrupt-newest fallback, legacy migration, quota/durability UI, per-generation recovery actions, and cross-tab ownership forks
 - Split distribution into a truthful network-first standalone file and a hosted PWA with a verified offline shell, health-confirmed updates, automatic rollback, install/cache diagnostics, and installed-app image/PSD/`.openshop` launch handling; project saves now use the dedicated extension while legacy `.json` remains readable
+- Route PSD import, worker filters, AI inference, and chunked pixel post-processing through cancellable document jobs that reject pending work, terminate disposable workers, discard stale replies, and commit pixels/history only while the original document revision and target remain current
 
 ### Security
 - Upgrade Fabric.js from 5.3.1 to 7.4.0 with legacy project adapters and browser regressions for stored-SVG injection through object IDs and gradient colors

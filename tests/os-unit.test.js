@@ -521,13 +521,89 @@ describe('OpenShop core object', () => {
     expect(OS._loadPipeline).toHaveBeenCalledWith(
       'image-segmentation',
       'Xenova/detr-resnet-50-panoptic',
-      'Segment Select'
+      'Segment Select',
+      expect.objectContaining({ kind: 'Segment Select', generation: 0, revision: 0 })
     );
     expect(segmenter).toHaveBeenCalledWith('data:image/png;base64,TEST');
     expect(OS._selectionBounds).toEqual({ x: 13, y: 5, w: 4, h: 8 });
     expect(OS._selectionMask.mask.filter(Boolean)).toHaveLength(32);
     expect(OS._showMaskOverlay).toHaveBeenCalledWith(OS._selectionMask);
     expect(OS.toast).toHaveBeenCalledWith('Selected segment: right-object (32 px)', 'success');
+  });
+
+  it('cancels a filter job by rejecting its promise, terminating its worker, and preserving document state', async () => {
+    const OS = loadOpenShop();
+    const target = { name: 'Photo', type: 'image', visible: true };
+    const canvas = createCanvasMock([target]);
+    canvas.setActiveObject(target);
+    OS.canvas = canvas;
+    OS.layers = [{ name: 'Photo', visible: true, locked: false, objects: [target] }];
+    quietUiMethods(OS);
+
+    const listeners = {};
+    const worker = {
+      addEventListener: vi.fn((type, listener) => { listeners[type] = listener; }),
+      postMessage: vi.fn(),
+      terminate: vi.fn()
+    };
+    OS._getFilterWorker = vi.fn(() => worker);
+    const source = new ImageData(new Uint8ClampedArray([10, 20, 30, 255]), 1, 1);
+    const revision = OS._documentRevision;
+    const historyLength = OS.history.length;
+    const pending = OS._runFilterJob({ backend: 'worker', op: 'posterize' }, source, 1, 1, { levels: 4 });
+    const rejected = pending.catch(error => error);
+
+    expect(OS._activeProgressJobId).toBeTruthy();
+    expect(document.getElementById('compute-actions').hidden).toBe(false);
+    expect(OS.cancelActiveCompute()).toBe(true);
+
+    const error = await rejected;
+    expect(error.name).toBe('AbortError');
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(OS._filterJobCallbacks).toEqual({});
+    expect(OS._documentRevision).toBe(revision);
+    expect(OS.history).toHaveLength(historyLength);
+    expect(canvas.getObjects()).toEqual([target]);
+    expect(OS._activeProgressJobId).toBeNull();
+  });
+
+  it('discards a late AI result after the document revision changes', async () => {
+    const OS = loadOpenShop();
+    const target = {
+      name: 'Subject Photo',
+      type: 'image',
+      width: 16,
+      height: 16,
+      scaleX: 1,
+      scaleY: 1,
+      originX: 'left',
+      originY: 'top',
+      visible: true,
+      getElement: () => ({ naturalWidth: 16, naturalHeight: 16 }),
+      calcTransformMatrix: () => [1, 0, 0, 1, 8, 8]
+    };
+    const canvas = createCanvasMock([target]);
+    canvas.setActiveObject(target);
+    OS.canvas = canvas;
+    OS.layers = [{ name: 'Photo', visible: true, locked: false, objects: [target] }];
+    quietUiMethods(OS);
+    OS._imageToDataURL = vi.fn(() => 'data:image/png;base64,TEST');
+
+    let resolveInference;
+    const inference = new Promise(resolve => { resolveInference = resolve; });
+    const segmenter = vi.fn(() => inference);
+    OS._loadPipeline = vi.fn().mockResolvedValue(segmenter);
+
+    const pending = OS.aiSegmentSelectAt({ x: 8, y: 8 });
+    await vi.waitFor(() => expect(segmenter).toHaveBeenCalled());
+    OS._documentRevision += 1;
+    resolveInference([{ label: 'subject', score: 1, mask: { width: 1, height: 1, channels: 1, data: new Uint8Array([255]) } }]);
+
+    await expect(pending).resolves.toBe(false);
+    expect(OS._selectionMask).toBeNull();
+    expect(OS.history).toHaveLength(0);
+    expect(canvas.getObjects()).toEqual([target]);
+    expect(OS.toast).toHaveBeenCalledWith('Segment Select result discarded because the document changed', 'info');
   });
 
   it('prefers Photon filters and falls back to the JS worker after failure', async () => {
@@ -756,6 +832,45 @@ describe('OpenShop core object', () => {
     expect(retention.pruned).toContain('recovery-doc-a-0.json');
   });
 
+  it('preserves text newlines, long text, and base64 sources through sanitization', () => {
+    const OS = loadOpenShop();
+    const longText = `line one\nline two\tconversation=5\n${'x'.repeat(900)}`;
+    // A base64 tail that the previous on\w+= scrub silently ate.
+    const src = 'data:image/png;base64,AAAAoNCnowqRiJABapIV9aIw8g==';
+    const project = {
+      kind: 'openshop-document',
+      schemaVersion: 1,
+      canvas: { width: 800, height: 600, fabric: { objects: [] } },
+      layers: [{ id: 'layer-1', objectIds: [] }],
+      objects: [{ type: 'textbox', text: longText, src }]
+    };
+
+    OS._sanitizeProjectJSON(project);
+    expect(project.objects[0].text).toBe(longText);
+    expect(project.objects[0].src).toBe(src);
+
+    // Trusted internal snapshots are validated but never rewritten.
+    const trusted = { objects: [{ name: 'javascript:keep', text: longText, id: '<keep>' }] };
+    OS._sanitizeProjectJSON(trusted, { trusted: true });
+    expect(trusted.objects[0].name).toBe('javascript:keep');
+    expect(trusted.objects[0].id).toBe('<keep>');
+    expect(trusted.objects[0].text).toBe(longText);
+
+    // Structural limits still apply in trusted mode.
+    expect(() => OS._sanitizeProjectJSON(
+      { objects: Array.from({ length: OS._importLimits.maxProjectObjects + 2 }, () => ({})) },
+      { trusted: true }
+    )).toThrow(/exceeds import limits/);
+  });
+
+  it('sanitizes a large hostile string without quadratic backtracking', () => {
+    const OS = loadOpenShop();
+    const payload = { objects: [{ name: 'on'.repeat(500000) }] };
+    const started = Date.now();
+    OS._sanitizeProjectJSON(payload);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('round-trips project save and open with sanitization', async () => {
     const OS = loadOpenShop();
     const boundary = { name: '__boundary__', type: 'rect', visible: true };
@@ -795,12 +910,18 @@ describe('OpenShop core object', () => {
 
     const hostile = {
       _openShop: { w: '640', h: '480' },
-      objects: [{ name: '<script>alert(1)</script>', src: 'javascript:alert(2)' }]
+      objects: [{ name: '<script>alert(1)</script>', src: 'data:image/png;base64,AAAA' }]
     };
     OS._sanitizeProjectJSON(hostile);
     expect(hostile._openShop.w).toBe(640);
     expect(hostile.objects[0].name).not.toContain('onerror=');
-    expect(hostile.objects[0].src).not.toContain('javascript:');
+
+    for (const src of ['javascript:alert(2)', 'https://tracker.example/beacon.png', 'http://10.0.0.1/x.png']) {
+      expect(() => OS._sanitizeProjectJSON({
+        _openShop: { w: '640', h: '480' },
+        objects: [{ src }]
+      })).toThrow(/non-embedded asset URL/);
+    }
   });
 
   it('registers one installed-app launch consumer and routes supported files', async () => {

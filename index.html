@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-UR1LdDnfhkPuRoY34LjD8ucVLYe94XW5NHKZw1+VmHY=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-3YPWQMGX1Re3/PVmSpzmhMTDW8gs17/z9Au/wbRAMGQ=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -192,6 +192,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 .ai-bar-wrap{width:100%;height:5px;background:var(--bg-depth-4);border-radius:3px;overflow:hidden}
 .ai-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-hover));border-radius:3px;transition:width .4s var(--ease-out);width:0%}
 .ai-pct{font-size:10.5px;color:var(--text-muted);margin-top:8px;font-family:'JetBrains Mono',monospace}
+.ai-actions{display:flex;justify-content:center;margin-top:16px}
+.ai-actions[hidden]{display:none}
 .ai-spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--text-muted);border-top-color:var(--accent);border-radius:50%;animation:aispin .8s linear infinite;margin-right:6px;vertical-align:middle}
 @keyframes aispin{to{transform:rotate(360deg)}}
 .panel-tab-content>.ptc-inner{padding:8px 10px}
@@ -2434,12 +2436,13 @@ body{
     <span id="object-count">0 objects</span><span class="sep"></span>
     <span class="ready-state" id="persistence-state" data-state="clean"><i></i><span id="persistence-state-label">Clean</span></span>
 </div>
-<div id="ai-progress" role="dialog" aria-label="AI processing" aria-live="polite">
+<div id="ai-progress" role="dialog" aria-modal="true" aria-label="Background processing" aria-live="polite">
     <div class="ai-box">
         <div class="ai-title" id="ai-title"><span class="ai-spinner"></span>Loading AI Model...</div>
         <div class="ai-msg" id="ai-msg">Downloading model weights (cached after first use)</div>
         <div class="ai-bar-wrap"><div class="ai-bar" id="ai-bar"></div></div>
         <div class="ai-pct" id="ai-pct">0%</div>
+        <div class="ai-actions" id="compute-actions" hidden><button type="button" class="btn btn-danger" id="compute-cancel">Cancel</button></div>
     </div>
 </div>
 <div id="toast-container" role="alert" aria-live="assertive" aria-atomic="true"></div>
@@ -3249,6 +3252,10 @@ const OS = {
     _persistenceState: 'clean',
     _documentRevision: 0,
     _documentGeneration: 0,
+    _computeJobSequence: 0,
+    _computeJobs: new Map(),
+    _activeProgressJobId: null,
+    _progressReturnFocus: null,
     _savedSnapshot: null,
     _savePromise: null,
     _lastSaveError: null,
@@ -3294,7 +3301,8 @@ const OS = {
         maxProjectObjects: 5000,
         maxProjectLayers: 512,
         maxPaletteColors: 256,
-        maxPresets: 200
+        maxPresets: 200,
+        maxTextLength: 10000
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -3391,6 +3399,7 @@ const OS = {
         const ca = document.getElementById('canvas-area');
         ca.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
         ca.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); this.handleDrop(e); });
+        document.getElementById('compute-cancel')?.addEventListener('click', () => this.cancelActiveCompute());
         this._initTouchGestures(ca);
         // Snap to grid
         this.canvas.on('object:moving', opt => {
@@ -3429,6 +3438,132 @@ const OS = {
     },
 
     // ====================== DOCUMENT ======================
+    _computeAbortError(message = 'Operation cancelled') {
+        const error = typeof DOMException === 'function'
+            ? new DOMException(message, 'AbortError')
+            : new Error(message);
+        error.name = 'AbortError';
+        return error;
+    },
+    _isComputeAbort(error) {
+        return error?.name === 'AbortError' || error?.name === 'StaleJobError';
+    },
+    _startComputeJob(kind, { target = null, group = 'document-compute' } = {}) {
+        this._cancelComputeJobs(
+            job => job.group === group,
+            `A newer ${kind} operation replaced this one`
+        );
+        const job = {
+            id:`${kind}-${Date.now()}-${++this._computeJobSequence}`,
+            kind,
+            group,
+            generation:this._documentGeneration,
+            revision:this._documentRevision,
+            target,
+            targetId:target ? this._ensureObjectId(target) : null,
+            controller:new AbortController(),
+            cancelled:false,
+            worker:null,
+            reject:null,
+            cancel:null,
+            done:false
+        };
+        this._computeJobs.set(job.id, job);
+        return job;
+    },
+    _cancelComputeJob(jobOrId, message = 'Operation cancelled') {
+        const job = typeof jobOrId === 'string' ? this._computeJobs.get(jobOrId) : jobOrId;
+        if (!job || job.done || job.cancelled) return false;
+        const error = this._computeAbortError(message);
+        job.cancelled = true;
+        if (!job.controller.signal.aborted) job.controller.abort(error);
+        job.worker?.terminate?.();
+        if (job.worker === this._filterWorker) this._filterWorker = null;
+        if (job.worker === this._photonFilterWorker) {
+            this._photonFilterWorker = null;
+            this._filterWorkerPhotonReady = false;
+        }
+        job.cancel?.(error);
+        job.reject?.(error);
+        job.reject = null;
+        this._computeJobs.delete(job.id);
+        if (this._activeProgressJobId === job.id) this._hideAIProgress(job);
+        return true;
+    },
+    _cancelComputeJobs(predicate = () => true, message = 'Document changed') {
+        let count = 0;
+        [...this._computeJobs.values()].forEach(job => {
+            if (predicate(job) && this._cancelComputeJob(job, message)) count++;
+        });
+        return count;
+    },
+    cancelActiveCompute() {
+        const job = this._activeProgressJobId ? this._computeJobs.get(this._activeProgressJobId) : null;
+        if (!job) return false;
+        const cancelled = job.kind === 'psd-import'
+            ? this._cancelPSDImport()
+            : this._cancelComputeJob(job, `${job.kind} cancelled`);
+        if (cancelled && job.kind !== 'psd-import') this.toast(`${job.kind} cancelled`, 'info');
+        return cancelled;
+    },
+    _finishComputeJob(job) {
+        if (!job || job.done) return;
+        job.done = true;
+        job.reject = null;
+        job.cancel = null;
+        if (this._computeJobs.get(job.id) === job) this._computeJobs.delete(job.id);
+        if (this._activeProgressJobId === job.id) this._hideAIProgress(job);
+    },
+    _assertComputeJobCurrent(job, { allowRevisionChange = false, allowGenerationChange = false } = {}) {
+        if (!job || job.cancelled || job.controller.signal.aborted) {
+            throw job?.controller.signal.reason || this._computeAbortError();
+        }
+        if (!allowGenerationChange && job.generation !== this._documentGeneration) {
+            const error = this._computeAbortError('Document was replaced before the operation completed');
+            error.name = 'StaleJobError';
+            throw error;
+        }
+        if (!allowRevisionChange && job.revision !== this._documentRevision) {
+            const error = this._computeAbortError('Document changed before the operation completed');
+            error.name = 'StaleJobError';
+            throw error;
+        }
+        if (job.target && (
+            this._ensureObjectId(job.target) !== job.targetId ||
+            !this.canvas?.getObjects?.().includes(job.target) ||
+            !this._isObjectEditable(job.target)
+        )) {
+            const error = this._computeAbortError('Target layer changed before the operation completed');
+            error.name = 'StaleJobError';
+            throw error;
+        }
+        return true;
+    },
+    async _raceComputeJob(value, job) {
+        this._assertComputeJobCurrent(job);
+        const signal = job.controller.signal;
+        let onAbort;
+        const aborted = new Promise((_, reject) => {
+            onAbort = () => reject(signal.reason || this._computeAbortError());
+            signal.addEventListener('abort', onAbort, { once:true });
+        });
+        try {
+            const result = await Promise.race([Promise.resolve(value), aborted]);
+            this._assertComputeJobCurrent(job);
+            return result;
+        } finally {
+            signal.removeEventListener('abort', onAbort);
+        }
+    },
+    async _yieldComputeJob(job) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        this._assertComputeJobCurrent(job);
+    },
+    _advanceDocumentGeneration(message = 'Document replaced', { except = null } = {}) {
+        this._cancelComputeJobs(job => job !== except, message);
+        this._documentGeneration += 1;
+        return this._documentGeneration;
+    },
     _setPersistenceState(state, error = null) {
         const labels = { clean:'Clean', dirty:'Unsaved', saving:'Saving', saved:'Saved', error:'Save failed' };
         this._persistenceState = labels[state] ? state : 'error';
@@ -3472,7 +3607,7 @@ const OS = {
     },
     createNewDocument(w, h, { resetProject = false, clean = false, resetHistory = true } = {}) {
         if (resetProject) {
-            this._documentGeneration += 1;
+            this._advanceDocumentGeneration('A new document replaced this operation');
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._docName = 'Untitled';
@@ -3558,11 +3693,18 @@ const OS = {
         if (width * height > this._importLimits.maxImagePixels) throw new Error('Image pixel count exceeds import limits');
         return { width, height };
     },
-    _sanitizeProjectValue(value, depth = 0, stats = { objects:0, layers:0 }) {
+    _isEmbeddedAssetUrl(value) {
+        return /^\s*(data:|blob:)/i.test(String(value ?? ''));
+    },
+    _safeProjectText(value, max) {
+        // Content-bearing text keeps newlines and tabs; only non-printable control codes are removed.
+        return String(value ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, max);
+    },
+    _sanitizeProjectValue(value, depth = 0, stats = { objects:0, layers:0 }, trusted = false) {
         if (depth > 80) throw new Error('Project nesting exceeds import limits');
         if (Array.isArray(value)) {
             if (value.length > this._importLimits.maxProjectObjects) throw new Error('Project array exceeds import limits');
-            value.forEach(item => this._sanitizeProjectValue(item, depth + 1, stats));
+            value.forEach(item => this._sanitizeProjectValue(item, depth + 1, stats, trusted));
             return value;
         }
         if (value && typeof value === 'object') {
@@ -3573,19 +3715,26 @@ const OS = {
                 if (stats.layers > this._importLimits.maxProjectLayers) throw new Error('Project layer count exceeds import limits');
             }
             for (const key of Object.keys(value)) {
-                if (typeof value[key] === 'string') {
-                    value[key] = value[key].replace(/javascript:/gi, '').replace(/on\w+\s*=/gi, '');
-                    const isDataField = key === 'src' || key === 'source' || value[key].startsWith('data:');
-                    if (!isDataField) value[key] = this._safeText(value[key], 500);
+                if (!trusted && typeof value[key] === 'string') {
+                    if (key === 'src' || key === 'source') {
+                        // Remote references would leak the viewer's IP and cookies and taint the export canvas.
+                        if (value[key] && !this._isEmbeddedAssetUrl(value[key])) {
+                            throw new Error('Project references a non-embedded asset URL');
+                        }
+                    } else if (key === 'text') {
+                        value[key] = this._safeProjectText(value[key], this._importLimits.maxTextLength);
+                    } else if (!this._isEmbeddedAssetUrl(value[key])) {
+                        value[key] = this._safeText(value[key].replace(/javascript:/gi, ''), 500);
+                    }
                 }
-                if (key === 'id' && typeof value[key] === 'string') value[key] = value[key].replace(/[<>"'&]/g, '');
-                this._sanitizeProjectValue(value[key], depth + 1, stats);
+                if (!trusted && key === 'id' && typeof value[key] === 'string') value[key] = value[key].replace(/[<>"'&]/g, '');
+                this._sanitizeProjectValue(value[key], depth + 1, stats, trusted);
             }
         }
         return value;
     },
-    _sanitizeProjectJSON(obj) {
-        this._sanitizeProjectValue(obj);
+    _sanitizeProjectJSON(obj, { trusted = false } = {}) {
+        this._sanitizeProjectValue(obj, 0, { objects:0, layers:0 }, trusted);
         if (obj?._openShop) {
             const w = Math.round(Number(obj._openShop.w || 0));
             const h = Math.round(Number(obj._openShop.h || 0));
@@ -3862,11 +4011,11 @@ const OS = {
             workspace: meta.workspace || { tool:this.state.tool, zoom:this.zoom, viewportTransform:this.canvas.viewportTransform?.slice(0, 6) }
         };
     },
-    _normalizeDocumentState(project) {
+    _normalizeDocumentState(project, { trusted = false } = {}) {
         if (!project || typeof project !== 'object') throw new Error('Project data is invalid');
-        this._sanitizeProjectJSON(project);
+        this._sanitizeProjectJSON(project, { trusted });
         const state = project.kind === 'openshop-document' ? project : this._migrateLegacyProject(project);
-        this._sanitizeProjectJSON(state);
+        if (state !== project) this._sanitizeProjectJSON(state, { trusted });
         return state;
     },
     _restoreSelectionState(selection) {
@@ -3906,8 +4055,8 @@ const OS = {
             }
         });
     },
-    async _loadDocumentState(project, { fitToViewport = false } = {}) {
-        const state = this._normalizeDocumentState(project);
+    async _loadDocumentState(project, { fitToViewport = false, trusted = false } = {}) {
+        const state = this._normalizeDocumentState(project, { trusted });
         this.canvasW = state.canvas.width;
         this.canvasH = state.canvas.height;
         const loadResult = this.canvas.loadFromJSON(state.canvas.fabric);
@@ -4425,8 +4574,8 @@ const OS = {
             this._assertJsonFileBudget(file, 'Project');
             const json = JSON.parse(await file.text());
             if (this._autoSaveInFlight) await this._autoSaveInFlight;
+            this._advanceDocumentGeneration('An opened project replaced this operation');
             await this._loadDocumentState(json, { fitToViewport:true });
-            this._documentGeneration += 1;
             this._projectFileHandle = handle;
             this._initializeHistory('Open Project');
             this._markDocumentClean(this._historyBaseSnapshot, 'clean');
@@ -4687,15 +4836,7 @@ const OS = {
     },
     _cancelPSDImport(message = 'PSD import cancelled') {
         const job = this._psdDecodeJob;
-        if (!job || job.cancelled) return false;
-        job.cancelled = true;
-        job.worker?.terminate();
-        const error = new Error(message);
-        error.name = 'AbortError';
-        job.reject?.(error);
-        job.reject = null;
-        this._closePSDImportProgress(job);
-        return true;
+        return this._cancelComputeJob(job, message);
     },
     async _decodePSDInWorker(bytes, fileSize, job) {
         if (typeof Worker === 'undefined') return Promise.reject(new Error('PSD import requires Web Worker support'));
@@ -5178,7 +5319,7 @@ self.onmessage = function(event) {
             report
         };
     },
-    _commitPSDImport(prepared, psd, file) {
+    _commitPSDImport(prepared, psd, file, job) {
         const previous = {
             objects:this.canvas.getObjects().slice(),
             activeObject:this.canvas.getActiveObject(),
@@ -5212,6 +5353,8 @@ self.onmessage = function(event) {
             lastPSDImportReport:this._lastPSDImportReport
         };
         try {
+            this._assertComputeJobCurrent(job);
+            this._advanceDocumentGeneration('A PSD import replaced this operation', { except:job });
             this.canvas.discardActiveObject();
             this.canvas.clear();
             this.canvas.backgroundColor = null;
@@ -5226,7 +5369,6 @@ self.onmessage = function(event) {
             this._savedSnapshot = null;
             this._psdInterchange = prepared.psdInterchange;
             this._lastPSDImportReport = prepared.report;
-            this._documentGeneration += 1;
             this.guides = [];
             this._selectionMask = null;
             this._selectionBounds = null;
@@ -5289,30 +5431,26 @@ self.onmessage = function(event) {
     async _loadPSDFile(file) {
         if (!file) return false;
         if (this._psdDecodeJob) this._cancelPSDImport('A newer PSD import replaced this one');
-        const job = { id:`psd-${Date.now()}-${++this._idSequence}`, cancelled:false, worker:null, reject:null, overlay:null, status:null };
+        const job = this._startComputeJob('psd-import', { group:'psd-import' });
+        job.overlay = null;
+        job.status = null;
+        job.cancel = () => this._closePSDImportProgress(job);
         this._psdDecodeJob = job;
         this._showPSDImportProgress(file.name, job);
         try {
             if (file.size > this._psdLimits.maxFileBytes) throw new Error('PSD exceeds 256 MB import limit');
             const buffer = await file.arrayBuffer();
-            if (job.cancelled) {
-                const error = new Error('PSD import cancelled');
-                error.name = 'AbortError';
-                throw error;
-            }
+            this._assertComputeJobCurrent(job);
             const bytes = new Uint8Array(buffer);
             const { header, psd } = await this._decodePSDInWorker(bytes, file.size || bytes.byteLength, job);
+            this._assertComputeJobCurrent(job);
             this._updatePSDImportProgress(job, 'Validating decoded memory…');
             this._validatePSDDecodedPayload(psd);
             if (psd.width !== header.width || psd.height !== header.height) throw new Error('PSD decoded dimensions do not match its header');
             const prepared = await this._preparePSDImport(psd, job);
-            if (job.cancelled) {
-                const error = new Error('PSD import cancelled');
-                error.name = 'AbortError';
-                throw error;
-            }
+            this._assertComputeJobCurrent(job);
             this._updatePSDImportProgress(job, 'Committing document…');
-            this._commitPSDImport(prepared, psd, file);
+            this._commitPSDImport(prepared, psd, file, job);
             this.toast(`PSD imported: ${prepared.decodedLayerCount} layers`, 'success');
             this._showPSDCompatibilityReport(prepared.report, 'PSD import compatibility');
             return true;
@@ -5329,6 +5467,7 @@ self.onmessage = function(event) {
                 this._closePSDImportProgress(job);
                 this._psdDecodeJob = null;
             }
+            this._finishComputeJob(job);
         }
     },
 
@@ -7250,7 +7389,9 @@ self.onmessage = function(event) {
     async _applyImageDataFilterDirect(name, spec) {
         const info = this._getActiveImageData(); if (!info) return false;
         this.toast('Applying ' + name.replace('BlackWhite', 'Black & White') + '...', 'info');
-        info.imgData = await this._runFilterWithPhoton(spec.op, info.imgData, info.canvas.width, info.canvas.height, spec.params || {});
+        const result = await this._runFilterWithPhoton(spec.op, info.imgData, info.canvas.width, info.canvas.height, spec.params || {});
+        if (!result) return false;
+        info.imgData = result;
         this._commitImageData(info, 'Filter: ' + name);
         this.toast(`Applied ${name.replace('BlackWhite', 'Black & White')}`, 'success');
         this._lastFilter = name;
@@ -7677,7 +7818,7 @@ self.onmessage = function(event) {
         this._historyTransaction = null;
         if (!transaction) return false;
         try {
-            await this._loadDocumentState(JSON.parse(transaction.beforeSnapshot));
+            await this._loadDocumentState(JSON.parse(transaction.beforeSnapshot), { trusted:true });
         } finally {
             this.history = transaction.history;
             this.historyIdx = transaction.historyIdx;
@@ -7759,7 +7900,7 @@ self.onmessage = function(event) {
             : this.history[0]?.beforeSnapshot || this._historyBaseSnapshot);
         if (!snapshot) return false;
         try {
-            await this._loadDocumentState(JSON.parse(snapshot));
+            await this._loadDocumentState(JSON.parse(snapshot), { trusted:true });
             this.historyIdx = targetIndex;
             this._historyCursorSnapshot = snapshot;
             this._lastAction = targetIndex >= 0 ? this.history[targetIndex].action : this._historyBaseLabel;
@@ -9652,6 +9793,7 @@ self.onmessage = function(event) {
         try {
             const json = JSON.parse(jsonText);
             if (this._autoSaveInFlight) await this._autoSaveInFlight;
+            this._advanceDocumentGeneration('A recovered project replaced this operation');
             await this._loadDocumentState(json, { fitToViewport:true });
             if (asCopy) {
                 this._documentId = this._newDocumentId('document');
@@ -9660,7 +9802,6 @@ self.onmessage = function(event) {
             } else {
                 this._activeRecoverySourceFilename = record?.filename || null;
             }
-            this._documentGeneration += 1;
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._initializeHistory(asCopy ? 'Opened Recovery Copy' : 'Recovered Project');
@@ -10324,20 +10465,35 @@ self.onmessage = async function(event) {
         this._replaceActiveImage(active, oc.toDataURL(), 'Auto Enhance');
         this.toast('Auto enhance applied', 'success');
     },
-    _replaceActiveImage(active, dataUrl, histName) {
+    async _replaceActiveImage(active, dataUrl, histName, editGuard = null) {
         if (!this._guardObjectEdit(active)) return false;
-        fabric.Image.fromURL(dataUrl, newImg => {
-            if (!this._isObjectEditable(active)) {
-                this.toast('The target layer changed before the edit completed', 'error');
-                return;
+        const guard = editGuard || {
+            generation:this._documentGeneration,
+            revision:this._documentRevision,
+            targetId:this._ensureObjectId(active)
+        };
+        try {
+            const newImg = await fabric.Image.fromURL(dataUrl);
+            const current = guard.generation === this._documentGeneration &&
+                guard.revision === this._documentRevision &&
+                guard.targetId === this._ensureObjectId(active) &&
+                this.canvas.getObjects().includes(active) &&
+                this._isObjectEditable(active);
+            if (!current) {
+                this.toast('Edit cancelled because the document or target layer changed', 'info');
+                return false;
             }
             newImg.set({ left: active.left, top: active.top, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle, flipX: active.flipX, flipY: active.flipY, originX: active.originX, originY: active.originY, selectable: true, name: histName });
             const li = this.layers.findIndex(l => l.objects.includes(active));
             if (li >= 0) { const idx = this.layers[li].objects.indexOf(active); this.layers[li].objects[idx] = newImg; }
             this.canvas.remove(active); this.canvas.add(newImg); this.canvas.setActiveObject(newImg);
             this.canvas.renderAll(); this.saveHistory(histName); this.updateLayersPanel();
-        });
-        return true;
+            return true;
+        } catch (error) {
+            console.error('Image edit commit failed:', error);
+            this.toast('Image edit failed: ' + error.message, 'error');
+            return false;
+        }
     },
     _floodFillImage(target,ptr){
         if (!this._guardObjectEdit(target)) return;
@@ -11163,27 +11319,48 @@ self.onmessage = async function(e) {
 };`;
         const parts = photon ? [this._prepareClassicPhotonSource(runtime.moduleBytes), '\n', code] : [code];
         const blob = new Blob(parts, {type:'application/javascript'});
-        this[workerKey] = new Worker(URL.createObjectURL(blob));
+        const url = URL.createObjectURL(blob);
+        this[workerKey] = new Worker(url);
+        URL.revokeObjectURL(url);
         if (photon) this._filterWorkerPhotonReady = false;
         return this[workerKey];
     },
     _filterJobId: 0,
     _filterJobCallbacks: {},
-    _runFilterJob(payload, imgData, width, height, params) {
-        return new Promise((resolve, reject) => {
+    _runFilterJob(payload, imgData, width, height, params, existingJob = null) {
+        const target = this.canvas?.getActiveObject?.();
+        const job = existingJob || this._startComputeJob(`Filter: ${payload.op}`, {
+            group:'image-processing',
+            target:target?.type === 'image' ? target : null
+        });
+        this._showAIProgress(`Applying ${payload.op}`, 'Processing pixels off the main thread…', job);
+        const promise = new Promise((resolve, reject) => {
             const worker = this._getFilterWorker(payload.backend, payload.runtime);
+            job.worker = worker;
             const id = ++this._filterJobId;
             const buf = imgData.data.buffer.slice(0);
-            this._filterJobCallbacks[id] = { resolve, reject, worker };
+            const callback = { resolve, reject, worker, job };
+            this._filterJobCallbacks[id] = callback;
+            job.cancel = error => {
+                if (this._filterJobCallbacks[id] !== callback) return;
+                delete this._filterJobCallbacks[id];
+                reject(error);
+            };
             if (!worker._osHandlerInstalled) {
                 worker.addEventListener('message', e => {
                     const cb = this._filterJobCallbacks[e.data._jobId];
                     if (!cb) return;
                     delete this._filterJobCallbacks[e.data._jobId];
-                    const result = new ImageData(new Uint8ClampedArray(e.data.data), e.data.width, e.data.height);
-                    if (e.data.error && e.data.backend === 'photon') { cb.reject(new Error(e.data.error)); return; }
-                    if (e.data.error) console.warn('Filter worker error:', e.data.error);
-                    cb.resolve(result);
+                    cb.job.cancel = null;
+                    try {
+                        this._assertComputeJobCurrent(cb.job);
+                        const result = new ImageData(new Uint8ClampedArray(e.data.data), e.data.width, e.data.height);
+                        if (e.data.error && e.data.backend === 'photon') { cb.reject(new Error(e.data.error)); return; }
+                        if (e.data.error) console.warn('Filter worker error:', e.data.error);
+                        cb.resolve(result);
+                    } catch (error) {
+                        cb.reject(error);
+                    }
                 });
                 worker.addEventListener('error', err => {
                     console.error(`${payload.backend} filter worker crashed:`, err.message || err);
@@ -11191,6 +11368,7 @@ self.onmessage = async function(e) {
                         .filter(([, cb]) => cb.worker === worker);
                     entries.forEach(([id, cb]) => {
                         delete this._filterJobCallbacks[id];
+                        cb.job.cancel = null;
                         cb.reject(err);
                     });
                 });
@@ -11199,28 +11377,46 @@ self.onmessage = async function(e) {
             const runtime = payload.runtime ? {wasmBytes:payload.runtime.wasmBytes} : null;
             worker.postMessage({...payload, runtime, _jobId: id, data: buf, width, height, params: params||{}}, [buf]);
         });
+        return promise.finally(() => this._finishComputeJob(job));
     },
-    _runFilterInWorker(op, imgData, width, height, params) {
-        return this._runFilterJob({backend:'worker', op}, imgData, width, height, params);
+    async _runFilterInWorker(op, imgData, width, height, params) {
+        try {
+            return await this._runFilterJob({backend:'worker', op}, imgData, width, height, params);
+        } catch (error) {
+            if (this._isComputeAbort(error)) return null;
+            throw error;
+        }
     },
     async _runPhotonFilterInWorker(op, imgData, width, height, params) {
-        let runtime = null;
-        if (!this._filterWorkerPhotonReady) {
-            const [module, wasm] = await Promise.all([
-                this._fetchVerifiedRuntimeAsset('photonModule'),
-                this._fetchVerifiedRuntimeAsset('photonWasm')
-            ]);
-            runtime = { moduleBytes:module.bytes, wasmBytes:wasm.bytes };
+        const target = this.canvas?.getActiveObject?.();
+        const job = this._startComputeJob(`Filter: ${op}`, {
+            group:'image-processing',
+            target:target?.type === 'image' ? target : null
+        });
+        try {
+            let runtime = null;
+            if (!this._filterWorkerPhotonReady) {
+                this._showAIProgress('Preparing filter engine', 'Verifying Photon and WebAssembly…', job);
+                const [module, wasm] = await this._raceComputeJob(Promise.all([
+                    this._fetchVerifiedRuntimeAsset('photonModule'),
+                    this._fetchVerifiedRuntimeAsset('photonWasm')
+                ]), job);
+                runtime = { moduleBytes:module.bytes, wasmBytes:wasm.bytes };
+            }
+            const result = await this._runFilterJob({backend:'photon', op, runtime}, imgData, width, height, params, job);
+            this._filterWorkerPhotonReady = true;
+            return result;
+        } catch (error) {
+            this._finishComputeJob(job);
+            throw error;
         }
-        const result = await this._runFilterJob({backend:'photon', op, runtime}, imgData, width, height, params);
-        this._filterWorkerPhotonReady = true;
-        return result;
     },
     async _runFilterWithPhoton(op, imgData, width, height, params) {
         if (!this._photonFilterDisabled) {
             try {
                 return await this._runPhotonFilterInWorker(op, imgData, width, height, params);
             } catch (err) {
+                if (this._isComputeAbort(err)) return null;
                 this._photonFilterDisabled = true;
                 console.warn('Photon filter backend unavailable; falling back to JS worker:', err);
             }
@@ -11235,11 +11431,34 @@ self.onmessage = async function(e) {
         const el = active.getElement();
         const oc = document.createElement('canvas'); oc.width = el.naturalWidth||el.width; oc.height = el.naturalHeight||el.height;
         const ctx = oc.getContext('2d'); ctx.drawImage(el, 0, 0);
-        return { active, canvas: oc, ctx, imgData: ctx.getImageData(0, 0, oc.width, oc.height) };
+        return {
+            active,
+            canvas:oc,
+            ctx,
+            imgData:ctx.getImageData(0, 0, oc.width, oc.height),
+            editGuard:{
+                generation:this._documentGeneration,
+                revision:this._documentRevision,
+                targetId:this._ensureObjectId(active)
+            }
+        };
     },
     _commitImageData(info, name) {
+        if (!info?.imgData) return false;
+        if (
+            info.editGuard &&
+            (
+                info.editGuard.generation !== this._documentGeneration ||
+                info.editGuard.revision !== this._documentRevision ||
+                info.editGuard.targetId !== this._ensureObjectId(info.active)
+            )
+        ) {
+            this.toast('Filter result discarded because the document changed', 'info');
+            return false;
+        }
         info.ctx.putImageData(info.imgData, 0, 0);
-        this._replaceActiveImage(info.active, info.canvas.toDataURL(), name);
+        void this._replaceActiveImage(info.active, info.canvas.toDataURL(), name, info.editGuard);
+        return true;
     },
     filterPosterize() {
         const body = `<div class="modal-row"><label>Levels</label><input id="fp-lvl" type="range" min="2" max="32" value="6" data-os-input="input-028"><span class="opt-val">6</span></div>`;
@@ -11251,7 +11470,9 @@ self.onmessage = async function(e) {
         const info = this._getActiveImageData(); if (!info) { this._removeFilterPanel('posterize-overlay'); return; }
         const levels = +(panel.querySelector('#fp-lvl')?.value||6);
         this.toast('Applying posterize...', 'info');
-        info.imgData = await this._runFilterInWorker('posterize', info.imgData, info.canvas.width, info.canvas.height, {levels});
+        const result = await this._runFilterInWorker('posterize', info.imgData, info.canvas.width, info.canvas.height, {levels});
+        if (!result) return;
+        info.imgData = result;
         this._commitImageData(info, 'Posterize'); this._removeFilterPanel('posterize-overlay'); this.toast('Posterize applied', 'success');
     },
     filterThreshold() {
@@ -11263,7 +11484,9 @@ self.onmessage = async function(e) {
         const panel = document.getElementById('threshold-overlay');
         const info = this._getActiveImageData(); if (!info) { this._removeFilterPanel('threshold-overlay'); return; }
         const thr = +(panel.querySelector('#ft-thr')?.value||128);
-        info.imgData = await this._runFilterWithPhoton('threshold', info.imgData, info.canvas.width, info.canvas.height, {thr});
+        const result = await this._runFilterWithPhoton('threshold', info.imgData, info.canvas.width, info.canvas.height, {thr});
+        if (!result) return;
+        info.imgData = result;
         this._commitImageData(info, 'Threshold'); this._removeFilterPanel('threshold-overlay'); this.toast('Threshold applied', 'success');
     },
     filterSolarize() {
@@ -11275,7 +11498,9 @@ self.onmessage = async function(e) {
     async filterEdgeDetect() {
         const info = this._getActiveImageData(); if (!info) return;
         this.toast('Detecting edges...', 'info');
-        info.imgData = await this._runFilterWithPhoton('edgeDetect', info.imgData, info.canvas.width, info.canvas.height);
+        const result = await this._runFilterWithPhoton('edgeDetect', info.imgData, info.canvas.width, info.canvas.height);
+        if (!result) return;
+        info.imgData = result;
         this._commitImageData(info, 'Edge Detect'); this.toast('Edge detect applied', 'success');
     },
     filterVignette() {
@@ -11288,7 +11513,9 @@ self.onmessage = async function(e) {
         const info = this._getActiveImageData(); if (!info) { this._removeFilterPanel('vignette-overlay'); return; }
         const amt = +(panel.querySelector('#fv-amt')?.value||50) / 100, soft = +(panel.querySelector('#fv-soft')?.value||60) / 100;
         this.toast('Applying vignette...', 'info');
-        info.imgData = await this._runFilterInWorker('vignette', info.imgData, info.canvas.width, info.canvas.height, {amt, soft});
+        const result = await this._runFilterInWorker('vignette', info.imgData, info.canvas.width, info.canvas.height, {amt, soft});
+        if (!result) return;
+        info.imgData = result;
         this._commitImageData(info, 'Vignette'); this._removeFilterPanel('vignette-overlay'); this.toast('Vignette applied', 'success');
     },
     filterUnsharpMask() {
@@ -11302,6 +11529,7 @@ self.onmessage = async function(e) {
         const amount = +(panel.querySelector('#fu-amt')?.value||100) / 100, radius = +(panel.querySelector('#fu-rad')?.value||2);
         this.toast('Applying unsharp mask...', 'info');
         const result = await this._runFilterInWorker('unsharpMask', info.imgData, info.canvas.width, info.canvas.height, {amount, radius});
+        if (!result) return;
         info.imgData = result;
         this._commitImageData(info, 'Unsharp Mask'); this._removeFilterPanel('unsharpmask-overlay'); this.toast('Unsharp mask applied', 'success');
     },
@@ -11316,6 +11544,7 @@ self.onmessage = async function(e) {
         const radius = +(panel.querySelector('#fo-rad')?.value||3), levels = +(panel.querySelector('#fo-lvl')?.value||16);
         this.toast('Applying oil paint...', 'info');
         const result = await this._runFilterInWorker('oilPaint', info.imgData, info.canvas.width, info.canvas.height, {radius, levels});
+        if (!result) return;
         info.imgData = result;
         this._commitImageData(info, 'Oil Paint'); this._removeFilterPanel('oilpaint-overlay'); this.toast('Oil paint applied', 'success');
     },
@@ -11357,7 +11586,9 @@ self.onmessage = async function(e) {
         const sc = panel.querySelector('#fd-shadow')?.value||'#1a1a2e', hc = panel.querySelector('#fd-high')?.value||'#e94560';
         const sr=parseInt(sc.slice(1,3),16),sg=parseInt(sc.slice(3,5),16),sb=parseInt(sc.slice(5,7),16);
         const hr=parseInt(hc.slice(1,3),16),hg=parseInt(hc.slice(3,5),16),hb=parseInt(hc.slice(5,7),16);
-        info.imgData = await this._runFilterInWorker('duotone', info.imgData, info.canvas.width, info.canvas.height, {sr,sg,sb,hr,hg,hb});
+        const result = await this._runFilterInWorker('duotone', info.imgData, info.canvas.width, info.canvas.height, {sr,sg,sb,hr,hg,hb});
+        if (!result) return;
+        info.imgData = result;
         this._commitImageData(info, 'Duotone'); this._removeFilterPanel('duotone-overlay'); this.toast('Duotone applied', 'success');
     },
     filterTiltShift() {
@@ -11371,6 +11602,7 @@ self.onmessage = async function(e) {
         const focusY = +(panel.querySelector('#fts-y')?.value||50)/100, focusW = +(panel.querySelector('#fts-w')?.value||20)/100, blurR = +(panel.querySelector('#fts-blur')?.value||4);
         this.toast('Applying tilt shift...', 'info');
         const result = await this._runFilterInWorker('tiltShift', info.imgData, info.canvas.width, info.canvas.height, {focusY, focusW, blurR});
+        if (!result) return;
         info.imgData = result;
         this._commitImageData(info, 'Tilt Shift'); this._removeFilterPanel('tiltshift-overlay'); this.toast('Tilt shift applied', 'success');
     },
@@ -11383,7 +11615,9 @@ self.onmessage = async function(e) {
         const panel = document.getElementById('chromab-overlay');
         const info = this._getActiveImageData(); if (!info) { this._removeFilterPanel('chromab-overlay'); return; }
         const off = +(panel.querySelector('#fca-off')?.value||4);
-        info.imgData = await this._runFilterInWorker('chromaticAberration', info.imgData, info.canvas.width, info.canvas.height, {off});
+        const result = await this._runFilterInWorker('chromaticAberration', info.imgData, info.canvas.width, info.canvas.height, {off});
+        if (!result) return;
+        info.imgData = result;
         this._commitImageData(info, 'Chromatic Aberration'); this._removeFilterPanel('chromab-overlay'); this.toast('Chromatic aberration applied', 'success');
     },
     filterNoiseGen() {
@@ -13517,8 +13751,9 @@ self.onmessage = async function(e) {
     _aiLib: null,
     _aiLoading: false,
 
-    _showAIProgress(title, msg) {
+    _showAIProgress(title, msg, job = null) {
         const el = document.getElementById('ai-progress');
+        if (!el.classList.contains('visible')) this._progressReturnFocus = document.activeElement;
         const titleEl = document.getElementById('ai-title');
         this._clearNode(titleEl);
         const spinner = document.createElement('span');
@@ -13527,28 +13762,44 @@ self.onmessage = async function(e) {
         document.getElementById('ai-msg').textContent = msg || '';
         document.getElementById('ai-bar').style.width = '0%';
         document.getElementById('ai-pct').textContent = '0%';
+        const actions = document.getElementById('compute-actions');
+        const cancel = document.getElementById('compute-cancel');
+        if (actions) actions.hidden = !job;
+        if (cancel) cancel.disabled = !job;
+        this._activeProgressJobId = job?.id || null;
         el.classList.add('visible');
+        if (job && cancel) requestAnimationFrame(() => cancel.focus());
     },
-    _updateAIProgress(pct, msg) {
+    _updateAIProgress(pct, msg, job = null) {
+        if (job && this._activeProgressJobId !== job.id) return;
         document.getElementById('ai-bar').style.width = Math.round(pct) + '%';
         document.getElementById('ai-pct').textContent = Math.round(pct) + '%';
         if (msg) document.getElementById('ai-msg').textContent = msg;
     },
-    _hideAIProgress() {
+    _hideAIProgress(job = null) {
+        if (job && this._activeProgressJobId !== job.id) return;
         document.getElementById('ai-progress').classList.remove('visible');
+        const actions = document.getElementById('compute-actions');
+        if (actions) actions.hidden = true;
+        this._activeProgressJobId = null;
+        const returnFocus = this._progressReturnFocus;
+        this._progressReturnFocus = null;
+        if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus();
     },
 
-    async _loadTransformers() {
+    async _loadTransformers(job = null) {
         if (this._aiLib) return this._aiLib;
-        this._showAIProgress('Loading Transformers.js', 'Verifying AI runtime and inference engine...');
+        this._showAIProgress('Loading Transformers.js', 'Verifying AI runtime and inference engine...', job);
         try {
             const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '');
             const wasmName = isSafari ? 'onnxSafariWasm' : 'onnxWasm';
-            const [moduleUrl, wasm] = await Promise.all([
+            const loading = Promise.all([
                 this._verifiedRuntimeBlobUrl('transformers'),
                 this._fetchVerifiedRuntimeAsset(wasmName)
             ]);
-            const lib = await import(moduleUrl);
+            const [moduleUrl, wasm] = job ? await this._raceComputeJob(loading, job) : await loading;
+            const importing = import(moduleUrl);
+            const lib = job ? await this._raceComputeJob(importing, job) : await importing;
             const wasmConfig = lib.env?.backends?.onnx?.wasm;
             if (!wasmConfig) throw new Error('Transformers.js did not expose its ONNX runtime configuration');
             wasmConfig.wasmPaths = undefined;
@@ -13558,8 +13809,8 @@ self.onmessage = async function(e) {
             this._aiLib = lib;
             return lib;
         } catch(e) {
-            this._hideAIProgress();
-            this.toast('Failed to load AI library: ' + e.message, 'error');
+            this._hideAIProgress(job);
+            if (!this._isComputeAbort(e)) this.toast('Failed to load AI library: ' + e.message, 'error');
             throw e;
         }
     },
@@ -13570,44 +13821,56 @@ self.onmessage = async function(e) {
         'Xenova/detr-resnet-50': '8be7ab59ff663484ee9ba2e8d8f267330d5ad03e',
         'Xenova/detr-resnet-50-panoptic': 'ea24b2d4e0bfae31f0a1299ba3fb892a2df064de',
     },
-    async _loadPipeline(task, model, label) {
+    async _loadPipeline(task, model, label, job = null) {
         const key = task + ':' + model;
         if (this._aiPipelines[key]) {
             this.toast(label + ' model ready (cached)', 'info');
             return this._aiPipelines[key];
         }
         if (this._aiLoading) { this.toast('Another AI model is loading, please wait', 'info'); return null; }
+        const operation = job || this._startComputeJob(`AI ${label}`, { group:'image-processing' });
+        const ownsJob = !job;
         this._aiLoading = true;
         try {
-            const lib = await this._loadTransformers();
-            this._showAIProgress('Downloading ' + label + ' Model', 'First-time download, will be cached for future use');
+            const lib = await this._loadTransformers(operation);
+            this._showAIProgress('Downloading ' + label + ' Model', 'First-time download, will be cached for future use', operation);
             let lastPct = 0;
-            const pipe = await lib.pipeline(task, model, {
+            const loading = lib.pipeline(task, model, {
                 dtype: 'q8',
                 device: 'wasm',
                 revision: this._modelRevisions[model] || 'main',
                 progress_callback: (p) => {
                     if (p.status === 'progress' && p.progress) {
                         lastPct = p.progress;
-                        this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '');
+                        this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '', operation);
                     } else if (p.status === 'done') {
-                        this._updateAIProgress(100, 'Model loaded');
+                        this._updateAIProgress(100, 'Model loaded', operation);
                     } else if (p.status === 'initiate') {
-                        this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''));
+                        this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''), operation);
                     }
                 }
             });
+            let pipe;
+            try {
+                pipe = await this._raceComputeJob(loading, operation);
+            } catch (error) {
+                void Promise.resolve(loading).then(value => value?.dispose?.()).catch(() => {});
+                throw error;
+            }
+            this._assertComputeJobCurrent(operation);
             this._aiPipelines[key] = pipe;
-            this._aiLoading = false;
-            this._hideAIProgress();
+            this._hideAIProgress(operation);
             this.toast(label + ' model ready', 'success');
             return pipe;
         } catch(e) {
-            this._aiLoading = false;
-            this._hideAIProgress();
+            this._hideAIProgress(operation);
+            if (this._isComputeAbort(e)) throw e;
             this.toast('Failed to load ' + label + ': ' + e.message, 'error');
             console.error('AI model load error:', e);
             return null;
+        } finally {
+            this._aiLoading = false;
+            if (ownsJob) this._finishComputeJob(operation);
         }
     },
 
@@ -13775,7 +14038,7 @@ self.onmessage = async function(e) {
         return count;
     },
 
-    _applySegmentSelection(target, segment, imageW, imageH) {
+    async _applySegmentSelection(target, segment, imageW, imageH, job = null) {
         const info = this._segmentMaskInfo(this._segmentMaskFor(segment), imageW, imageH);
         if (!info) return 0;
         const cw = this.canvas.width, ch = this.canvas.height;
@@ -13785,6 +14048,7 @@ self.onmessage = async function(e) {
         const pixelH = Math.abs((target.scaleY || 1) * (vpt[3] || 1) * imageH / info.h);
         const fillRadius = Math.min(2, Math.max(0, Math.ceil(Math.max(pixelW, pixelH)) - 1));
         for (let y = 0; y < info.h; y++) {
+            if (job && y > 0 && y % 32 === 0) await this._yieldComputeJob(job);
             for (let x = 0; x < info.w; x++) {
                 if (!this._segmentMaskActive(info, x, y)) continue;
                 const pt = this._imageCanvasPointFromLocal(target, (x + 0.5) * imageW / info.w, (y + 0.5) * imageH / info.h, imageW, imageH);
@@ -13798,36 +14062,42 @@ self.onmessage = async function(e) {
                 }
             }
         }
+        if (job) this._assertComputeJobCurrent(job);
         return this._setPixelSelectionMask(fullMask, cw, ch);
     },
-
     async aiSegmentSelectAt(ptr) {
         const hit = this._segmentTargetAtPoint(ptr);
         if (!hit) { this.toast('Click inside an image layer', 'info'); return; }
         if (this.canvas.setActiveObject) this.canvas.setActiveObject(hit.target);
-        const pipe = await this._loadPipeline(
-            'image-segmentation', 'Xenova/detr-resnet-50-panoptic', 'Segment Select'
-        );
-        if (!pipe) return;
-        this._showAIProgress('Segment Select', 'Analyzing image...');
+        const job = this._startComputeJob('Segment Select', { group:'image-processing', target:hit.target });
         try {
+            const pipe = await this._loadPipeline(
+                'image-segmentation', 'Xenova/detr-resnet-50-panoptic', 'Segment Select', job
+            );
+            if (!pipe) return false;
+            this._showAIProgress('Segment Select', 'Analyzing image...', job);
             const dataUrl = this._imageToDataURL(hit.target);
-            const results = await pipe(dataUrl);
+            const results = await this._raceComputeJob(pipe(dataUrl), job);
             const segment = this._selectSegmentFromResults(results, hit.clickX, hit.clickY, hit.imageW, hit.imageH);
             if (!segment) {
-                this._hideAIProgress();
                 this.toast('No segment found at click point', 'info');
-                return;
+                return false;
             }
-            const count = this._applySegmentSelection(hit.target, segment, hit.imageW, hit.imageH);
-            this._hideAIProgress();
-            if (!count) { this.toast('Segment mask was empty', 'info'); return; }
+            const count = await this._applySegmentSelection(hit.target, segment, hit.imageW, hit.imageH, job);
+            if (!count) { this.toast('Segment mask was empty', 'info'); return false; }
             const label = segment.label ? ': ' + segment.label : '';
             this.toast('Selected segment' + label + ' (' + count.toLocaleString() + ' px)', 'success');
+            return true;
         } catch(e) {
-            this._hideAIProgress();
-            this.toast('Segment Select error: ' + e.message, 'error');
-            console.error('AI Segment error:', e);
+            if (!this._isComputeAbort(e)) {
+                this.toast('Segment Select error: ' + e.message, 'error');
+                console.error('AI Segment error:', e);
+            } else if (!job.cancelled) {
+                this.toast('Segment Select result discarded because the document changed', 'info');
+            }
+            return false;
+        } finally {
+            this._finishComputeJob(job);
         }
     },
 
@@ -13835,63 +14105,83 @@ self.onmessage = async function(e) {
     // Uses Xenova/modnet — proper ONNX model with full Transformers.js support
     _aiRmbgModel: null,
     _aiRmbgProcessor: null,
-    async _loadRmbgModel() {
+    async _loadRmbgModel(job = null) {
         if (this._aiRmbgModel) return true;
         if (this._aiLoading) { this.toast('Another AI model is loading', 'info'); return false; }
+        const operation = job || this._startComputeJob('AI Background Removal', { group:'image-processing' });
+        const ownsJob = !job;
         this._aiLoading = true;
         try {
-            const lib = await this._loadTransformers();
-            this._showAIProgress('Downloading Background Removal Model', 'First-time download, cached for future use');
+            const lib = await this._loadTransformers(operation);
+            this._showAIProgress('Downloading Background Removal Model', 'First-time download, cached for future use', operation);
             let lastPct = 0;
             const progressCb = (p) => {
                 if (p.status === 'progress' && p.progress) {
                     lastPct = p.progress;
-                    this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '');
+                    this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '', operation);
                 } else if (p.status === 'done') {
-                    this._updateAIProgress(100, 'Model loaded');
+                    this._updateAIProgress(100, 'Model loaded', operation);
                 } else if (p.status === 'initiate') {
-                    this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''));
+                    this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''), operation);
                 }
             };
             lib.env.allowLocalModels = false;
-            this._aiRmbgModel = await lib.AutoModel.from_pretrained('Xenova/modnet', {
+            const modelLoading = lib.AutoModel.from_pretrained('Xenova/modnet', {
                 device: 'wasm',
                 dtype: 'fp32',
                 revision: this._modelRevisions['Xenova/modnet'] || 'main',
                 progress_callback: progressCb
             });
-            this._aiRmbgProcessor = await lib.AutoProcessor.from_pretrained('Xenova/modnet', {
+            const processorLoading = lib.AutoProcessor.from_pretrained('Xenova/modnet', {
                 revision: this._modelRevisions['Xenova/modnet'] || 'main',
             });
-            this._aiLoading = false;
-            this._hideAIProgress();
+            let model;
+            let processor;
+            try {
+                [model, processor] = await this._raceComputeJob(Promise.all([modelLoading, processorLoading]), operation);
+            } catch (error) {
+                void Promise.resolve(modelLoading).then(value => value?.dispose?.()).catch(() => {});
+                void Promise.resolve(processorLoading).then(value => value?.dispose?.()).catch(() => {});
+                throw error;
+            }
+            this._assertComputeJobCurrent(operation);
+            this._aiRmbgModel = model;
+            this._aiRmbgProcessor = processor;
+            this._hideAIProgress(operation);
             this.toast('Background Removal model ready', 'success');
             return true;
         } catch(e) {
-            this._aiLoading = false;
-            this._hideAIProgress();
+            this._hideAIProgress(operation);
+            if (this._isComputeAbort(e)) throw e;
             this.toast('Failed to load BG model: ' + e.message, 'error');
             console.error('MODNet load error:', e);
             return false;
+        } finally {
+            this._aiLoading = false;
+            if (ownsJob) this._finishComputeJob(operation);
         }
     },
     async aiRemoveBackground() {
         const target = this._getActiveImage();
         if (!target) return;
-        const ready = await this._loadRmbgModel();
-        if (!ready) return;
-        this._showAIProgress('Removing Background', 'Processing image...');
+        const job = this._startComputeJob('Background Removal', { group:'image-processing', target });
         try {
+            const ready = await this._loadRmbgModel(job);
+            if (!ready) return false;
+            this._showAIProgress('Removing Background', 'Processing image...', job);
             const lib = this._aiLib;
             const el = target.getElement();
             const origW = el.naturalWidth || el.width;
             const origH = el.naturalHeight || el.height;
             const dataUrl = this._imageToDataURL(target);
-            const image = await lib.RawImage.fromURL(dataUrl);
-            const { pixel_values } = await this._aiRmbgProcessor(image);
-            const { output } = await this._aiRmbgModel({ input: pixel_values });
+            const image = await this._raceComputeJob(lib.RawImage.fromURL(dataUrl), job);
+            const { pixel_values } = await this._raceComputeJob(this._aiRmbgProcessor(image), job);
+            const { output } = await this._raceComputeJob(this._aiRmbgModel({ input: pixel_values }), job);
             // output is a tensor — convert to mask and resize to original dimensions
-            const mask = await lib.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(origW, origH);
+            const mask = await this._raceComputeJob(
+                lib.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(origW, origH),
+                job
+            );
             // Apply mask as alpha channel on original image
             const resultCanvas = document.createElement('canvas');
             resultCanvas.width = origW; resultCanvas.height = origH;
@@ -13901,18 +14191,37 @@ self.onmessage = async function(e) {
             const d = imgData.data;
             const mPx = mask.data;
             const channels = mask.channels || 1;
-            for (let i = 0; i < origW * origH; i++) {
-                d[i * 4 + 3] = mPx[i * channels];
+            for (let y = 0; y < origH; y++) {
+                if (y > 0 && y % 64 === 0) {
+                    this._updateAIProgress(70 + y / origH * 25, 'Applying transparency mask…', job);
+                    await this._yieldComputeJob(job);
+                }
+                for (let x = 0; x < origW; x++) {
+                    const i = y * origW + x;
+                    d[i * 4 + 3] = mPx[i * channels];
+                }
             }
             rctx.putImageData(imgData, 0, 0);
             const newUrl = resultCanvas.toDataURL('image/png');
-            this._replaceActiveImage(target, newUrl, 'AI BG Remove');
-            this._hideAIProgress();
+            this._assertComputeJobCurrent(job);
+            const committed = await this._replaceActiveImage(target, newUrl, 'AI BG Remove', {
+                generation:job.generation,
+                revision:job.revision,
+                targetId:job.targetId
+            });
+            if (!committed) return false;
             this.toast('Background removed (AI)', 'success');
+            return true;
         } catch(e) {
-            this._hideAIProgress();
-            this.toast('Background removal error: ' + e.message, 'error');
-            console.error('AI BG Remove error:', e);
+            if (!this._isComputeAbort(e)) {
+                this.toast('Background removal error: ' + e.message, 'error');
+                console.error('AI BG Remove error:', e);
+            } else if (!job.cancelled) {
+                this.toast('Background removal result discarded because the document changed', 'info');
+            }
+            return false;
+        } finally {
+            this._finishComputeJob(job);
         }
     },
 
@@ -13920,14 +14229,15 @@ self.onmessage = async function(e) {
     async aiDepthMap() {
         const target = this._getActiveImage();
         if (!target) return;
-        const pipe = await this._loadPipeline(
-            'depth-estimation', 'Xenova/depth-anything-small-hf', 'Depth Estimation'
-        );
-        if (!pipe) return;
-        this._showAIProgress('Generating Depth Map', 'Processing image...');
+        const job = this._startComputeJob('Depth Map', { group:'image-processing', target });
         try {
+            const pipe = await this._loadPipeline(
+                'depth-estimation', 'Xenova/depth-anything-small-hf', 'Depth Estimation', job
+            );
+            if (!pipe) return false;
+            this._showAIProgress('Generating Depth Map', 'Processing image...', job);
             const dataUrl = this._imageToDataURL(target);
-            const result = await pipe(dataUrl);
+            const result = await this._raceComputeJob(pipe(dataUrl), job);
             // result.depth is a RawImage
             const depth = result.depth;
             const w = depth.width, h = depth.height;
@@ -13939,19 +14249,30 @@ self.onmessage = async function(e) {
             const depthData = depth.data;
             // Normalize to 0-255 range
             let minD = Infinity, maxD = -Infinity;
-            for (let i = 0; i < depthData.length; i++) {
-                if (depthData[i] < minD) minD = depthData[i];
-                if (depthData[i] > maxD) maxD = depthData[i];
+            for (let y = 0; y < h; y++) {
+                if (y > 0 && y % 64 === 0) await this._yieldComputeJob(job);
+                for (let x = 0; x < w; x++) {
+                    const i = y * w + x;
+                    if (depthData[i] < minD) minD = depthData[i];
+                    if (depthData[i] > maxD) maxD = depthData[i];
+                }
             }
             const range = maxD - minD || 1;
-            for (let i = 0; i < w * h; i++) {
-                const val = Math.round(((depthData[i] - minD) / range) * 255);
-                // Apply plasma colormap for visual depth
-                const t = val / 255;
-                pixels[i * 4]     = Math.round(Math.min(1, 1.5 - Math.abs(t - 0.75) * 4) * 255); // R
-                pixels[i * 4 + 1] = Math.round(Math.min(1, 1.5 - Math.abs(t - 0.5) * 4) * 255);  // G
-                pixels[i * 4 + 2] = Math.round(Math.min(1, 1.5 - Math.abs(t - 0.25) * 4) * 255); // B
-                pixels[i * 4 + 3] = 255;
+            for (let y = 0; y < h; y++) {
+                if (y > 0 && y % 64 === 0) {
+                    this._updateAIProgress(70 + y / h * 20, 'Rendering depth colors…', job);
+                    await this._yieldComputeJob(job);
+                }
+                for (let x = 0; x < w; x++) {
+                    const i = y * w + x;
+                    const val = Math.round(((depthData[i] - minD) / range) * 255);
+                    // Apply plasma colormap for visual depth
+                    const t = val / 255;
+                    pixels[i * 4]     = Math.round(Math.min(1, 1.5 - Math.abs(t - 0.75) * 4) * 255); // R
+                    pixels[i * 4 + 1] = Math.round(Math.min(1, 1.5 - Math.abs(t - 0.5) * 4) * 255);  // G
+                    pixels[i * 4 + 2] = Math.round(Math.min(1, 1.5 - Math.abs(t - 0.25) * 4) * 255); // B
+                    pixels[i * 4 + 3] = 255;
+                }
             }
             dctx.putImageData(imgData, 0, 0);
             // Scale to match original image
@@ -13963,18 +14284,24 @@ self.onmessage = async function(e) {
             finalCanvas.getContext('2d').drawImage(depthCanvas, 0, 0, origW, origH);
             const depthUrl = finalCanvas.toDataURL('image/png');
             // Add as new layer above current
-            fabric.Image.fromURL(depthUrl, img => {
-                img.set({ left: target.left, top: target.top, scaleX: target.scaleX, scaleY: target.scaleY, selectable: true, name: 'Depth Map', opacity: 0.85 });
-                this.canvas.add(img); this.canvas.setActiveObject(img);
-                this.layers[this.activeLayerIdx].objects.push(img);
-                this.canvas.renderAll(); this.saveHistory('AI Depth Map'); this.updateLayersPanel();
-                this._hideAIProgress();
-                this.toast('Depth map generated — added as overlay', 'success');
-            });
+            const img = await this._raceComputeJob(fabric.Image.fromURL(depthUrl), job);
+            this._assertComputeJobCurrent(job);
+            img.set({ left: target.left, top: target.top, scaleX: target.scaleX, scaleY: target.scaleY, selectable: true, name: 'Depth Map', opacity: 0.85 });
+            this.canvas.add(img); this.canvas.setActiveObject(img);
+            this.layers[this.activeLayerIdx].objects.push(img);
+            this.canvas.renderAll(); this.saveHistory('AI Depth Map'); this.updateLayersPanel();
+            this.toast('Depth map generated — added as overlay', 'success');
+            return true;
         } catch(e) {
-            this._hideAIProgress();
-            this.toast('Depth map error: ' + e.message, 'error');
-            console.error('AI Depth error:', e);
+            if (!this._isComputeAbort(e)) {
+                this.toast('Depth map error: ' + e.message, 'error');
+                console.error('AI Depth error:', e);
+            } else if (!job.cancelled) {
+                this.toast('Depth map result discarded because the document changed', 'info');
+            }
+            return false;
+        } finally {
+            this._finishComputeJob(job);
         }
     },
 
@@ -13982,17 +14309,17 @@ self.onmessage = async function(e) {
     async aiObjectDetect() {
         const target = this._getActiveImage();
         if (!target) return;
-        const pipe = await this._loadPipeline(
-            'object-detection', 'Xenova/detr-resnet-50', 'Object Detection'
-        );
-        if (!pipe) return;
-        this._showAIProgress('Detecting Objects', 'Analyzing image...');
+        const job = this._startComputeJob('Object Detection', { group:'image-processing', target });
         try {
+            const pipe = await this._loadPipeline(
+                'object-detection', 'Xenova/detr-resnet-50', 'Object Detection', job
+            );
+            if (!pipe) return false;
+            this._showAIProgress('Detecting Objects', 'Analyzing image...', job);
             const dataUrl = this._imageToDataURL(target);
-            const results = await pipe(dataUrl, { threshold: 0.7, percentage: true });
-            this._hideAIProgress();
+            const results = await this._raceComputeJob(pipe(dataUrl, { threshold: 0.7, percentage: true }), job);
             if (!results || results.length === 0) {
-                this.toast('No objects detected', 'info'); return;
+                this.toast('No objects detected', 'info'); return false;
             }
             // Draw bounding boxes as fabric objects
             const el = target.getElement();
@@ -14004,6 +14331,7 @@ self.onmessage = async function(e) {
             const originY = target.top;
             const colors = ['#ff6b6b','#6bff6b','#6b6bff','#ffff6b','#ff6bff','#6bffff','#ffa06b','#a06bff'];
             let ci = 0;
+            const detectedObjects = [];
             results.forEach(det => {
                 const box = det.box;
                 const x = originX + (box.xmin * imgW * scaleX);
@@ -14026,15 +14354,24 @@ self.onmessage = async function(e) {
                       backgroundColor: 'rgba(0,0,0,0.7)', padding: 2,
                       selectable: true, name: 'detect-label-' + det.label }
                 );
-                this.canvas.add(rect); this.canvas.add(label);
-                this.layers[this.activeLayerIdx].objects.push(rect, label);
+                detectedObjects.push(rect, label);
             });
+            this._assertComputeJobCurrent(job);
+            detectedObjects.forEach(object => this.canvas.add(object));
+            this.layers[this.activeLayerIdx].objects.push(...detectedObjects);
             this.canvas.renderAll(); this.saveHistory('AI Object Detection'); this.updateLayersPanel();
             this.toast('Detected ' + results.length + ' object(s)', 'success');
+            return true;
         } catch(e) {
-            this._hideAIProgress();
-            this.toast('Object detection error: ' + e.message, 'error');
-            console.error('AI Detect error:', e);
+            if (!this._isComputeAbort(e)) {
+                this.toast('Object detection error: ' + e.message, 'error');
+                console.error('AI Detect error:', e);
+            } else if (!job.cancelled) {
+                this.toast('Object detection result discarded because the document changed', 'info');
+            }
+            return false;
+        } finally {
+            this._finishComputeJob(job);
         }
     },
 
@@ -14052,9 +14389,10 @@ self.onmessage = async function(e) {
             this.toast('Result would be ' + dstW + 'x' + dstH + ' (' + Math.round(dstW*dstH/1e6) + 'MP) — too large for browser', 'error');
             return;
         }
-        this._showAIProgress('Smart Upscale ' + factor + 'x', 'Resizing ' + srcW + 'x' + srcH + ' to ' + dstW + 'x' + dstH);
-        await new Promise(r => setTimeout(r, 50)); // let UI update
+        const job = this._startComputeJob(`Smart Upscale ${factor}x`, { group:'image-processing', target });
+        this._showAIProgress('Smart Upscale ' + factor + 'x', 'Resizing ' + srcW + 'x' + srcH + ' to ' + dstW + 'x' + dstH, job);
         try {
+            await this._yieldComputeJob(job);
             // Step 1: High-quality multi-pass upscale
             const srcCanvas = document.createElement('canvas');
             srcCanvas.width = srcW; srcCanvas.height = srcH;
@@ -14076,10 +14414,11 @@ self.onmessage = async function(e) {
                 current = next;
                 remaining /= scale;
                 step++;
-                this._updateAIProgress(30 + step * 20, 'Upscale pass ' + step);
+                this._updateAIProgress(30 + step * 20, 'Upscale pass ' + step, job);
+                await this._yieldComputeJob(job);
             }
-            this._updateAIProgress(70, 'Applying adaptive sharpening...');
-            await new Promise(r => setTimeout(r, 30));
+            this._updateAIProgress(70, 'Applying adaptive sharpening...', job);
+            await this._yieldComputeJob(job);
             // Step 2: Adaptive unsharp mask (enhances edges without amplifying noise)
             const finalCtx = current.getContext('2d');
             const imgData = finalCtx.getImageData(0, 0, current.width, current.height);
@@ -14094,23 +14433,42 @@ self.onmessage = async function(e) {
             const blurData = bctx.getImageData(0, 0, w, h).data;
             // Unsharp mask: original + strength * (original - blurred)
             const strength = 0.5;
-            for (let i = 0; i < d.length; i += 4) {
-                for (let c = 0; c < 3; c++) {
-                    const diff = d[i + c] - blurData[i + c];
-                    d[i + c] = Math.max(0, Math.min(255, d[i + c] + diff * strength));
+            for (let y = 0; y < h; y++) {
+                if (y > 0 && y % 32 === 0) {
+                    this._updateAIProgress(70 + y / h * 24, 'Sharpening row ' + y.toLocaleString(), job);
+                    await this._yieldComputeJob(job);
+                }
+                for (let x = 0; x < w; x++) {
+                    const i = (y * w + x) * 4;
+                    for (let c = 0; c < 3; c++) {
+                        const diff = d[i + c] - blurData[i + c];
+                        d[i + c] = Math.max(0, Math.min(255, d[i + c] + diff * strength));
+                    }
                 }
             }
             finalCtx.putImageData(imgData, 0, 0);
-            this._updateAIProgress(95, 'Finalizing...');
-            await new Promise(r => setTimeout(r, 30));
+            this._updateAIProgress(95, 'Finalizing...', job);
+            await this._yieldComputeJob(job);
             const newUrl = current.toDataURL('image/png');
-            this._replaceActiveImage(target, newUrl, 'Upscale ' + factor + 'x');
-            this._hideAIProgress();
+            this._assertComputeJobCurrent(job);
+            const committed = await this._replaceActiveImage(target, newUrl, 'Upscale ' + factor + 'x', {
+                generation:job.generation,
+                revision:job.revision,
+                targetId:job.targetId
+            });
+            if (!committed) return false;
             this.toast('Upscaled to ' + dstW + 'x' + dstH, 'success');
+            return true;
         } catch(e) {
-            this._hideAIProgress();
-            this.toast('Upscale error: ' + e.message, 'error');
-            console.error('Upscale error:', e);
+            if (!this._isComputeAbort(e)) {
+                this.toast('Upscale error: ' + e.message, 'error');
+                console.error('Upscale error:', e);
+            } else if (!job.cancelled) {
+                this.toast('Upscale result discarded because the document changed', 'info');
+            }
+            return false;
+        } finally {
+            this._finishComputeJob(job);
         }
     },
 
