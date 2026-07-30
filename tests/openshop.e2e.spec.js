@@ -4403,3 +4403,57 @@ test('hands AI pipelines canvas pixels, and cancels or fails without touching th
   expect(result.afterCancel.progressVisible).toBe(false);
   expect(result.afterCancel.elementUnchanged).toBe(true);
 });
+
+test('sizes exported PDF pages and PSD resolution to the document', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(600, 400, { resetProject: true, background: '#ffffff' });
+
+    const { structure } = OS._withExportCanvasState({ transparent: true }, () => OS._buildPsdExportStructure());
+
+    // Rebuild what exportPDF writes, without triggering a download.
+    const { jsPDF } = window.jspdf;
+    const pageW = OS.canvasW * 72 / 96;
+    const pageH = OS.canvasH * 72 / 96;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [pageW, pageH] });
+    pdf.setProperties({ title: 'Fidelity', creator: 'OpenShop' });
+    pdf.setLanguage('en-US');
+    const captured = OS._captureExportRaster({ format: 'png', transparent: false, matte: '#ffffff' });
+    pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH);
+    const bytes = new Uint8Array(pdf.output('arraybuffer'));
+    let text = '';
+    for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+
+    return {
+      resolution: structure.imageResources?.resolutionInfo || null,
+      psdSize: [structure.width, structure.height],
+      mediaBox: (text.match(/\/MediaBox\s*\[([^\]]+)\]/) || [])[1],
+      hasLang: /\/Lang\s*\(/.test(text),
+      hasTitle: /\/Title\s*\(/.test(text),
+      imageWidth: (text.match(/\/Width\s+(\d+)/) || [])[1]
+    };
+  });
+
+  // 600x400 CSS pixels is 6.25 x 4.17 inches, so 450 x 300 points. jsPDF's
+  // 'px' unit produced 800 x 533.33pt — an 11.1in page at roughly 54 DPI.
+  const [x0, y0, x1, y1] = result.mediaBox.trim().split(/\s+/).map(Number);
+  expect([x0, y0]).toEqual([0, 0]);
+  expect(Math.round(x1)).toBe(450);
+  expect(Math.round(y1)).toBe(300);
+  // The raster itself is still the document's pixels.
+  expect(result.imageWidth).toBe('600');
+  expect(result.hasLang).toBe(true);
+  expect(result.hasTitle).toBe(true);
+
+  // Without a resolution resource Photoshop picks its own density and the
+  // document's physical size becomes whatever the reader guesses.
+  expect(result.psdSize).toEqual([600, 400]);
+  expect(result.resolution).toMatchObject({
+    horizontalResolution: 96,
+    verticalResolution: 96,
+    horizontalResolutionUnit: 'PPI',
+    verticalResolutionUnit: 'PPI'
+  });
+});

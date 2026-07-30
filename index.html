@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-Nx8k0MZQYCfOUolsO/Oz9GQ02J0tx4Ykm+M+XhJY0oM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-KNbzvzJ4G2r/+5x6V9d63+pcriPtCMV7zO4BaM6IwNs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -8757,9 +8757,23 @@ self.onmessage = function(event) {
         try {
             const { jsPDF } = window.jspdf;
             const landscape = this.canvasW > this.canvasH;
-            const pdf = new jsPDF({ orientation:landscape ? 'landscape' : 'portrait', unit:'px', format:[this.canvasW, this.canvasH] });
+            // jsPDF's 'px' unit produced a page 4/3 larger than the document —
+            // a 600x400 canvas came out as 800x533.33pt, an 11.1in-wide page at
+            // roughly 54 DPI. Work in points and treat canvas pixels as CSS
+            // pixels (96 per inch), so the page is the document's real size.
+            const pageW = this.canvasW * 72 / 96;
+            const pageH = this.canvasH * 72 / 96;
+            const pdf = new jsPDF({ orientation:landscape ? 'landscape' : 'portrait', unit:'pt', format:[pageW, pageH] });
+            pdf.setProperties?.({
+                title: this._docName || 'Untitled',
+                creator: 'OpenShop',
+                subject: `${this.canvasW}x${this.canvasH} px at 96 DPI`
+            });
+            // Screen readers and reflow both need a language; a PDF without one
+            // is announced in the reader's default voice.
+            pdf.setLanguage?.(document.documentElement.getAttribute('lang') || 'en-US');
             const captured = this._captureExportRaster({ format:'png', transparent:false, matte });
-            pdf.addImage(captured.dataUrl, 'PNG', 0, 0, this.canvasW, this.canvasH);
+            pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH);
             pdf.save(this._exportFileName('pdf'));
             this.toast('Exported as PDF', 'success');
             return true;
@@ -8896,6 +8910,20 @@ self.onmessage = function(event) {
         const structure = {
             width:this.canvasW,
             height:this.canvasH,
+            // Without a resolution resource Photoshop opens the file at its own
+            // default and the document's physical size is whatever the reader
+            // guesses. Canvas pixels are CSS pixels, so 96 per inch — the same
+            // density the PDF export sizes its page from.
+            imageResources:{
+                resolutionInfo:{
+                    horizontalResolution:96,
+                    horizontalResolutionUnit:'PPI',
+                    widthUnit:'Inches',
+                    verticalResolution:96,
+                    verticalResolutionUnit:'PPI',
+                    heightUnit:'Inches'
+                }
+            },
             children:[]
         };
         const composite = this._capturePSDCompositeCanvas();

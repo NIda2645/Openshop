@@ -218,3 +218,31 @@ Top opportunities, in priority order:
 
 - May the hosted GitHub Pages build ship a same-origin `sw.js` and static manifest while the downloadable artifact remains one HTML file? This determines whether PWA/offline/file handling is implemented or the claims are removed.
 - Must the new project schema open every historical JSON emitted by OpenShop, or is 0.20.0 the compatibility floor? This determines migration-fixture scope.
+
+## Export fidelity audit — PDF and PSD (2026-07-30)
+
+[Verified] Fixture: a 600x400 document with a white background fill, two raster layers (one at 60% opacity in Multiply, parented into a PSD group), and one editable text layer. Exported through the app's own `exportPDF` and `_buildPsdExportStructure` paths and then read back with tools that share no code with the exporters.
+
+**Method and its limits.** Adobe Photoshop and Acrobat are not installed on this machine, so "opens correctly in Photoshop" is not claimed. Instead the PSD was parsed byte by byte with an independent reader (header, image-resource blocks, layer records, section dividers, additional-info keys) and the PDF was inspected structurally and validated with veraPDF 1.30.2. That verifies what the file *says*; it does not verify how Adobe renders it. A pass in the target applications remains open.
+
+### PSD — verified correct
+- Header: 600x400, 8 bits per channel, RGB (colour mode 3), 4 channels.
+- Layer names round-trip as Unicode (`luni`), including inside groups.
+- Group nesting is written the way Photoshop expects: a `</Layer group>` end record below the children and an `lsct` section divider above them. `Multiply Tint` resolves inside `Tints`; the other three layers stay at the root.
+- Blend mode `mul ` and opacity 153/255 (60%) survive on the layer that carries them.
+- The text layer carries a `TySh` record, so it is written as editable type rather than only as pixels.
+- The locked background carries `lspf`.
+
+### PSD — fixed by this audit
+- **No resolution resource was written.** Nothing set image resource `0x03ED`, so the document had no DPI at all and its physical size was whatever the reader defaulted to. Canvas pixels are CSS pixels, so the exporter now declares 96 PPI on both axes, verified present in the written bytes.
+
+### PSD — still open
+- **No ICC profile is embedded** (no `0x040F` resource). OpenShop has no colour management: everything is untagged sRGB by assumption. A wide-gamut display or a print workflow will not get what it needs. This is a feature gap, not a regression, and is left on the roadmap.
+
+### PDF — fixed by this audit
+- **The page was the wrong physical size.** jsPDF's `unit:'px'` produced `/MediaBox [0 0 800 533.33]` for a 600x400 document — an 11.1 x 7.4 inch page holding a 600 px image, about 54 DPI. Printing or placing that file gave a document a third larger than intended. The exporter now works in points and treats canvas pixels as CSS pixels, so the same document is `/MediaBox [0 0 450 300]`: 6.25 x 4.17 inches at 96 DPI, with the raster still at its full 600 px width.
+- **No document metadata or language.** `/Title`, `/Creator` and `/Lang` are now written; a PDF with no language is announced in the reader's default voice.
+
+### PDF — still open
+- veraPDF fails both PDF/UA-1 and PDF/A-2B, as expected: the file is a single untagged image with no `/StructTreeRoot`, no `/MarkInfo`, no XMP `/Metadata` and no `/OutputIntent`. Tagging a flattened raster is of limited value, but an `/OutputIntent` plus XMP metadata would make the export archival, and exporting text as real text rather than pixels would make it accessible. Both are roadmap-sized, not one-line fixes.
+- The image is embedded uncompressed (no `/Filter` on the image stream in this build of jsPDF), which is why a 600x400 export is roughly 940 KB. Worth revisiting if PDF size matters.
