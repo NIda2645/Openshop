@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-WTMM+8v5qpUxMlnHVs6EK5AFZl5ybcxoKZAweFY8eck=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-VLz6G6jJqLCh4GzP3AexME9u9ZJixxkX04vnOVRUs10=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.21.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3447,6 +3447,7 @@ const OS = {
             btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); } });
         });
         this._initMenuAccessibility();
+        this._initModalFocusManagement();
         document.querySelectorAll('.panel-tab').forEach(tab => {
             tab.setAttribute('role', 'tab');
         });
@@ -12961,6 +12962,102 @@ self.onmessage = async function(e) {
         }
     },
 
+    // ====================== MODAL FOCUS MANAGEMENT ======================
+    // Dialogs are built ad hoc in ~20 places, so the semantics and the focus
+    // trap are applied centrally as each one enters the document rather than
+    // being copied into every call site (and forgotten in most of them).
+    _modalStack: [],
+    _modalTitleSeq: 0,
+    _isVisibleElement(el) {
+        return Boolean(el?.isConnected) && el.getClientRects().length > 0;
+    },
+    _focusablesIn(root) {
+        const selector = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+        return [...root.querySelectorAll(selector)].filter(el => this._isVisibleElement(el));
+    },
+    _adoptModal(overlay) {
+        if (!overlay || this._modalStack.some(entry => entry.overlay === overlay)) return;
+        // A few dialogs already declare role="dialog" on the inner panel; naming
+        // the overlay too would publish the same dialog twice to assistive tech.
+        const dialog = overlay.matches('[role="dialog"],[role="alertdialog"]')
+            ? overlay
+            : overlay.querySelector('[role="dialog"],[role="alertdialog"]') || overlay;
+        if (!dialog.getAttribute('role')) dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        if (!dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby')) {
+            const heading = dialog.querySelector('h1,h2,h3,h4');
+            if (heading) {
+                if (!heading.id) heading.id = `modal-title-${++this._modalTitleSeq}`;
+                dialog.setAttribute('aria-labelledby', heading.id);
+            }
+        }
+        this._modalStack.push({ overlay, returnTo: document.activeElement });
+        if (overlay.contains(document.activeElement)) return;
+        // Content is often appended in the same frame the overlay is inserted.
+        requestAnimationFrame(() => {
+            if (!overlay.isConnected || overlay.contains(document.activeElement)) return;
+            const target = overlay.querySelector('[autofocus]') || this._focusablesIn(overlay)[0];
+            if (target) { target.focus(); return; }
+            overlay.setAttribute('tabindex', '-1');
+            overlay.focus();
+        });
+    },
+    _releaseModal(overlay) {
+        const index = this._modalStack.findIndex(entry => entry.overlay === overlay);
+        if (index < 0) return;
+        const [entry] = this._modalStack.splice(index, 1);
+        const returnTo = entry.returnTo;
+        // Only the topmost dialog owns focus; restoring from a lower one would
+        // yank focus out of a dialog that is still open.
+        if (index !== this._modalStack.length) return;
+        if (returnTo && document.contains(returnTo) && this._isVisibleElement(returnTo) && typeof returnTo.focus === 'function') returnTo.focus();
+    },
+    _syncManagedDialog(el) {
+        if (this._isVisibleElement(el)) this._adoptModal(el);
+        else this._releaseModal(el);
+    },
+    _onModalTabKey(event) {
+        if (event.key !== 'Tab') return;
+        while (this._modalStack.length && !this._modalStack.at(-1).overlay.isConnected) {
+            this._modalStack.pop();
+        }
+        const top = this._modalStack.at(-1)?.overlay;
+        if (!top) return;
+        const focusables = this._focusablesIn(top);
+        if (!focusables.length) { event.preventDefault(); return; }
+        const first = focusables[0];
+        const last = focusables.at(-1);
+        const active = document.activeElement;
+        if (!top.contains(active)) {
+            event.preventDefault();
+            (event.shiftKey ? last : first).focus();
+            return;
+        }
+        if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+    },
+    _initModalFocusManagement() {
+        const body = document.body;
+        const isOverlay = node => node?.nodeType === 1 && node.classList?.contains('modal-overlay');
+        new MutationObserver(records => {
+            for (const record of records) {
+                record.addedNodes.forEach(node => { if (isOverlay(node)) this._adoptModal(node); });
+                record.removedNodes.forEach(node => { if (isOverlay(node)) this._releaseModal(node); });
+            }
+        }).observe(body, { childList: true });
+
+        // These two are permanent nodes toggled by class, so insertion never fires.
+        ['welcome-overlay', 'cmd-palette'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            new MutationObserver(() => this._syncManagedDialog(el))
+                .observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+            this._syncManagedDialog(el);
+        });
+
+        document.addEventListener('keydown', event => this._onModalTabKey(event), true);
+    },
+
     // ====================== DROPZONE ======================
     initDropzone() {
         let dragCounter = 0;
@@ -15463,9 +15560,11 @@ document.addEventListener('keydown', e => {
     const overlay = overlays.at(-1);
     if (overlay) {
         const dismiss = overlay.querySelector('[data-modal-cancel],[data-modal-close]');
-        if (!dismiss) return;
+        // A dialog that demands a decision (crash recovery) has no cancel, but
+        // Escape still has to stop here — letting it fall through dismissed the
+        // welcome screen underneath and reached the canvas shortcut handler.
         stop();
-        dismiss.click();
+        if (dismiss) dismiss.click();
         return;
     }
     // Modeless surfaces are dismissible too; without this Escape fell through

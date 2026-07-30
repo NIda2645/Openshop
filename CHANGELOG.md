@@ -7,6 +7,9 @@ All notable changes to Openshop will be documented in this file.
 ### Fixed
 - Operate the whole menubar from the keyboard: arrow keys move between menus and rows, Enter or Space opens and activates, Home and End jump to the ends, typing a letter jumps to the next matching row, Escape closes one level at a time, and clicking a menu title now keeps it open instead of requiring the pointer to stay put
 - Announce menus correctly to screen readers: menus, rows, separators, and submenu state carry real roles, submenu arrows and nested rows no longer leak into a menu's own name (Filter announced as "Filter ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸"), shortcuts are exposed as key shortcuts rather than name text, and the "Models download on first use" note in the AI menu is no longer hidden from assistive technology
+- Keep Tab inside the open dialog instead of letting it walk into the editor behind, move focus into a dialog when it opens, and hand focus back to the control that opened it when it closes — applied to every dialog, the welcome launcher, and the command palette
+- Name every dialog to assistive technology from its own heading and mark it modal, without publishing the same dialog twice for panels that already declared themselves
+- Stop Escape from falling through a dialog that has no cancel button: pressing it during the crash-recovery prompt no longer dismisses the welcome screen underneath and reaches the canvas shortcut handler
 
 ## [v0.21.0] - 2026-07-30
 

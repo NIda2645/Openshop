@@ -2194,3 +2194,88 @@ test('drives the whole menubar from the keyboard with clean accessible names', a
     document.querySelector('[data-os-click="click-027"]')?.getAttribute('aria-keyshortcuts'));
   expect(shortcut).toBe('Ctrl+A');
 });
+
+test('traps focus inside dialogs and returns it to whatever opened them', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Open New Image from the menubar so the trigger is a real focused control.
+  await page.locator('.menu-bar > .menu-item').first().focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  const overlay = page.locator('.modal-overlay').last();
+  await expect(overlay).toBeVisible();
+
+  const named = await page.evaluate(() => {
+    const dialog = document.querySelector('.modal-overlay:last-of-type [role="dialog"], .modal-overlay:last-of-type');
+    const labelledBy = dialog.getAttribute('aria-labelledby');
+    return {
+      modal: dialog.getAttribute('aria-modal'),
+      role: dialog.getAttribute('role'),
+      title: labelledBy ? document.getElementById(labelledBy)?.textContent : null,
+      dialogCount: document.querySelectorAll('.modal-overlay [role="dialog"], .modal-overlay[role="dialog"]').length
+    };
+  });
+  expect(named.role).toBe('dialog');
+  expect(named.modal).toBe('true');
+  expect(named.title).toBe('New Image');
+  // One dialog node per overlay — not the overlay and its inner panel both.
+  expect(named.dialogCount).toBe(1);
+
+  // Focus is moved into the dialog rather than left behind it.
+  expect(await page.evaluate(() => document.querySelector('.modal-overlay').contains(document.activeElement))).toBe(true);
+
+  // Tab wraps at both ends instead of escaping into the editor behind.
+  const focusables = await page.evaluate(() => {
+    const o = document.querySelector('.modal-overlay');
+    return [...o.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.getClientRects().length).length;
+  });
+  expect(focusables).toBeGreaterThan(1);
+
+  await page.evaluate(() => {
+    const o = document.querySelector('.modal-overlay');
+    const list = [...o.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.getClientRects().length);
+    list.at(-1).focus();
+  });
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => {
+    const o = document.querySelector('.modal-overlay');
+    const list = [...o.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.getClientRects().length);
+    return document.activeElement === list[0];
+  })).toBe(true);
+  await page.keyboard.press('Shift+Tab');
+  expect(await page.evaluate(() => {
+    const o = document.querySelector('.modal-overlay');
+    const list = [...o.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.getClientRects().length);
+    return document.activeElement === list.at(-1);
+  })).toBe(true);
+
+  // Escape closes it and hands focus back to the menu that opened it.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.modal-overlay')).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe('File');
+});
+
+test('keeps a decision-only dialog on screen when Escape is pressed', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#welcome-overlay')).toBeVisible();
+
+  // The recovery prompt has Restore/Copy/Discard but deliberately no cancel.
+  await page.evaluate(() => OS._offerRecovery('{"version":1,"objects":[]}'));
+  const recovery = page.locator('.modal-overlay.recovery-overlay');
+  await expect(recovery).toBeVisible();
+  await expect(recovery.locator('[data-modal-cancel],[data-modal-close]')).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  // Escape used to fall through: the prompt stayed and the welcome screen behind
+  // it was dismissed instead.
+  await expect(recovery).toBeVisible();
+  await expect(page.locator('#welcome-overlay')).toBeVisible();
+
+  await recovery.getByRole('button', { name: 'Discard' }).click();
+  await expect(recovery).toHaveCount(0);
+});
