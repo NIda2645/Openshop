@@ -67,6 +67,45 @@ test.describe('hosted offline contract', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('versions the runtime cache, prunes stale ones, and refuses opaque error responses', async ({ page }) => {
+    await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
+    await page.getByRole('button', { name: 'Enter Studio' }).click();
+    await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+
+    const result = await page.evaluate(async () => {
+      const status = await OS._requestOfflineWorker('OPENSHOP_GET_STATUS');
+      const runtimeName = `openshop-runtime-${status.activeRevision}`;
+
+      // A cache left by an older shell, which nothing used to prune.
+      const stale = await caches.open('openshop-runtime-0.0.1-r1');
+      await stale.put('https://example.test/stale.js', new Response('stale'));
+
+      // An error page fetched no-cors used to be stored opaque — status hidden —
+      // and served cache-first forever, outliving the network recovering.
+      const missing = 'https://cdn.jsdelivr.net/npm/openshop-does-not-exist@0.0.0/missing.js';
+      await fetch(missing, { mode: 'no-cors' }).catch(() => {});
+
+      await OS._requestOfflineWorker('OPENSHOP_CONFIRM_BOOT', { revision: status.activeRevision });
+
+      const names = await caches.keys();
+      const runtime = await caches.open(runtimeName);
+      const poisoned = await runtime.match(missing);
+      return {
+        activeRevision: status.activeRevision,
+        runtimeNames: names.filter(name => name.startsWith('openshop-runtime-')),
+        unversioned: names.includes('openshop-runtime-v1'),
+        poisonedCached: Boolean(poisoned),
+        poisonedStatus: poisoned ? poisoned.status : null
+      };
+    });
+
+    expect(result.runtimeNames).toEqual([`openshop-runtime-${result.activeRevision}`]);
+    expect(result.unversioned).toBe(false);
+    expect(result.poisonedCached).toBe(false);
+  });
+
   test('declares supported file handlers and consumes a queued project launch', async ({ page, request }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'launchQueue', {

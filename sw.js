@@ -4,7 +4,11 @@ const SHELL_REVISION = '0.23.0-r1';
 const STATE_SCHEMA = 1;
 const SHELL_CACHE_PREFIX = 'openshop-shell-';
 const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SHELL_REVISION}`;
-const RUNTIME_CACHE = 'openshop-runtime-v1';
+// Versioned with the shell: an unversioned runtime cache meant a fix to any
+// non-enumerated asset never reached a client that had already cached it.
+const RUNTIME_CACHE_PREFIX = 'openshop-runtime-';
+const RUNTIME_CACHE = `${RUNTIME_CACHE_PREFIX}${SHELL_REVISION}`;
+const RUNTIME_CACHE_LIMIT = 60;
 const META_CACHE = 'openshop-offline-meta-v1';
 // Navigations that may occur before the health handshake completes without
 // meaning the new shell is broken (extra tab, refresh, quick close).
@@ -156,11 +160,38 @@ async function stageShell() {
 }
 
 async function trimShellCaches(keepRevisions) {
-    const keep = new Set([...keepRevisions].filter(Boolean).map(shellCacheName));
+    const revisions = [...keepRevisions].filter(Boolean);
+    const keep = new Set(revisions.map(shellCacheName));
+    const keepRuntime = new Set(revisions.map(revision => `${RUNTIME_CACHE_PREFIX}${revision}`));
+    keepRuntime.add(RUNTIME_CACHE);
     const names = await caches.keys();
     await Promise.all(names
-        .filter(name => name.startsWith(SHELL_CACHE_PREFIX) && !keep.has(name))
+        .filter(name => (name.startsWith(SHELL_CACHE_PREFIX) && !keep.has(name))
+            || (name.startsWith(RUNTIME_CACHE_PREFIX) && !keepRuntime.has(name)))
         .map(name => caches.delete(name)));
+}
+
+// Cache keys are insertion-ordered, so the oldest entries go first.
+async function trimRuntimeCache(cache) {
+    const keys = await cache.keys();
+    const excess = keys.length - RUNTIME_CACHE_LIMIT;
+    for (let index = 0; index < excess; index++) await cache.delete(keys[index]);
+}
+
+async function fetchRuntimeAsset(request) {
+    // An opaque response hides its status, so a captive-portal or CDN error
+    // page fetched no-cors used to cache as if it were the asset and be served
+    // cache-first forever. Ask again with CORS — every runtime origin allows
+    // it — so the status is visible and the entry is safe to keep.
+    if (request.mode === 'no-cors' && RUNTIME_ORIGINS.has(new URL(request.url).origin)) {
+        try {
+            const cors = await fetch(request.url, { mode:'cors', credentials:'omit' });
+            if (cors.ok) return cors;
+        } catch {
+            // Fall through to the request as the page made it.
+        }
+    }
+    return fetch(request);
 }
 
 async function activateShell() {
@@ -261,9 +292,10 @@ async function handleAsset(request) {
     const runtime = await caches.open(RUNTIME_CACHE);
     const cached = await runtime.match(request);
     if (cached) return cached;
-    const response = await fetch(request);
-    if (response && (response.ok || response.type === 'opaque')) {
+    const response = await fetchRuntimeAsset(request);
+    if (response && response.ok && response.type !== 'opaque') {
         await runtime.put(request, response.clone());
+        await trimRuntimeCache(runtime);
     }
     return response;
 }
