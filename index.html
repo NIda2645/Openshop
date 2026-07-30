@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-PRVQN2a9N/5jr8fq3rPfFnbQ3/gRAIXT12/0Gi0yDJs=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-nStvKpRas/t3oC+ADVJDzUdaZK4BeSiY4bUz5++Sqc4=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3679,7 +3679,14 @@ const OS = {
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
     },
     async doNewImage(o) {
-        const w=+o.querySelector('#ni-w').value||1920, h=+o.querySelector('#ni-h').value||1080;
+        const limit = this._importLimits.maxImageDimension;
+        const width = this._readNumberInput(o.querySelector('#ni-w'), { min:1, max:limit, fallback:1920 });
+        const height = this._readNumberInput(o.querySelector('#ni-h'), { min:1, max:limit, fallback:1080 });
+        if (!width.valid || !height.valid) {
+            this.toast(`Canvas size must be between 1 and ${limit} pixels`, 'error');
+            return;
+        }
+        const w = width.value, h = height.value;
         if (!await this._confirmDiscardUnsaved('Creating a new document')) return;
         this.createNewDocument(w,h,{resetProject:true});
         o.remove();
@@ -3701,6 +3708,15 @@ const OS = {
         if (width > this._importLimits.maxImageDimension || height > this._importLimits.maxImageDimension) throw new Error('Image dimensions exceed import limits');
         if (width * height > this._importLimits.maxImagePixels) throw new Error('Image pixel count exceeds import limits');
         return { width, height };
+    },
+    // Number inputs only enforce min/max for the spinners, not typed text, so
+    // every reader clamps instead of silently substituting a default.
+    _readNumberInput(input, { min, max, fallback }) {
+        const raw = String(input?.value ?? '').trim();
+        const value = Number(raw);
+        if (!raw || !Number.isFinite(value)) return { value: fallback, valid: false };
+        const clamped = Math.min(max, Math.max(min, Math.round(value)));
+        return { value: clamped, valid: clamped === Math.round(value) };
     },
     _isEmbeddedAssetUrl(value) {
         return /^\s*(data:|blob:)/i.test(String(value ?? ''));
@@ -6702,7 +6718,12 @@ self.onmessage = function(event) {
             <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
             <button class="btn btn-primary" data-modal-action>OK</button></div></div>`;
         o.querySelector('[data-modal-action]').addEventListener('click', () => {
-            this._doModifySelection(type, +o.querySelector('#mod-sel-px').value);
+            const pixels = this._readNumberInput(o.querySelector('#mod-sel-px'), { min:1, max:100, fallback:0 });
+            if (!pixels.valid || pixels.value < 1) {
+                this.toast('Enter a pixel amount between 1 and 100', 'error');
+                return;
+            }
+            this._doModifySelection(type, pixels.value);
             o.remove();
         });
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
@@ -6792,6 +6813,12 @@ self.onmessage = function(event) {
                     newMask[y * w + x] = sum >= 5 ? 1 : 0;
                 }
                 break;
+        }
+        // An operation that clears every pixel would leave the user with no
+        // selection and no way back, so keep the original instead.
+        if (!newMask.some(value => value)) {
+            this.toast(`Selection ${type} would clear the selection; original kept`, 'info');
+            return;
         }
         m.mask = newMask;
         this._recalcSelectionBounds(m);
@@ -8158,9 +8185,16 @@ self.onmessage = function(event) {
         document.getElementById('canvas-dims').textContent = `${width} x ${height}`;
     },
     doResize(overlay) {
+        const limit = this._importLimits.maxImageDimension;
+        const width = this._readNumberInput(overlay.querySelector('#rs-w'), { min:1, max:limit, fallback:this.canvasW });
+        const height = this._readNumberInput(overlay.querySelector('#rs-h'), { min:1, max:limit, fallback:this.canvasH });
+        if (!width.valid || !height.valid) {
+            this.toast(`Canvas size must be between 1 and ${limit} pixels`, 'error');
+            return false;
+        }
         const command = this._makeCommand('canvas.resize', {
-            width:+overlay.querySelector('#rs-w').value || this.canvasW,
-            height:+overlay.querySelector('#rs-h').value || this.canvasH
+            width:width.value,
+            height:height.value
         });
         this._resizeCanvasDocumentRaw(command.args.width, command.args.height);
         this.saveHistory('Resize', { command });
@@ -11146,15 +11180,33 @@ self.onmessage = async function(event) {
             </div>
             <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
             <button class="btn btn-primary" data-modal-action>Apply</button></div></div>`;
+        // Show the accent that is actually in effect, otherwise pressing Apply
+        // for any other reason silently resets a customised accent.
+        const accentInput = o.querySelector('#pref-accent');
+        const activeAccent = this._themeColor('--accent', '#3978ff');
+        if (/^#[0-9a-fA-F]{6}$/.test(activeAccent)) accentInput.value = activeAccent.toLowerCase();
         o.querySelector('[data-modal-action]').addEventListener('click', () => this._applyPreferences(o));
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
     },
     _applyPreferences(overlay) {
-        this._prefs.defaultW = +overlay.querySelector('#pref-dw').value || 1920;
-        this._prefs.defaultH = +overlay.querySelector('#pref-dh').value || 1080;
-        this.gridSize = +overlay.querySelector('#pref-grid').value || 20;
-        this._prefs.snapTolerance = +overlay.querySelector('#pref-snap').value || 5;
-        this.maxHistory = +overlay.querySelector('#pref-hist').value || 60;
+        const limit = this._importLimits.maxImageDimension;
+        const read = (sel, min, max, fallback) =>
+            this._readNumberInput(overlay.querySelector(sel), { min, max, fallback });
+        const dw = read('#pref-dw', 1, limit, 1920);
+        const dh = read('#pref-dh', 1, limit, 1080);
+        const grid = read('#pref-grid', 1, 500, 20);
+        const snap = read('#pref-snap', 0, 100, 5);
+        // A non-positive cap evicts every entry as soon as it is pushed, which
+        // silently disables undo for the rest of the session.
+        const history = read('#pref-hist', 10, 200, 60);
+        if ([dw, dh, grid, snap, history].some(entry => !entry.valid)) {
+            this.toast('Some preferences were out of range and have been clamped', 'info');
+        }
+        this._prefs.defaultW = dw.value;
+        this._prefs.defaultH = dh.value;
+        this.gridSize = grid.value;
+        this._prefs.snapTolerance = snap.value;
+        this.maxHistory = history.value;
         const accent = overlay.querySelector('#pref-accent').value;
         document.documentElement.style.setProperty('--accent', accent);
         const lang = overlay.querySelector('#pref-lang')?.value || 'en';

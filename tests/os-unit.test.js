@@ -863,6 +863,25 @@ describe('OpenShop core object', () => {
     )).toThrow(/exceeds import limits/);
   });
 
+  it('clamps numeric dialog input instead of substituting defaults', () => {
+    const OS = loadOpenShop();
+    const input = (value) => ({ value });
+    const opts = { min: 1, max: 8000, fallback: 1920 };
+
+    expect(OS._readNumberInput(input('800'), opts)).toEqual({ value: 800, valid: true });
+    // Out of range clamps and reports invalid rather than silently defaulting.
+    expect(OS._readNumberInput(input('-50'), opts)).toEqual({ value: 1, valid: false });
+    expect(OS._readNumberInput(input('999999'), opts)).toEqual({ value: 8000, valid: false });
+    expect(OS._readNumberInput(input('0'), opts)).toEqual({ value: 1, valid: false });
+    expect(OS._readNumberInput(input(''), opts)).toEqual({ value: 1920, valid: false });
+    expect(OS._readNumberInput(input('abc'), opts)).toEqual({ value: 1920, valid: false });
+
+    // A negative history cap would evict every entry and disable undo.
+    const history = OS._readNumberInput(input('-5'), { min: 10, max: 200, fallback: 60 });
+    expect(history.value).toBe(10);
+    expect(history.valid).toBe(false);
+  });
+
   it('guards document-replacing actions when the document is dirty', async () => {
     const OS = loadOpenShop();
     OS.canvas = createCanvasMock();

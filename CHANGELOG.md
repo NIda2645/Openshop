@@ -17,6 +17,9 @@ All notable changes to Openshop will be documented in this file.
 
 - Make the Midnight and OLED themes apply to the whole studio: the precision-studio chrome now draws from the design tokens instead of ~170 hardcoded literals, so the topbar, toolbar, panels, dialogs, status bar, and canvas well all follow the selected theme, and the canvas-drawn rulers, curves grid, histogram, navigator, and before/after chrome repaint on a theme change
 - Persist the selected theme across reloads and apply it during startup rather than after the welcome screen is dismissed
+- Validate numeric dialog input instead of silently substituting defaults: New Image, Resize Canvas, and Preferences now clamp to their declared ranges, so a negative or empty value can no longer create an invalid canvas or disable undo by setting a non-positive history limit
+- Reject invalid amounts in Expand, Contract, and Border Selection, and keep the existing selection when the operation would clear it, instead of wiping it and reporting "expanded by NaNpx"
+- Show the accent colour currently in effect when Preferences opens, so applying an unrelated preference no longer resets a customised accent
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
