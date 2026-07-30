@@ -648,7 +648,7 @@ describe('OpenShop core object', () => {
     const info = { active, canvas: { width: 1, height: 1 }, imgData: input };
     OS._getActiveImageData = vi.fn(() => info);
     OS._runFilterWithPhoton = vi.fn().mockResolvedValue(output);
-    OS._commitImageData = vi.fn();
+    OS._commitImageData = vi.fn().mockResolvedValue(true);
 
     await OS.applyFilterDirect('Sharpen');
 
@@ -659,9 +659,36 @@ describe('OpenShop core object', () => {
       1,
       {}
     );
-    expect(OS._commitImageData).toHaveBeenCalledWith({...info, imgData: output}, 'Filter: Sharpen');
+    // The success toast now belongs to the commit, which only fires it once the
+    // late guard inside _replaceActiveImage has passed.
+    expect(OS._commitImageData).toHaveBeenCalledWith(
+      {...info, imgData: output},
+      'Filter: Sharpen',
+      { success: 'Applied Sharpen' }
+    );
     expect(OS._lastFilter).toBe('Sharpen');
-    expect(OS.toast).toHaveBeenCalledWith('Applied Sharpen', 'success');
+  });
+
+  it('leaves the last filter unset when the commit is rejected late', async () => {
+    const OS = loadOpenShop();
+    const active = { name: 'Photo', type: 'image' };
+    const canvas = createCanvasMock([active]);
+    canvas.setActiveObject(active);
+    OS.canvas = canvas;
+    quietUiMethods(OS);
+
+    const input = { data: new Uint8ClampedArray([10, 20, 30, 255]), width: 1, height: 1 };
+    OS._getActiveImageData = vi.fn(() => ({ active, canvas: { width: 1, height: 1 }, imgData: input }));
+    OS._runFilterWithPhoton = vi.fn().mockResolvedValue({ data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1 });
+    // The document changed while the filter ran, so the commit refuses it.
+    OS._commitImageData = vi.fn().mockResolvedValue(false);
+    OS._lastFilter = 'Sepia';
+
+    const applied = await OS.applyFilterDirect('Sharpen');
+
+    expect(applied).toBe(false);
+    // Reapply Last Filter must not point at a filter that never landed.
+    expect(OS._lastFilter).toBe('Sepia');
   });
 
   it('bounds PSD headers, layer structure, transferred pixels, and aggregate decode memory', () => {

@@ -3061,3 +3061,71 @@ test('offers a keyboard path for moving, resizing, and reordering', async ({ pag
   expect(result.reordered).toBe(true);
   expect(result.movedIndex).toBe(true);
 });
+
+test('applies one edit-currency rule to every commit path', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const messages = [];
+    const realToast = OS.toast.bind(OS);
+    OS.toast = (msg, type) => { messages.push(String(msg)); return realToast(msg, type); };
+
+    const makeImage = async () => {
+      const oc = document.createElement('canvas');
+      oc.width = 8; oc.height = 8;
+      const ctx = oc.getContext('2d');
+      ctx.fillStyle = '#c33';
+      ctx.fillRect(0, 0, 8, 8);
+      return new Promise(resolve => {
+        const el = new Image();
+        el.onload = () => resolve(new fabric.Image(el, { left: 0, top: 0 }));
+        el.src = oc.toDataURL();
+      });
+    };
+
+    const outcomes = {};
+
+    // 1. Target removed from the canvas after the work started.
+    let image = await makeImage();
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+    let info = OS._getActiveImageData();
+    OS.canvas.remove(image);
+    outcomes.removed = await OS._commitImageData(info, 'Removed target');
+
+    // 2. Target still present but its layer is locked.
+    image = await makeImage();
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+    info = OS._getActiveImageData();
+    OS.layers[OS.activeLayerIdx].locked = true;
+    outcomes.locked = await OS._commitImageData(info, 'Locked layer');
+    OS.layers[OS.activeLayerIdx].locked = false;
+
+    // 3. Unchanged document still commits.
+    image = await makeImage();
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+    info = OS._getActiveImageData();
+    outcomes.current = await OS._commitImageData(info, 'Current');
+
+    OS.toast = realToast;
+    return {
+      outcomes,
+      // Both rejections read the same, rather than one path saying "the
+      // document changed" and the next saying "edit cancelled".
+      distinctRejections: [...new Set(messages.filter(m => m.includes('discarded') || m.includes('cancelled')))]
+    };
+  });
+
+  expect(result.outcomes.removed).toBe(false);
+  expect(result.outcomes.locked).toBe(false);
+  expect(result.outcomes.current).toBe(true);
+  expect(result.distinctRejections).toEqual([
+    'Filter result discarded because the document or target layer changed'
+  ]);
+});

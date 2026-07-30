@@ -22,6 +22,9 @@ All notable changes to Openshop will be documented in this file.
 - Preserve partial selection coverage in saved projects; projects written with the older one-bit format still open
 - Keep the marching-ants box over the selection when the viewport moves
 - Rescale selection masks saved by earlier versions into the document when a project is opened, rather than leaving them addressing pixels the document does not have
+- Stop filters reporting success before the edit is actually committed: the "applied" toast, the panel close, and Reapply Last Filter now wait for the commit, so a result rejected because the document changed no longer produces two contradictory messages
+- Apply one consistent rule for whether an edit is still valid, so a target removed from the canvas or on a locked layer is rejected the same way by every path instead of three different ways
+- Stop the full-screen progress dialog flashing for filters that finish in a few milliseconds
 - Raise the contrast of the welcome card's helper text, the active export-format and curves-channel pills, and the export preview placeholder, all of which fell below 4.5:1
 - Enlarge the zoom readout, the offline status chip, the palette buttons, and the preference fields to the 24x24 minimum
 - Correct the browser-support table to say what is actually verified on each engine rather than claiming blanket full support
