@@ -295,9 +295,9 @@ animation:marchAnts .4s linear infinite}
 #zoom-display{cursor:pointer;transition:color .15s}#zoom-display:hover{color:var(--accent)}
 
 /* === MODAL === */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:10000;backdrop-filter:blur(8px);opacity:0;transition:opacity .2s var(--ease-out)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden;overscroll-behavior:contain;touch-action:pan-y;z-index:10000;backdrop-filter:blur(8px);opacity:0;transition:opacity .2s var(--ease-out)}
 .modal-overlay.show{opacity:1}
-.modal{background:var(--bg-depth-2);border:1px solid var(--border);border-radius:12px;padding:24px;min-width:360px;max-width:520px;box-shadow:0 24px 64px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset;transform:translateY(12px) scale(.98);transition:transform .25s var(--ease-out);max-height:80vh;overflow-y:auto}
+.modal{background:var(--bg-depth-2);border:1px solid var(--border);border-radius:12px;padding:24px;min-width:min(360px,100%);max-width:min(520px,100%);box-shadow:0 24px 64px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset;transform:translateY(12px) scale(.98);transition:transform .25s var(--ease-out);max-height:min(80vh,100%);overflow:auto;overscroll-behavior:contain}
 .modal-overlay.show .modal{transform:translateY(0) scale(1)}
 .filter-panel{position:fixed;z-index:10001;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:12px;padding:0;min-width:270px;max-width:310px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset;opacity:0;transform:translateY(6px) scale(.98);transition:opacity .2s var(--ease-out),transform .2s var(--ease-out)}
 .filter-panel.show{opacity:1;transform:translateY(0) scale(1)}
@@ -311,11 +311,11 @@ animation:marchAnts .4s linear infinite}
 .modal h3{font-size:15px;margin-bottom:18px;color:var(--text-primary);font-weight:600;letter-spacing:-.2px}
 .modal-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .modal-row label{width:90px;font-size:11px;color:var(--text-secondary);text-align:right;flex-shrink:0}
-.modal-row input,.modal-row select{flex:1;height:28px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);padding:0 8px;font-family:'JetBrains Mono',monospace;font-size:12px;outline:none}
+.modal-row input,.modal-row select{flex:1;min-width:0;max-width:100%;height:28px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);padding:0 8px;font-family:'JetBrains Mono',monospace;font-size:12px;outline:none}
 .modal-row input:focus{border-color:var(--accent)}
 .modal-row input[type="range"]{-webkit-appearance:none;height:4px;padding:0}
 .modal-row input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
-.modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.modal-btns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px}
 .btn{padding:7px 18px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg-depth-3);color:var(--text-primary);transition:all .15s var(--ease-out);line-height:1.2}
 .btn:hover{background:var(--bg-depth-4);border-color:var(--border-active)}
 .btn:active{transform:scale(.97);transition-duration:.05s}
@@ -1483,7 +1483,9 @@ body{
   body.rulers-on #canvas-area{left:6px;top:calc(var(--topbar-h) + 68px)}
   #welcome-overlay{
     justify-content:flex-start;
-    padding:10px;
+    padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
   }
   .welcome-inner{
     display:block;
@@ -1492,31 +1494,96 @@ body{
     max-height:none;
   }
   .welcome-hero{
-    min-height:315px;
-    padding:20px;
+    min-height:0;
+    padding:18px;
   }
-  .welcome-kicker{margin-top:25px}
-  .welcome-inner .welcome-hero h1{font-size:34px;letter-spacing:-1.7px}
-  .welcome-inner .welcome-hero p{font-size:12px}
+  .welcome-kicker{margin-top:17px}
+  .welcome-inner .welcome-hero h1{margin:10px 0 4px;font-size:30px;letter-spacing:-1.4px}
+  .welcome-inner .welcome-hero p{display:none}
+  .welcome-trust{margin-top:12px}
   .welcome-art{display:none}
   .welcome-launch{
-    margin-top:9px;
-    padding:20px 16px;
+    margin-top:8px;
+    padding:15px 16px;
     overflow:visible;
   }
+  .welcome-launch-head{margin-bottom:12px}
   .welcome-launch h2{font-size:19px}
   .welcome-actions{grid-template-columns:1fr}
-  .welcome-actions .btn{min-height:54px}
+  .welcome-actions .btn{min-height:48px}
   .template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .template-card .tpl-preview{height:42px}
+  .modal-overlay{
+    align-items:flex-start;
+    padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));
+  }
   .modal,.filter-panel,.ai-box,#cmd-box{
     min-width:0!important;
-    width:calc(100vw - 20px)!important;
-    max-width:calc(100vw - 20px)!important;
+    width:100%!important;
+    max-width:100%!important;
   }
-  .modal{max-height:calc(100vh - 20px);padding:16px}
-  .filter-panel{max-height:calc(100vh - 20px);overflow-y:auto}
+  .modal{
+    max-height:100%;
+    padding:16px;
+    scrollbar-gutter:stable;
+  }
+  .modal .btn{min-height:44px}
+  .modal-btns{
+    position:sticky;
+    z-index:2;
+    bottom:-16px;
+    margin:16px -16px -16px;
+    padding:10px 16px max(16px,env(safe-area-inset-bottom));
+    border-top:1px solid #2d425b;
+    background:linear-gradient(180deg,rgba(13,22,34,.97),#0b1420 28%);
+  }
+  .modal-btns .btn{flex:1 1 104px}
+  .filter-panel{max-height:100%;overflow-y:auto}
   .cr-dialog{gap:12px}
+}
+@media(max-width:767px) and (orientation:landscape){
+  #welcome-overlay{overflow:hidden}
+  .welcome-inner{
+    display:grid;
+    grid-template-columns:minmax(180px,.72fr) minmax(0,1.28fr);
+    gap:8px;
+    height:100%;
+    min-height:0;
+  }
+  .welcome-hero{
+    min-height:0;
+    padding:14px;
+  }
+  .welcome-brand{font-size:14px}
+  .welcome-mark{width:27px;height:31px}
+  .welcome-kicker{margin-top:17px;font-size:7.5px}
+  .welcome-inner .welcome-hero h1{font-size:27px;letter-spacing:-1.2px}
+  .welcome-trust{display:none}
+  .welcome-launch{
+    min-height:0;
+    margin:0;
+    padding:12px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+  .welcome-launch-head{margin-bottom:8px}
+  .welcome-launch h2{font-size:17px}
+  .launch-shortcut{display:none}
+  .welcome-actions{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+    margin-bottom:12px;
+  }
+  .welcome-actions .btn{min-height:46px;padding:7px 8px;gap:7px}
+  .welcome-actions .btn small{display:none}
+  .action-icon{width:26px;height:26px;flex-basis:26px}
+  .template-grid{gap:6px}
+  .template-card{padding:6px}
+  .template-card .tpl-preview{height:28px}
+  .recent-files{margin-top:8px}
+}
+@media(max-width:1024px){
+  .modal .btn{min-height:44px}
 }
 @media(min-width:768px) and (max-width:1023px){
   :root{--panel-width:248px;--toolbar-w:58px}
@@ -1526,7 +1593,7 @@ body{
   .local-badge{padding:0 8px}
   .menu-item{padding-inline:6px;font-size:9.5px}
   #topbar .logo{margin-right:9px}
-  .welcome-inner{grid-template-columns:minmax(280px,.78fr) minmax(440px,1.3fr)}
+  .welcome-inner{grid-template-columns:minmax(250px,.78fr) minmax(0,1.3fr)}
   .welcome-hero{padding:28px 24px}
   .welcome-inner .welcome-hero h1{font-size:37px}
   .template-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -2058,7 +2125,7 @@ body{
 <div id="canvas-a11y-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
 <!-- ===== WELCOME SCREEN ===== -->
-<div id="welcome-overlay" role="dialog" aria-label="Welcome to OpenShop">
+<div id="welcome-overlay" role="dialog" aria-modal="true" aria-label="Welcome to OpenShop">
     <div class="welcome-inner">
         <section class="welcome-hero">
             <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.20</small></div>
@@ -3787,6 +3854,7 @@ const OS = {
         buttons.className = 'modal-btns';
         const cancel = document.createElement('button');
         cancel.className = 'btn btn-danger';
+        cancel.dataset.modalCancel = '';
         cancel.textContent = 'Cancel Import';
         cancel.addEventListener('click', () => this._cancelPSDImport());
         buttons.appendChild(cancel);
@@ -6112,6 +6180,7 @@ self.onmessage = function(event) {
         btns.className = 'modal-btns';
         const close = document.createElement('button');
         close.className = 'btn';
+        close.dataset.modalClose = '';
         close.textContent = 'Close';
         close.addEventListener('click', () => o.remove());
         btns.appendChild(close);
@@ -6390,11 +6459,12 @@ self.onmessage = function(event) {
             btn.disabled = disabled;
             btn.addEventListener('click', fn);
             btns.appendChild(btn);
+            return btn;
         };
         addBtn('Export', 'btn', () => this._exportRecovery(info), !info.exists);
         addBtn(info.corrupt ? 'Discard Corrupt' : 'Discard', 'btn btn-danger', async () => { await this._discardRecovery(); o.remove(); this.toast('Recovery data discarded', 'info'); }, !info.exists);
         addBtn('Restore', 'btn btn-primary', () => this._restoreRecoveryText(info.text, o), !info.exists || info.corrupt);
-        addBtn('Close', 'btn', () => o.remove());
+        addBtn('Close', 'btn', () => o.remove()).dataset.modalClose = '';
         modal.appendChild(btns);
         o.appendChild(modal);
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
@@ -10806,6 +10876,25 @@ self.onmessage = async function(e) {
 document.addEventListener('click', e => {
     const c = e.target.closest('[data-modal-close]');
     if (c) { const o = c.closest('.modal-overlay'); if (o) o.remove(); }
+});
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const overlays = [...document.querySelectorAll('.modal-overlay')];
+    const overlay = overlays.at(-1);
+    if (overlay) {
+        const dismiss = overlay.querySelector('[data-modal-cancel],[data-modal-close]');
+        if (!dismiss) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        dismiss.click();
+        return;
+    }
+    const welcome = document.getElementById('welcome-overlay');
+    if (welcome && !welcome.classList.contains('hidden') && welcome.style.display !== 'none') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        OS.dismissWelcome();
+    }
 });
 document.addEventListener('input', e => {
     if (e.target.type === 'range' && e.target.dataset.suffix && e.target.nextElementSibling)

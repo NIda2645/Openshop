@@ -739,37 +739,125 @@ test('mirrors tool, layer, selection, and actions for assistive tech', async ({ 
   expect(result.layerItems).toBeGreaterThan(0);
 });
 
-test('loads the editor on a mobile viewport without clipped controls', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 667 });
+test('keeps onboarding actions reachable across supported narrow viewports', async ({ page }) => {
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 375, height: 667 },
+    { width: 768, height: 1024 },
+    { width: 568, height: 320 },
+    { width: 667, height: 375 },
+    { width: 1024, height: 768 }
+  ];
+
+  await page.setViewportSize(viewports[0]);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#editor-canvas')).toBeVisible();
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator('#welcome-overlay')).toBeVisible();
+    await page.evaluate(() => {
+      document.getElementById('welcome-overlay').scrollTop = 0;
+      document.querySelector('.welcome-launch').scrollTop = 0;
+    });
+
+    const actions = page.locator('.welcome-actions button');
+    await expect(actions).toHaveCount(4);
+    for (let index = 0; index < await actions.count(); index++) {
+      const action = actions.nth(index);
+      await action.scrollIntoViewIfNeeded();
+      const box = await action.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+
+    const layout = await page.evaluate(() => ({
+      pageOverflow: document.documentElement.scrollWidth > window.innerWidth,
+      welcomeOverflow: document.getElementById('welcome-overlay').scrollWidth >
+        document.getElementById('welcome-overlay').clientWidth
+    }));
+    expect(layout).toEqual({ pageOverflow: false, welcomeOverflow: false });
+
+    const toolbar = page.locator('#toolbar');
+    await expect(toolbar).toBeVisible();
+    const toolbarBox = await toolbar.boundingBox();
+    expect(toolbarBox.x).toBeGreaterThanOrEqual(0);
+    expect(toolbarBox.y).toBeGreaterThanOrEqual(0);
+    expect(toolbarBox.x + toolbarBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(toolbarBox.y + toolbarBox.height).toBeLessThanOrEqual(viewport.height);
+  }
+
+  const enterStudio = page.getByRole('button', { name: 'Enter Studio' });
+  await enterStudio.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#welcome-overlay')).toHaveClass(/hidden/);
+});
+
+test('keeps dialog actions visible and operable across narrow portrait and landscape layouts', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 375, height: 667 },
+    { width: 768, height: 1024 },
+    { width: 568, height: 320 },
+    { width: 667, height: 375 },
+    { width: 1024, height: 768 }
+  ];
+  const dialogs = ['newImage', 'showPreferences', 'showExportSettings', 'showShortcuts', 'showRecoveryManager'];
+
+  await page.setViewportSize(viewports[0]);
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => OS.dismissWelcome());
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
 
-  const toolbar = page.locator('#toolbar');
-  await expect(toolbar).toBeVisible();
-  const toolbarBox = await toolbar.boundingBox();
-  expect(toolbarBox.width).toBeGreaterThan(0);
-  expect(toolbarBox.height).toBeGreaterThan(0);
+    for (const dialog of dialogs) {
+      await page.evaluate(async (name) => {
+        const result = OS[name]();
+        if (result?.then) await result;
+      }, dialog);
 
-  const selectTool = page.locator('.tool-btn[data-tool="select"]').first();
-  await expect(selectTool).toBeVisible();
-  const toolBox = await selectTool.boundingBox();
-  expect(toolBox.x).toBeGreaterThanOrEqual(0);
-  expect(toolBox.y).toBeGreaterThanOrEqual(0);
-  expect(toolBox.x + toolBox.width).toBeLessThanOrEqual(375);
+      const overlay = page.locator('.modal-overlay').last();
+      const modal = overlay.locator('.modal');
+      await expect(modal).toBeVisible();
+      await expect(overlay).toHaveClass(/show/);
+      await page.waitForTimeout(25);
+      const modalBox = await modal.boundingBox();
+      expect(modalBox.x).toBeGreaterThanOrEqual(0);
+      expect(modalBox.y).toBeGreaterThanOrEqual(0);
+      expect(modalBox.x + modalBox.width).toBeLessThanOrEqual(viewport.width);
+      expect(modalBox.y + modalBox.height).toBeLessThanOrEqual(viewport.height);
 
-  const canvas = page.locator('#editor-canvas');
-  const canvasBox = await canvas.boundingBox();
-  expect(canvasBox.width).toBeGreaterThan(50);
-  expect(canvasBox.height).toBeGreaterThan(50);
+      const actions = modal.locator('.modal-btns button');
+      expect(await actions.count()).toBeGreaterThan(0);
+      for (let index = 0; index < await actions.count(); index++) {
+        const action = actions.nth(index);
+        const box = await action.boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+        expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+        expect(box.height).toBeGreaterThanOrEqual(43);
+        expect(await action.evaluate((button) => parseFloat(getComputedStyle(button).minHeight))).toBeGreaterThanOrEqual(44);
+      }
 
-  const result = await page.evaluate(() => ({
-    canvasVisible: document.getElementById('editor-canvas')?.offsetWidth > 0,
-    toolbarVisible: document.getElementById('toolbar')?.offsetWidth > 0,
-    noPageErrors: true
-  }));
-  expect(result.canvasVisible).toBe(true);
-  expect(result.toolbarVisible).toBe(true);
+      if (dialog === 'showPreferences' && viewport.width === 320) {
+        await modal.locator('#pref-grid').fill('24');
+        await modal.locator('[data-modal-action]').focus();
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.modal-overlay')).toHaveCount(0);
+        expect(await page.evaluate(() => OS.gridSize)).toBe(24);
+      } else if (dialog === 'showRecoveryManager' && viewport.width === 375) {
+        await modal.getByRole('button', { name: 'Close' }).click();
+        await expect(page.locator('.modal-overlay')).toHaveCount(0);
+      } else {
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.modal-overlay')).toHaveCount(0);
+      }
+    }
+  }
 });
 
 test('renders persisted UI data without activating markup', async ({ page }) => {

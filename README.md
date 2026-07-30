@@ -188,7 +188,7 @@ npm run test:e2e
 npm run test:release
 ```
 
-`npm test` runs Vitest unit coverage for the core editor object with canvas mocks. `npm run test:e2e` runs Playwright against `index.html` and checks the editor shell screenshot.
+`npm test` runs Vitest unit coverage for the core editor object with canvas mocks. `npm run test:e2e` runs Playwright against `index.html`, including onboarding and dialog checks at 320×568, 375×667, 768×1024, and their landscape equivalents.
 `npm run test:release` adds a high/critical advisory gate before running both suites.
 
 ## Browser Support
@@ -198,7 +198,7 @@ npm run test:release
 | Chrome / Edge 90+ | Full support (including AI via WebGPU) |
 | Firefox 90+ | Full support (AI via WASM fallback) |
 | Safari 15+ | Full support (AI via WASM fallback, auto-save via Worker) |
-| Mobile Chrome/Safari | Functional, desktop recommended |
+| Mobile Chrome/Safari | Responsive shell and dialogs; precision canvas work is best on a larger display |
 
 ## Related Tools
 
