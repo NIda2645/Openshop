@@ -1560,6 +1560,39 @@ describe('OpenShop core object', () => {
     expect(clean).toContain('https://example.com/');
   });
 
+  it('breaks cyclic PSD group parents instead of dropping their layers', () => {
+    const OS = loadOpenShop();
+
+    // Reachable through a hand-edited or corrupted .openshop file: interchange
+    // metadata round-trips through project JSON.
+    const normalized = OS._normalizePSDInterchange({
+      groups: [
+        { id: 'self', name: 'Self Parent', parentId: 'self', order: 0 },
+        { id: 'a', name: 'Ring A', parentId: 'b', order: 1 },
+        { id: 'b', name: 'Ring B', parentId: 'a', order: 2 },
+        { id: 'ok', name: 'Nested', parentId: 'self', order: 3 }
+      ],
+      warnings: []
+    });
+
+    const byId = new Map(normalized.groups.map(group => [group.id, group]));
+    expect(byId.get('self').parentId).toBeNull();
+    // One of the pair detaches; the other keeps a parent that now reaches root.
+    expect(['a', 'b'].filter(id => byId.get(id).parentId === null)).toHaveLength(1);
+    // A legitimate nesting is left alone.
+    expect(byId.get('ok').parentId).toBe('self');
+    expect(normalized.warnings.join(' ')).toMatch(/cycle/i);
+
+    // Every group reaches the document root, so the PSD writer's root walk
+    // emits all of them.
+    for (const group of normalized.groups) {
+      let current = group;
+      let hops = 0;
+      while (current.parentId && hops < 20) { current = byId.get(current.parentId); hops++; }
+      expect(current.parentId).toBeNull();
+    }
+  });
+
   it('builds PSD export structure with correct layer metadata', () => {
     const OS = loadOpenShop();
     const boundary = {

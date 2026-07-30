@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-2SF86fqI+B0P41EKQgC/i4NkX2H1weZdq+K9vTXXSPI=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-It5bu0io3O7fM0adESQIN6cpmYL/6SUcS6R1A+LyI3w=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -5176,12 +5176,41 @@ const OS = {
         groups.forEach(group => {
             if (group.parentId && !ids.has(group.parentId)) group.parentId = null;
         });
+        // Validating only that the parent exists left `parentId === id` and
+        // longer loops intact, because `ids` holds every group's own id. A
+        // looped group is unreachable from the document root, and the PSD
+        // writer emits only what the root walk reaches — so the group and
+        // every layer parented into it disappeared from the export in silence.
+        const byId = new Map(groups.map(group => [group.id, group]));
+        const detached = [];
+        groups.forEach(group => {
+            const seen = new Set([group.id]);
+            let current = group;
+            while (current.parentId) {
+                if (seen.has(current.parentId)) {
+                    detached.push(current.name || current.id);
+                    current.parentId = null;
+                    break;
+                }
+                seen.add(current.parentId);
+                const parent = byId.get(current.parentId);
+                if (!parent) break;
+                current = parent;
+            }
+        });
+        const warnings = Array.isArray(value.warnings)
+            ? value.warnings.map(item => this._safeText(item, 300)).filter(Boolean).slice(0, 100)
+            : [];
+        if (detached.length) {
+            warnings.push(this._safeText(
+                `${detached.length} PSD group${detached.length === 1 ? ' was' : 's were'} moved to the document root because ${detached.length === 1 ? 'its' : 'their'} parent chain formed a cycle: ${[...new Set(detached)].slice(0, 10).join(', ')}`,
+                300
+            ));
+        }
         return {
             schemaVersion:1,
             groups,
-            warnings:Array.isArray(value.warnings)
-                ? value.warnings.map(item => this._safeText(item, 300)).filter(Boolean).slice(0, 100)
-                : []
+            warnings:warnings.slice(0, 100)
         };
     },
     _readPSDHeader(bytes) {
@@ -8923,6 +8952,20 @@ self.onmessage = function(event) {
             return children;
         };
         structure.children = populate(null);
+        // Anything the root walk never reached would otherwise be dropped from
+        // the written file without a word.
+        const emitted = new Set();
+        const collect = nodes => nodes.forEach(node => {
+            emitted.add(node);
+            if (Array.isArray(node.children)) collect(node.children);
+        });
+        collect(structure.children);
+        const orphaned = [...entries.values()].flat()
+            .map(entry => entry.node)
+            .filter(node => !emitted.has(node));
+        if (orphaned.length) {
+            report.warnings.push(`${orphaned.length} layer${orphaned.length === 1 ? '' : 's'} could not be placed under the document root and ${orphaned.length === 1 ? 'was' : 'were'} omitted: ${orphaned.slice(0, 10).map(node => node.name).join(', ')}.`);
+        }
         report.warnings = [...new Set(report.warnings)].slice(0, 100);
         return { structure, report };
     },
