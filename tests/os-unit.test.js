@@ -863,6 +863,79 @@ describe('OpenShop core object', () => {
     )).toThrow(/exceeds import limits/);
   });
 
+  it('hides selection overlays during raster capture and restores them after', () => {
+    const OS = loadOpenShop();
+    const boundary = { name: '__boundary__', visible: true, opacity: 1, set(key, value) { this[key] = value; } };
+    const overlay = { name: 'wand', visible: true, excludeFromExport: true, _wandOverlay: true };
+    const photo = { name: 'Photo', visible: true };
+    OS.canvas = createCanvasMock([boundary, overlay, photo]);
+    quietUiMethods(OS);
+    OS._enforceLayerInvariants = vi.fn();
+
+    let visibleDuringCapture = null;
+    OS.canvas.toDataURL = vi.fn(() => {
+      visibleDuringCapture = { overlay: overlay.visible, photo: photo.visible };
+      return 'data:image/png;base64,AAAA';
+    });
+
+    OS._withExportCanvasState({ transparent: true }, () => OS.canvas.toDataURL({}));
+
+    expect(visibleDuringCapture).toEqual({ overlay: false, photo: true });
+    expect(overlay.visible).toBe(true);
+  });
+
+  it('never rolls back a transaction started by another command', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._captureDocumentState = vi.fn(() => ({ kind: 'openshop-document' }));
+    OS._pushHistoryEntry = vi.fn(() => true);
+    const rollback = vi.spyOn(OS, '_rollbackHistoryTransaction');
+
+    let release;
+    const slow = new Promise((resolve) => { release = resolve; });
+    OS._getCommandRegistry = () => new Map([
+      ['canvas.flatten', { execute: () => slow }]
+    ]);
+    OS._normalizeCommand = (command) => ({ id: command.id, schemaVersion: 1, args: {} });
+
+    const first = OS._executeCommand({ id: 'canvas.flatten' });
+    expect(OS._historyTransaction).not.toBeNull();
+    const held = OS._historyTransaction;
+
+    // Second command arrives while the first is still awaiting.
+    const second = await OS._executeCommand({ id: 'canvas.flatten' });
+    expect(second).toBe(false);
+    expect(rollback).not.toHaveBeenCalled();
+    expect(OS._historyTransaction).toBe(held);
+
+    release(true);
+    await expect(first).resolves.toBe(true);
+  });
+
+  it('keeps the document dirty when an edit lands during the autosave clear', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS.layers = [{ name: 'Background', visible: true, opacity: 100, blend: 'source-over', objects: [] }];
+    OS.canvasW = 800;
+    OS.canvasH = 600;
+    OS._isDirty = true;
+    OS._documentRevision = 4;
+    // The edit arrives while the recovery lock is held.
+    OS._clearAutoSave = vi.fn(async () => { OS._documentRevision += 1; });
+    OS._writeProjectFile = vi.fn().mockResolvedValue(true);
+    const toasts = [];
+    OS.toast = (message, type) => toasts.push({ message, type });
+
+    await OS._saveProjectTransaction();
+
+    expect(OS._isDirty).toBe(true);
+    expect(OS._autoSaveDirty).toBe(true);
+    expect(OS._persistenceState).toBe('dirty');
+    expect(toasts.some((entry) => /newer edits remain unsaved/.test(entry.message))).toBe(true);
+  });
+
   it('sanitizes a large hostile string without quadratic backtracking', () => {
     const OS = loadOpenShop();
     const payload = { objects: [{ name: 'on'.repeat(500000) }] };

@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-3YPWQMGX1Re3/PVmSpzmhMTDW8gs17/z9Au/wbRAMGQ=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-w3CEcbIdvsaIJVal9lSAEXUtya0aVyvYnumZ2sVoYVM=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -4292,8 +4292,21 @@ const OS = {
             matte
         };
     },
+    _hideNonExportableObjects() {
+        // Fabric honours excludeFromExport only for toObject/toSVG, so raster
+        // captures must hide selection overlays themselves or they are baked in.
+        const hidden = [];
+        this.canvas.getObjects().forEach(object => {
+            if (object.name === '__boundary__') return;
+            if (!object.excludeFromExport && !object._wandOverlay) return;
+            hidden.push({ object, visible:object.visible });
+            object.visible = false;
+        });
+        return () => hidden.forEach(entry => { entry.object.visible = entry.visible; });
+    },
     _withExportCanvasState({ transparent = true, matte = '#ffffff' } = {}, operation) {
         this._enforceLayerInvariants({ render:false });
+        const restoreOverlays = this._hideNonExportableObjects();
         const viewportTransform = this.canvas.viewportTransform.slice();
         const backgroundColor = this.canvas.backgroundColor;
         const boundary = this.canvas.getObjects().find(object => object.name === '__boundary__');
@@ -4327,6 +4340,7 @@ const OS = {
                 boundary.set('fill', boundaryState.fill);
                 boundary.set('excludeFromExport', boundaryState.excludeFromExport);
             }
+            restoreOverlays();
             this.canvas.viewportTransform = viewportTransform;
             this.canvas.renderAll();
         }
@@ -4559,6 +4573,16 @@ const OS = {
             return true;
         }
         await this._clearAutoSave();
+        // Edits can land while the recovery lock is contended; re-check before
+        // declaring the document clean or they are lost with no dirty flag.
+        if (this._documentGeneration !== generation) return true;
+        if (this._documentRevision !== revision) {
+            this._isDirty = true;
+            this._autoSaveDirty = true;
+            this._setPersistenceState('dirty');
+            this.toast('Saved snapshot; newer edits remain unsaved', 'info');
+            return true;
+        }
         this._markDocumentClean(data, 'saved');
         this.toast(this._t('Project saved'),'success');
         return true;
@@ -5790,6 +5814,7 @@ self.onmessage = function(event) {
         const vpt = this.canvas.viewportTransform.slice();
         const boundary = this.canvas.getObjects().find(o => o.name === '__boundary__');
         const boundaryOpacity = boundary?.opacity;
+        const restoreOverlays = this._hideNonExportableObjects();
         try {
             this.canvas.viewportTransform = [1,0,0,1,0,0];
             if (hideBoundary && boundary) boundary.set('opacity', 0);
@@ -5797,6 +5822,7 @@ self.onmessage = function(event) {
             return this.canvas.toDataURL({ format, left, top, width, height });
         } finally {
             if (boundary) boundary.set('opacity', boundaryOpacity);
+            restoreOverlays();
             this.canvas.viewportTransform = vpt;
             this.canvas.renderAll();
         }
@@ -7842,9 +7868,13 @@ self.onmessage = function(event) {
     },
     _executeCommand(command, { label = null, markDirty = true, recordMacro = true } = {}) {
         let normalized;
+        // Only this invocation's own transaction may be rolled back; a command that
+        // starts while another is still awaiting must never revert the other's work.
+        let owned = false;
         try {
             normalized = this._normalizeCommand(command);
             this._beginHistoryTransaction(normalized, { label, markDirty, recordMacro });
+            owned = true;
             const result = this._invokeCommand(normalized);
             if (result?.then) {
                 return result.then(value => {
@@ -7867,10 +7897,11 @@ self.onmessage = function(event) {
             this._commitHistoryTransaction();
             return true;
         } catch (error) {
-            const rollback = this._historyTransaction
-                ? this._rollbackHistoryTransaction(error)
-                : Promise.resolve(false);
-            return rollback.then(() => {
+            if (!owned) {
+                this.toast(this._t('Another edit is still finishing — try again in a moment'), 'info');
+                return Promise.resolve(false);
+            }
+            return this._rollbackHistoryTransaction(error).then(() => {
                 this.toast(`Could not ${this._commandLabel(normalized).toLowerCase()}: ${error.message}`, 'error');
                 return false;
             });
@@ -11869,8 +11900,10 @@ self.onmessage = async function(e) {
         this.canvas.viewportTransform = [1,0,0,1,0,0];
         const boundary = this.canvas.getObjects().find(o => o.name === '__boundary__');
         if (boundary) boundary.set('opacity', 0);
+        const restoreOverlays = this._hideNonExportableObjects();
         this.canvas.renderAll();
         this._baSnapshot = this.canvas.toDataURL({ format:'png', left:0, top:0, width:this.canvasW, height:this.canvasH });
+        restoreOverlays();
         if (boundary) boundary.set('opacity', 1);
         this.canvas.viewportTransform = vpt; this.canvas.renderAll();
     },

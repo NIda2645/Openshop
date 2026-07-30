@@ -6,6 +6,9 @@ All notable changes to Openshop will be documented in this file.
 
 ### Fixed
 - Stop the import sanitizer from rewriting the editor's own snapshots: undo, redo, transaction rollback, project open, and recovery restore now preserve multi-line text, text longer than 500 characters, and base64 image sources exactly
+- Keep selection overlays out of PNG, JPEG, WebP, PDF, PSD, flatten, crop, and before/after captures; the tint no longer bakes into exported or flattened pixels at any zoom level
+- Stop a second command started during an in-flight asynchronous command from rolling back the first command's work
+- Keep the document marked unsaved when an edit lands while a project save is clearing recovery generations
 
 ### Changed
 - Reimagine the editor as a high-contrast precision studio with a floating tool dock, structured inspector cards, technical canvas workspace, local-only trust indicator, and compact ready state
