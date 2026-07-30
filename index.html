@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-2rGeIE2kfs2jH7dyemLY5ChUG5IBPUDEljvwwvt++Zk=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-bZQ0i07eDwika16D43QjxVeRCaBpogkPGbbZpJj7Rb8=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -6369,7 +6369,6 @@ self.onmessage = function(event) {
                 this.layers[this.activeLayerIdx].objects.push(this._tempShape);
             }
             this.saveHistory('Draw '+this.state.tool); this.updateLayersPanel();
-            this.updateHistogram();
             this._tempShape=null; this._shapeStart=null; this.state.isDrawing=false;
         }
     },
@@ -6377,7 +6376,7 @@ self.onmessage = function(event) {
         opt.e.preventDefault(); let z=this.zoom*(0.999**opt.e.deltaY);
         z=Math.min(Math.max(0.05,z),20);
         this.canvas.zoomToPoint({x:opt.e.offsetX,y:opt.e.offsetY},z);
-        this.zoom=z; document.getElementById('zoom-display').textContent=Math.round(z*100)+'%'; this.drawGrid(); this.drawRulers(); this._drawPixelGrid(); this.updateMinimap();
+        this.zoom=z; document.getElementById('zoom-display').textContent=Math.round(z*100)+'%'; this.drawGrid(); this.drawRulers(); this._drawPixelGrid(); this._updateMinimapViewport();
     },
 
     _initTouchGestures(area) {
@@ -6415,7 +6414,7 @@ self.onmessage = function(event) {
             lastCenter = center;
             this.canvas.renderAll();
             this.drawGrid();
-            this.updateMinimap();
+            this._updateMinimapViewport();
         }, { passive: false });
         area.addEventListener('touchend', () => { touching = false; lastDist = 0; lastCenter = null; });
     },
@@ -7858,10 +7857,22 @@ self.onmessage = function(event) {
         if (markDirty) this._markDocumentDirty();
         this.updateHistoryPanel();
         this.updateStatus();
-        this.updateMinimap();
         if (recordMacro && normalizedCommand) this.recordMacroStep(normalizedCommand);
-        this.updateHistogram();
+        this._scheduleInspectorRefresh();
         return true;
+    },
+    // Minimap and histogram both re-render the whole canvas; coalesce them into
+    // one frame so a burst of edits pays the cost once.
+    _scheduleInspectorRefresh() {
+        if (this._inspectorFrame) return;
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (fn => setTimeout(fn, 16));
+        this._inspectorFrame = schedule(() => {
+            this._inspectorFrame = null;
+            this.updateMinimap();
+            this.updateHistogram();
+        });
     },
     saveHistory(action, { markDirty = true, command = null, coalesceKey = null } = {}) {
         if (this._historyTransaction) return false;
@@ -10850,9 +10861,11 @@ self.onmessage = async function(event) {
     updateHistogram() {
         const cv = document.getElementById('histogram-canvas');
         if (!cv) return;
+        if (!this._panelIsVisible(cv)) return;
         const ctx = cv.getContext('2d', { willReadFrequently: true });
         ctx.clearRect(0, 0, cv.width, cv.height);
-        ctx.fillStyle = '#1c2230'; ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.fillStyle = this._themeColor('--bg-depth-3', '#162131');
+        ctx.fillRect(0, 0, cv.width, cv.height);
         try {
             const vpt = this.canvas.viewportTransform.slice();
             this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
@@ -12502,34 +12515,60 @@ self.onmessage = async function(e) {
 
     // ====================== MINIMAP / NAVIGATOR ======================
     initMinimap() { this.updateMinimap(); },
+    _themeColor(token, fallback) {
+        return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
+    },
+    _panelIsVisible(el) {
+        return Boolean(el && el.offsetParent !== null);
+    },
+    // Zoom and pan change only the viewport rectangle, so keep that update
+    // cheap and leave the expensive composite capture to content changes.
+    _updateMinimapViewport() {
+        const wrap = document.getElementById('minimap-wrap');
+        const vpEl = document.getElementById('minimap-vp');
+        if (!wrap || !vpEl || !this._panelIsVisible(wrap)) return;
+        const w = wrap.clientWidth, h = wrap.clientHeight;
+        const scale = Math.min(w / this.canvasW, h / this.canvasH);
+        const dx = (w - this.canvasW * scale) / 2, dy = (h - this.canvasH * scale) / 2;
+        const vpt = this.canvas.viewportTransform;
+        const z = this.zoom;
+        const vpW = this.canvas.width / z * scale;
+        const vpH = this.canvas.height / z * scale;
+        vpEl.style.left = (dx + (-vpt[4] / z) * scale) + 'px';
+        vpEl.style.top = (dy + (-vpt[5] / z) * scale) + 'px';
+        vpEl.style.width = Math.min(vpW, w) + 'px';
+        vpEl.style.height = Math.min(vpH, h) + 'px';
+    },
     updateMinimap() {
         const cv = document.getElementById('minimap-canvas');
         const wrap = document.getElementById('minimap-wrap');
         if (!cv || !wrap) return;
+        if (!this._panelIsVisible(wrap)) return;
         const w = wrap.clientWidth, h = wrap.clientHeight;
         cv.width = w; cv.height = h;
         const ctx = cv.getContext('2d');
-        ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = this._themeColor('--bg-depth-3', '#162131');
+        ctx.fillRect(0, 0, w, h);
+        const scale = Math.min(w / this.canvasW, h / this.canvasH);
         try {
             const vpt = this.canvas.viewportTransform.slice();
             this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
-            const dataUrl = this.canvas.toDataURL({ format: 'png', left: 0, top: 0, width: this.canvasW, height: this.canvasH });
+            // Render straight to thumbnail scale instead of encoding a
+            // full-resolution PNG for a ~200px preview.
+            const dataUrl = this.canvas.toDataURL({
+                format: 'png',
+                left: 0,
+                top: 0,
+                width: this.canvasW,
+                height: this.canvasH,
+                multiplier: scale
+            });
             this.canvas.viewportTransform = vpt; this.canvas.renderAll();
             const img = new Image();
             img.onload = () => {
-                const scale = Math.min(w / this.canvasW, h / this.canvasH);
                 const dx = (w - this.canvasW * scale) / 2, dy = (h - this.canvasH * scale) / 2;
                 ctx.drawImage(img, dx, dy, this.canvasW * scale, this.canvasH * scale);
-                // Viewport rect
-                const vpEl = document.getElementById('minimap-vp');
-                const cvw = this.canvas.width, cvh = this.canvas.height;
-                const z = this.zoom;
-                const vpW = cvw / z / this.canvasW * (this.canvasW * scale);
-                const vpH = cvh / z / this.canvasH * (this.canvasH * scale);
-                const vpX = dx + (-vpt[4] / z / this.canvasW) * (this.canvasW * scale);
-                const vpY = dy + (-vpt[5] / z / this.canvasH) * (this.canvasH * scale);
-                vpEl.style.left = vpX + 'px'; vpEl.style.top = vpY + 'px';
-                vpEl.style.width = Math.min(vpW, w) + 'px'; vpEl.style.height = Math.min(vpH, h) + 'px';
+                this._updateMinimapViewport();
             }; img.src = dataUrl;
         } catch(e) { console.debug('Minimap update skipped:', e.message); }
     },
@@ -12548,7 +12587,7 @@ self.onmessage = async function(e) {
         vpt[4] = -(canvasX * z - cvw / 2);
         vpt[5] = -(canvasY * z - cvh / 2);
         this.canvas.setViewportTransform(vpt);
-        this.drawGrid(); this.drawRulers(); this.updateMinimap();
+        this.drawGrid(); this.drawRulers(); this._updateMinimapViewport();
     },
 
     // ====================== STICKY NOTES / ANNOTATIONS ======================

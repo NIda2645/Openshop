@@ -2004,3 +2004,47 @@ test('renders persisted UI data without activating markup', async ({ page }) => 
   await expect(page.locator('.modal-overlay .modal script')).toHaveCount(0);
   await expect(page.locator('.modal-overlay .modal')).toContainText('<img src=x onerror=alert(1)>');
 });
+
+test('keeps zoom cheap and coalesces inspector redraws after edits', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    // Make the navigator visible so the minimap actually renders.
+    document.querySelector('[data-os-click="click-186"]').click();
+
+    const calls = [];
+    const originalToDataURL = OS.canvas.toDataURL.bind(OS.canvas);
+    OS.canvas.toDataURL = (options = {}) => {
+      calls.push({ multiplier: options.multiplier ?? 1, width: options.width });
+      return originalToDataURL(options);
+    };
+    const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    // Zoom must not re-capture the composite at all.
+    calls.length = 0;
+    for (let i = 0; i < 12; i += 1) {
+      OS.onMouseWheel({ e: { preventDefault() {}, deltaY: -40, offsetX: 100, offsetY: 100 } });
+    }
+    await frame();
+    const capturesDuringZoom = calls.length;
+
+    // A burst of edits collapses into a single coalesced capture.
+    calls.length = 0;
+    for (let i = 0; i < 8; i += 1) {
+      OS.canvas.add(new fabric.Rect({ left: i * 4, top: 4, width: 6, height: 6, fill: '#3978ff' }));
+      OS.saveHistory(`Draw rect ${i}`);
+    }
+    await frame();
+    const capturesAfterEdits = calls.length;
+    const thumbnailMultiplier = calls.length ? calls[0].multiplier : null;
+
+    OS.canvas.toDataURL = originalToDataURL;
+    return { capturesDuringZoom, capturesAfterEdits, thumbnailMultiplier };
+  });
+
+  expect(result.capturesDuringZoom).toBe(0);
+  expect(result.capturesAfterEdits).toBe(1);
+  // The minimap renders at thumbnail scale, not full document resolution.
+  expect(result.thumbnailMultiplier).toBeLessThan(1);
+});

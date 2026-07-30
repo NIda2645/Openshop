@@ -12,6 +12,9 @@ All notable changes to Openshop will be documented in this file.
 - Confirm before replacing a document that has unsaved changes, from New Image, templates, Open Image, Open Project, Open PSD, drag and drop, and installed-app launches, with a Save first option
 - Show the crash-recovery offer above the welcome launcher instead of behind it, so it is visible on the first run after a crash
 
+### Performance
+- Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
+
 ### Changed
 - Reimagine the editor as a high-contrast precision studio with a floating tool dock, structured inspector cards, technical canvas workspace, local-only trust indicator, and compact ready state
 - Replace the welcome screen with a responsive local-first workspace launcher whose templates and primary actions remain reachable from phone through desktop widths
