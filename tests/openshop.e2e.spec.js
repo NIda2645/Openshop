@@ -3129,3 +3129,119 @@ test('applies one edit-currency rule to every commit path', async ({ page }) => 
     'Filter result discarded because the document or target layer changed'
   ]);
 });
+
+test('records opened documents in the welcome screen Recent list', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.removeItem('openshop_recent'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  // Nothing has been opened yet, so the section stays empty rather than
+  // rendering an empty heading.
+  await expect(page.locator('#recent-files-area .recent-item')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const created = await page.evaluate(async () => {
+    OS.createNewDocument(640, 480, { resetProject: true });
+    OS._docName = 'Recent Smoke';
+    OS.trackRecentFile(OS._docName, 640, 480);
+    // A project open records the canvas it actually produced.
+    OS.createNewDocument(320, 200, { resetProject: true });
+    OS._docName = 'Second Doc';
+    OS.trackRecentFile(OS._docName, OS.canvasW, OS.canvasH);
+    // Garbage dimensions are refused instead of writing "NaNxNaN".
+    OS.trackRecentFile('Broken', Number.NaN, 100);
+    return JSON.parse(localStorage.getItem('openshop_recent') || '[]');
+  });
+
+  expect(created.map(entry => entry.name)).toEqual(['Second Doc', 'Recent Smoke']);
+  expect(created[0].dims).toBe('320x200');
+  expect(created[1].dims).toBe('640x480');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const rows = page.locator('#recent-files-area .recent-item');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText('Second Doc');
+  await expect(rows.first()).toContainText('320x200');
+
+  // The rows are a record, not a reopen shortcut, so they must not advertise
+  // themselves as clickable.
+  const presentation = await page.evaluate(() => {
+    const row = document.querySelector('#recent-files-area .recent-item');
+    return {
+      tag: row.tagName,
+      cursor: getComputedStyle(row).cursor,
+      listRole: row.parentElement.getAttribute('role')
+    };
+  });
+  expect(presentation.tag).toBe('LI');
+  expect(presentation.cursor).toBe('default');
+  expect(presentation.listRole).toBe('list');
+});
+
+test('honours the New Image background choice instead of ignoring it', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Sample through the export path so the reading is in document space and
+  // independent of the current zoom.
+  const sampleCentre = () => page.evaluate(async () => {
+    const url = OS._captureCanvasRaster();
+    const image = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+    const probe = document.createElement('canvas');
+    probe.width = image.width; probe.height = image.height;
+    probe.getContext('2d').drawImage(image, 0, 0);
+    return [...probe.getContext('2d')
+      .getImageData(Math.round(image.width / 2), Math.round(image.height / 2), 1, 1).data];
+  });
+
+  // Transparent stays the default: only the checkerboard boundary is present.
+  const transparent = await page.evaluate(() => {
+    OS.createNewDocument(80, 60, { resetProject: true });
+    return OS.layers[0].objects.map(o => o.name);
+  });
+  expect(transparent).toEqual(['__boundary__']);
+
+  // White fills the canvas for real.
+  await page.evaluate(() => OS.createNewDocument(80, 60, { resetProject: true, background: '#ffffff' }));
+  expect(await page.evaluate(() => OS.layers[0].objects.map(o => o.name)))
+    .toEqual(['__boundary__', 'Background Fill']);
+  expect(await sampleCentre()).toEqual([255, 255, 255, 255]);
+
+  // A custom colour lands as chosen.
+  await page.evaluate(() => OS.createNewDocument(80, 60, { resetProject: true, background: '#3366cc' }));
+  expect(await sampleCentre()).toEqual([51, 102, 204, 255]);
+
+  // A malformed value falls back to transparent rather than throwing.
+  const bogus = await page.evaluate(() => {
+    OS.createNewDocument(80, 60, { resetProject: true, background: 'javascript:alert(1)' });
+    return OS.layers[0].objects.map(o => o.name);
+  });
+  expect(bogus).toEqual(['__boundary__']);
+
+  // The dialog's colour swatch is only enabled when it can be used.
+  await page.evaluate(() => OS.newImage());
+  const modeSelect = page.locator('#ni-bg-mode');
+  await expect(page.locator('#ni-bg')).toBeDisabled();
+  await modeSelect.selectOption('custom');
+  await expect(page.locator('#ni-bg')).toBeEnabled();
+  await modeSelect.selectOption('white');
+  await expect(page.locator('#ni-bg')).toBeDisabled();
+
+  // Creating through the dialog carries the choice through.
+  await page.locator('#ni-w').fill('60');
+  await page.locator('#ni-h').fill('40');
+  await page.getByRole('button', { name: 'Create' }).click();
+  // The scratch documents above left the project dirty, so the discard guard
+  // stands between Create and the new canvas.
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(page.locator('.modal-overlay')).toHaveCount(0);
+  expect(await page.evaluate(() => OS.layers[0].objects.map(o => o.name)))
+    .toEqual(['__boundary__', 'Background Fill']);
+  expect(await sampleCentre()).toEqual([255, 255, 255, 255]);
+});

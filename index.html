@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Lm+SfKqHw/UoUyaMHnSaEIgztMqwqWagSE3vJI+AzwE=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-YNfv4VbhNGw8bwLoqJuCSJQ8Sp1SYscyq/Pjoy5MP74=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -381,8 +381,7 @@ animation:marchAnts .4s linear infinite}
 .template-card .tpl-dims{font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-top:3px}
 .recent-files{text-align:left;margin-top:20px}
 .recent-files h3{color:var(--text-secondary);font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-.recent-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:4px;cursor:pointer;color:var(--text-secondary);font-size:12px;transition:all .15s}
-.recent-item:hover{background:var(--bg-depth-3);color:var(--text-primary)}
+.recent-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:4px;cursor:default;color:var(--text-secondary);font-size:12px}
 .recent-item .ri-date{margin-left:auto;font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
 
 /* === GRID OVERLAY === */
@@ -3234,6 +3233,7 @@ const OS = {
         "Photo filter applied": "已应用照片滤镜",
         "Preferences saved": "首选项已保存",
         "Project loaded": "项目已加载",
+        "Recently opened": "最近打开",
         "Project saved": "项目已保存",
         "Select an image first": "请先选择图像",
         "Select an object first": "请先选择对象",
@@ -3657,7 +3657,7 @@ const OS = {
             this._setPersistenceState('dirty');
         }
     },
-    createNewDocument(w, h, { resetProject = false, clean = false, resetHistory = true } = {}) {
+    createNewDocument(w, h, { resetProject = false, clean = false, resetHistory = true, background = null } = {}) {
         if (resetProject) {
             this._advanceDocumentGeneration('A new document replaced this operation');
             this._projectFileHandle = null;
@@ -3673,8 +3673,18 @@ const OS = {
         this.canvas.setBackgroundColor(null, this.canvas.renderAll.bind(this.canvas));
         const boundary = this._createCheckerBoundary(w, h);
         this.canvas.add(boundary);
+        const backgroundObjects = [boundary];
+        const fillColor = /^#[0-9a-fA-F]{6}$/.test(String(background || '')) ? String(background) : null;
+        if (fillColor) {
+            const fill = new fabric.Rect({
+                left:0, top:0, width:w, height:h, fill:fillColor,
+                selectable:false, evented:false, name:'Background Fill'
+            });
+            this.canvas.add(fill);
+            backgroundObjects.push(fill);
+        }
         this.layers.push(
-            { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:[boundary] },
+            { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:backgroundObjects },
             { id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }
         );
         this.activeLayerIdx = 1;
@@ -3717,9 +3727,18 @@ const OS = {
             </div>
             <div class="modal-row"><label>Width</label><input id="ni-w" type="number" value="1920" min="1" max="8000"></div>
             <div class="modal-row"><label>Height</label><input id="ni-h" type="number" value="1080" min="1" max="8000"></div>
-            <div class="modal-row"><label>Background</label><input id="ni-bg" type="color" value="#ffffff"></div>
+            <div class="modal-row"><label>Background</label>
+                <select id="ni-bg-mode">
+                    <option value="transparent">Transparent</option>
+                    <option value="white">White</option>
+                    <option value="custom">Custom colour</option>
+                </select>
+                <input id="ni-bg" type="color" value="#ffffff" aria-label="Custom background colour" disabled></div>
             <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
             <button class="btn btn-primary" data-modal-create>Create</button></div></div>`;
+        const bgMode = o.querySelector('#ni-bg-mode');
+        const bgColor = o.querySelector('#ni-bg');
+        bgMode.addEventListener('change', () => { bgColor.disabled = bgMode.value !== 'custom'; });
         o.querySelectorAll('[data-pw]').forEach(btn => btn.addEventListener('click', () => {
             o.querySelector('#ni-w').value = btn.dataset.pw;
             o.querySelector('#ni-h').value = btn.dataset.ph;
@@ -3736,8 +3755,13 @@ const OS = {
             return;
         }
         const w = width.value, h = height.value;
+        const mode = o.querySelector('#ni-bg-mode')?.value || 'transparent';
+        const background = mode === 'white' ? '#ffffff'
+            : mode === 'custom' ? (o.querySelector('#ni-bg')?.value || null)
+            : null;
         if (!await this._confirmDiscardUnsaved('Creating a new document')) return;
-        this.createNewDocument(w,h,{resetProject:true});
+        this.createNewDocument(w,h,{resetProject:true, background});
+        this.trackRecentFile(this._docName, w, h);
         o.remove();
         this.toast(`Created ${w} × ${h} canvas`, 'success');
     },
@@ -4285,6 +4309,7 @@ const OS = {
             img.set({ left:0, top:0, selectable:true, name:this._safeText(name, 120) });
             this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img);
             this.zoomFit(); this.saveHistory('Open Image'); this.updateLayersPanel();
+            this.trackRecentFile(this._docName, img.width, img.height);
             this.toast(`Opened: ${this._safeText(name, 80)}`, 'success');
             return;
         }
@@ -4779,6 +4804,7 @@ const OS = {
             this._initializeHistory('Open Project');
             this._markDocumentClean(this._historyBaseSnapshot, 'clean');
             await this._clearAutoSave();
+            this.trackRecentFile(this._docName, this.canvasW, this.canvasH);
             this.toast(this._t('Project loaded'),'success');
             return true;
         } catch(error) {
@@ -5731,6 +5757,7 @@ self.onmessage = function(event) {
             this._assertComputeJobCurrent(job);
             this._updatePSDImportProgress(job, 'Committing document…');
             this._commitPSDImport(prepared, psd, file, job);
+            this.trackRecentFile(this._docName, this.canvasW, this.canvasH);
             this.toast(`PSD imported: ${prepared.decodedLayerCount} layers`, 'success');
             this._showPSDCompatibilityReport(prepared.report, 'PSD import compatibility');
             return true;
@@ -8837,10 +8864,17 @@ self.onmessage = function(event) {
         this._clearNode(area);
         if (!Array.isArray(recent) || !recent.length) return;
         const title = document.createElement('h3');
-        title.textContent = 'Recent';
+        title.textContent = this._t('Recently opened');
+        title.id = 'recent-files-title';
         area.appendChild(title);
+        // A record of what was worked on, not a reopen shortcut: the browser
+        // cannot reopen a path, and only a name and size were ever stored.
+        const list = document.createElement('ul');
+        list.setAttribute('role', 'list');
+        list.setAttribute('aria-labelledby', 'recent-files-title');
+        area.appendChild(list);
         recent.slice(0, 5).forEach(r => {
-            const item = document.createElement('div');
+            const item = document.createElement('li');
             item.className = 'recent-item';
             const name = document.createElement('span');
             name.textContent = this._safeText(r?.name, 100) || 'Untitled';
@@ -8848,10 +8882,11 @@ self.onmessage = function(event) {
             meta.className = 'ri-date';
             meta.textContent = `${this._safeText(r?.dims, 30)} · ${this._safeText(r?.date, 30)}`;
             item.append(name, meta);
-            area.appendChild(item);
+            list.appendChild(item);
         });
     },
     trackRecentFile(name, w, h) {
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) return;
         let recent = [];
         try { recent = JSON.parse(localStorage.getItem('openshop_recent') || '[]'); } catch(e) { console.warn('localStorage read failed:', e.message); }
         recent.unshift({ name, dims: `${w}x${h}`, date: new Date().toLocaleDateString() });

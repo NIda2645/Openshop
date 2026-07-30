@@ -2,6 +2,12 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Honour the New Image background choice: the colour picker was read by nothing, so every new document came out transparent whatever was selected. The dialog now offers Transparent, White, or a custom colour, and the swatch is enabled only when it applies
+- Populate the welcome screen's Recent list, which was permanently empty because nothing ever recorded an opened document, and present the rows as the history record they are rather than as clickable shortcuts that did nothing
+
 ## [v0.22.0] - 2026-07-30
 
 ### Performance
