@@ -32,6 +32,13 @@ All notable changes to Openshop will be documented in this file.
 - Walk one step per undo when undo or redo is triggered faster than a restore completes; overlapping restores no longer interleave or mis-map layer membership
 - Preserve layer masks, per-object opacity, blend mode, skew, shadow, and the object's own name when a filter or AI operation commits pixels
 - Report filter failures instead of leaving the dialog open with no feedback when a worker errors
+- Make Ctrl+K work on the welcome screen where it is advertised, and stop advertising Ctrl+Shift+P and Ctrl+N, which the browser reserves; the fullscreen shortcut is now listed consistently as F
+- Confirm dialogs with Enter, matching the existing Escape-to-cancel behaviour
+- Explain when the command palette has no matches and when its list is truncated
+- Report the real outcome of Batch Export instead of always claiming success, and say when no format is selected
+- Offer an inline undo when clearing the palette or recorded actions, which canvas history cannot recover
+- Warn once that animation frames are flattened snapshots before the timeline replaces a multi-layer stack
+- Translate the renamed Save Project menu item in Simplified Chinese
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
