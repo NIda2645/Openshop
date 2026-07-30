@@ -2,7 +2,7 @@
 
 All notable changes to Openshop will be documented in this file.
 
-## [Unreleased]
+## [v0.21.0] - 2026-07-30
 
 ### Fixed
 - Stop the import sanitizer from rewriting the editor's own snapshots: undo, redo, transaction rollback, project open, and recovery restore now preserve multi-line text, text longer than 500 characters, and base64 image sources exactly

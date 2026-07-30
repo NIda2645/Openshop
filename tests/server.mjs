@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.OPENSHOP_TEST_PORT || 4173);
-const productionRevision = '0.20.0-r3';
+const productionRevision = '0.21.0-r1';
 let workerRevision = productionRevision;
 let badShell = false;
 let networkDown = false;

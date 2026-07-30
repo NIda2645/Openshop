@@ -9,8 +9,8 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-4cxFqdNsL/R+nO8FOcL3BMmpKp8qxC/bkODsmELgx+k=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
-<title>OpenShop v0.20.0 — Online Image Editor</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-9KGvVSAeeV/on+U4dhwsQdUn2QcuKB6vhJFH1zdx71U=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<title>OpenShop v0.21.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -1676,10 +1676,10 @@ body{
 
 <!-- ===== TOP MENU ===== -->
 <div id="topbar" role="menubar" aria-label="Main menu">
-    <div class="logo" aria-label="OpenShop version 0.20.0">
+    <div class="logo" aria-label="OpenShop version 0.21.0">
         <span class="logo-mark">OS</span>
         <span class="logo-word">OpenShop</span>
-        <span class="logo-version">v0.20</span>
+        <span class="logo-version">v0.21</span>
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
         <div class="menu-dropdown">
@@ -2200,7 +2200,7 @@ body{
 <div id="welcome-overlay" role="dialog" aria-modal="true" aria-label="Welcome to OpenShop">
     <div class="welcome-inner">
         <section class="welcome-hero">
-            <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.20</small></div>
+            <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.21</small></div>
             <div class="welcome-kicker"><span></span> Local creative studio</div>
             <h1>Edit boldly.<br><em>Stay local.</em></h1>
             <p>A full image workspace that opens in one file. Your canvas, layers, and exports stay on this device.</p>
@@ -2543,7 +2543,7 @@ body{
 
 <script>
 // ================================================================
-//  OpenShop v0.20.0 — Core Engine (Phase 10: Pro Toolbar)
+//  OpenShop v0.21.0 — Core Engine (Phase 10: Pro Toolbar)
 // ================================================================
 // Static controls declare opaque action IDs; executable behavior lives only in this reviewed registry.
 const OS_EVENT_HANDLERS = Object.freeze({
@@ -3604,7 +3604,7 @@ const OS = {
         if (label) label.textContent = labels[this._persistenceState];
         const dirtyPrefix = this._isDirty ? '* ' : '';
         const stateSuffix = this._persistenceState === 'saving' ? ' (Saving)' : this._persistenceState === 'error' ? ' (Save failed)' : '';
-        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.20.0`;
+        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.21.0`;
     },
     _markDocumentDirty() {
         this._documentRevision += 1;
@@ -3936,7 +3936,7 @@ const OS = {
         return {
             kind: 'openshop-document',
             schemaVersion: this._documentSchemaVersion,
-            appVersion: '0.20.0',
+            appVersion: '0.21.0',
             document: {
                 id:this._coerceDocumentId(this._documentId, 'document'),
                 name:this._safeText(this._docName || 'Untitled', 100)
@@ -14192,7 +14192,7 @@ self.onmessage = async function(e) {
         const data = JSON.stringify({
             kind:'openshop-command-sequence',
             schemaVersion:this._commandSchemaVersion,
-            appVersion:'0.20.0',
+            appVersion:'0.21.0',
             commands:this._macroSteps.map(command => this._normalizeCommand(command, { allowSequence:false }))
         }, null, 2);
         const blob = new Blob([data], { type: 'application/json' });
