@@ -224,11 +224,56 @@ describe('OpenShop core object', () => {
       left: 0,
       top: 0,
       width: 1920,
-      height: 1080
+      height: 1080,
+      multiplier: 1
     });
     expect(clicks[0].download).toBe('Client_Proof_01.png');
     expect(boundary.opacity).toBe(1);
     expect(OS.toast).toHaveBeenCalledWith('Exported as PNG', 'success');
+  });
+
+  it('restores temporary export state and dirty metadata when encoding fails', () => {
+    const OS = loadOpenShop();
+    const boundary = {
+      name: '__boundary__',
+      opacity: 0.65,
+      visible: true,
+      fill: 'checker',
+      excludeFromExport: false,
+      set(property, value) {
+        this[property] = value;
+      }
+    };
+    const canvas = createCanvasMock([boundary]);
+    canvas.viewportTransform = [1.5, 0, 0, 1.5, 23, 17];
+    canvas.backgroundColor = '#123456';
+    canvas.toDataURL.mockImplementation(() => {
+      throw new Error('Synthetic encoder failure');
+    });
+    OS.canvas = canvas;
+    OS.layers = [{ id: 'layer-background', name: 'Background', visible: true, locked: true, opacity: 100, blend: 'source-over', objects: [boundary] }];
+    OS.activeLayerIdx = 0;
+    quietUiMethods(OS);
+    OS._isDirty = true;
+    OS._autoSaveDirty = true;
+    OS._documentRevision = 7;
+    OS._persistenceState = 'dirty';
+
+    expect(OS.saveFile('png')).toBe(false);
+
+    expect(canvas.viewportTransform).toEqual([1.5, 0, 0, 1.5, 23, 17]);
+    expect(canvas.backgroundColor).toBe('#123456');
+    expect(boundary).toMatchObject({
+      opacity: 0.65,
+      visible: true,
+      fill: 'checker',
+      excludeFromExport: false
+    });
+    expect(OS._isDirty).toBe(true);
+    expect(OS._autoSaveDirty).toBe(true);
+    expect(OS._documentRevision).toBe(7);
+    expect(OS._persistenceState).toBe('dirty');
+    expect(OS.toast).toHaveBeenCalledWith('Export failed: Synthetic encoder failure', 'error');
   });
 
   it('routes keyboard shortcuts to undo, redo, save, and tool selection', () => {
@@ -878,7 +923,17 @@ describe('OpenShop core object', () => {
 
   it('builds PSD export structure with correct layer metadata', () => {
     const OS = loadOpenShop();
-    const boundary = { name: '__boundary__', visible: true, toCanvasElement: vi.fn(() => document.createElement('canvas')), left: 0, top: 0, opacity: 1 };
+    const boundary = {
+      name: '__boundary__',
+      visible: true,
+      toCanvasElement: vi.fn(() => document.createElement('canvas')),
+      left: 0,
+      top: 0,
+      opacity: 1,
+      set(property, value) {
+        this[property] = value;
+      }
+    };
     const photo = { name: 'Portrait', visible: true, toCanvasElement: vi.fn(() => document.createElement('canvas')), left: 10, top: 20, opacity: 0.8 };
     const canvas = createCanvasMock([boundary, photo]);
     OS.canvas = canvas;

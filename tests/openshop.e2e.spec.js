@@ -1124,6 +1124,219 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('exports real alpha or matte pixels and presents format loss before download', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(32, 24, { resetProject: true, clean: true });
+    const card = new fabric.Rect({
+      left: 2,
+      top: 2,
+      width: 8,
+      height: 8,
+      fill: '#e43f55',
+      strokeWidth: 0,
+      name: 'Card'
+    });
+    OS.canvas.add(card);
+    OS.layers[1].name = 'Card';
+    OS.layers[1].objects.push(card);
+    const captionLayer = {
+      id: OS._newDocumentId('layer'),
+      name: 'Caption',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blend: 'source-over',
+      objects: []
+    };
+    const caption = new fabric.IText('A', {
+      left: 13,
+      top: 3,
+      fontSize: 8,
+      fill: '#ffffff',
+      name: 'Caption'
+    });
+    OS.canvas.add(caption);
+    captionLayer.objects.push(caption);
+    OS.layers.push(captionLayer);
+    OS.activeLayerIdx = 2;
+    OS._enforceLayerInvariants();
+    OS.updateLayersPanel();
+    OS._initializeHistory('Export Baseline');
+    OS._markDocumentDirty();
+
+    const sample = (dataUrl, x, y) => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        resolve([...context.getImageData(x, y, 1, 1).data]);
+      };
+      image.onerror = reject;
+      image.src = dataUrl;
+    });
+    const waitForPreview = (overlay, labelPrefix) => new Promise((resolve, reject) => {
+      const deadline = performance.now() + 2000;
+      const check = () => {
+        const label = overlay.querySelector('#es-preview')?.getAttribute('aria-label') || '';
+        if (label.startsWith(labelPrefix)) {
+          resolve(label);
+        } else if (performance.now() >= deadline) {
+          reject(new Error(`Timed out waiting for ${labelPrefix} export preview`));
+        } else {
+          setTimeout(check, 16);
+        }
+      };
+      check();
+    });
+
+    const stateBefore = JSON.stringify(OS._captureDocumentState());
+    const viewportBefore = OS.canvas.viewportTransform.slice();
+    const dirtyBefore = {
+      dirty: OS._isDirty,
+      autoSaveDirty: OS._autoSaveDirty,
+      revision: OS._documentRevision,
+      historyLength: OS.history.length
+    };
+    const transparentPng = OS._captureExportRaster({ format: 'png', transparent: true });
+    const mattePng = OS._captureExportRaster({ format: 'png', transparent: false, matte: '#00ff00' });
+    const transparentWebp = OS._captureExportRaster({ format: 'webp', transparent: true, quality: 1 });
+    const jpeg = OS._captureExportRaster({ format: 'jpeg', transparent: true, matte: '#00ff00', quality: 1 });
+    const pixels = {
+      transparentPng: await sample(transparentPng.dataUrl, 30, 22),
+      mattePng: await sample(mattePng.dataUrl, 30, 22),
+      transparentWebp: await sample(transparentWebp.dataUrl, 30, 22),
+      jpeg: await sample(jpeg.dataUrl, 30, 22)
+    };
+    const boundary = OS.canvas.getObjects().find((object) => object.name === '__boundary__');
+    const svgProbe = OS._withExportCanvasState({ transparent: true }, () => ({
+      source: OS.canvas.toSVG({
+        viewBox: { x: 0, y: 0, width: OS.canvasW, height: OS.canvasH },
+        width: OS.canvasW,
+        height: OS.canvasH
+      }),
+      boundaryOpacity: boundary.opacity,
+      boundaryExcluded: boundary.excludeFromExport
+    }));
+    const svgBoundaryRestored = boundary.opacity === 1 && boundary.excludeFromExport === false;
+
+    window.__pdfProbe = {};
+    window.jspdf = {
+      jsPDF: class {
+        constructor(options) { window.__pdfProbe.options = options; }
+        addImage(dataUrl) { window.__pdfProbe.dataUrl = dataUrl; }
+        save(filename) { window.__pdfProbe.filename = filename; }
+      }
+    };
+    const pdfSucceeded = OS.exportPDF({ matte: '#00ff00' });
+    const pdfPixel = await sample(window.__pdfProbe.dataUrl, 30, 22);
+
+    const originalToDataURL = OS.canvas.toDataURL;
+    OS.canvas.toDataURL = () => { throw new Error('Synthetic export failure'); };
+    const failedExport = OS.saveFile('png');
+    OS.canvas.toDataURL = originalToDataURL;
+
+    const stateAfter = JSON.stringify(OS._captureDocumentState());
+    const dirtyAfter = {
+      dirty: OS._isDirty,
+      autoSaveDirty: OS._autoSaveDirty,
+      revision: OS._documentRevision,
+      historyLength: OS.history.length
+    };
+    const overlay = OS.showExportSettings('jpeg');
+    overlay.querySelector('#es-matte').value = '#00ff00';
+    overlay.querySelector('#es-matte').dispatchEvent(new Event('input', { bubbles: true }));
+    await waitForPreview(overlay, 'JPEG');
+    const jpegUi = {
+      alphaDisabled: overlay.querySelector('#es-transparent').disabled,
+      alphaChecked: overlay.querySelector('#es-transparent').checked,
+      matteVisible: overlay.querySelector('#es-matte-row').style.display,
+      previewLabel: overlay.querySelector('#es-preview').getAttribute('aria-label'),
+      impact: overlay.querySelector('#es-impact').textContent,
+      projectPromptVisible: !overlay.querySelector('#es-project-state').hidden
+    };
+    overlay.querySelector('[data-fmt="png"]').click();
+    const alpha = overlay.querySelector('#es-transparent');
+    alpha.checked = false;
+    alpha.dispatchEvent(new Event('change', { bubbles: true }));
+    await waitForPreview(overlay, 'PNG');
+    const pngMatteUi = {
+      alphaDisabled: alpha.disabled,
+      matteVisible: overlay.querySelector('#es-matte-row').style.display,
+      previewLabel: overlay.querySelector('#es-preview').getAttribute('aria-label')
+    };
+    overlay.remove();
+
+    return {
+      pixels,
+      svg: {
+        checkerExcluded: !svgProbe.source.includes('<pattern'),
+        boundaryOpacityDuringExport: svgProbe.boundaryOpacity,
+        boundaryExcludedDuringExport: svgProbe.boundaryExcluded,
+        boundaryRestored: svgBoundaryRestored
+      },
+      pdf: {
+        succeeded: pdfSucceeded,
+        pixel: pdfPixel,
+        filename: window.__pdfProbe.filename
+      },
+      jpegTransparentOption: jpeg.options.transparent,
+      stateRestored: stateAfter === stateBefore,
+      viewportRestored: JSON.stringify(OS.canvas.viewportTransform) === JSON.stringify(viewportBefore),
+      dirtyUnchanged: JSON.stringify(dirtyAfter) === JSON.stringify(dirtyBefore),
+      failedExport,
+      jpegUi,
+      pngMatteUi
+    };
+  });
+
+  expect(result.pixels.transparentPng[3]).toBe(0);
+  expect(result.pixels.transparentWebp[3]).toBe(0);
+  expect(result.pixels.mattePng).toEqual([0, 255, 0, 255]);
+  expect(result.pixels.jpeg[1]).toBeGreaterThan(180);
+  expect(result.pixels.jpeg[0]).toBeLessThan(80);
+  expect(result.pixels.jpeg[2]).toBeLessThan(80);
+  expect(result.pixels.jpeg[3]).toBe(255);
+  expect(result.svg).toEqual({
+    checkerExcluded: true,
+    boundaryOpacityDuringExport: 0,
+    boundaryExcludedDuringExport: true,
+    boundaryRestored: true
+  });
+  expect(result.pdf.succeeded).toBe(true);
+  expect(result.pdf.pixel).toEqual([0, 255, 0, 255]);
+  expect(result.pdf.filename).toBe('Untitled.pdf');
+  expect(result.jpegTransparentOption).toBe(false);
+  expect(result.stateRestored).toBe(true);
+  expect(result.viewportRestored).toBe(true);
+  expect(result.dirtyUnchanged).toBe(true);
+  expect(result.failedExport).toBe(false);
+  expect(result.jpegUi).toEqual(expect.objectContaining({
+    alphaDisabled: true,
+    alphaChecked: false,
+    matteVisible: 'flex',
+    projectPromptVisible: true
+  }));
+  expect(result.jpegUi.previewLabel).toContain('JPEG · matte #00ff00');
+  expect(result.jpegUi.impact).toContain('2 editable layers will be flattened');
+  expect(result.jpegUi.impact).toContain('1 text object will no longer be editable');
+  expect(result.jpegUi.impact).toContain('JPEG has no alpha channel');
+  expect(result.jpegUi.impact).toContain('does not save the editable project');
+  expect(result.pngMatteUi).toEqual({
+    alphaDisabled: false,
+    matteVisible: 'flex',
+    previewLabel: 'PNG · matte #00ff00'
+  });
+  expect(pageErrors).toEqual([]);
+});
+
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();

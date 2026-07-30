@@ -499,12 +499,19 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .style-section summary:hover{color:var(--accent)}
 
 /* === EXPORT DIALOG === */
-.export-preview{width:100%;height:120px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:10px}
+.export-preview{position:relative;width:100%;height:120px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px}
+.export-preview.alpha{background-color:#b8b8b8;background-image:linear-gradient(45deg,#e2e2e2 25%,transparent 25%),linear-gradient(-45deg,#e2e2e2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e2e2 75%),linear-gradient(-45deg,transparent 75%,#e2e2e2 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
 .export-preview img{max-width:100%;max-height:100%;object-fit:contain}
+.export-preview-label{position:absolute;left:6px;bottom:6px;padding:3px 6px;border-radius:4px;background:rgba(7,13,23,.84);color:#eaf1ff;font:9px 'JetBrains Mono',monospace;letter-spacing:.03em}
 .export-size-est{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-align:center;margin-bottom:8px}
 .export-format-row{display:flex;gap:6px;margin-bottom:10px;justify-content:center}
 .export-format-row .btn{min-width:55px}
 .export-format-row .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.export-impact{margin:8px 0;padding:8px 10px;border:1px solid color-mix(in srgb,var(--warning) 45%,var(--border));border-radius:6px;background:color-mix(in srgb,var(--warning) 8%,var(--bg-depth-3));font-size:11px;color:var(--text-secondary)}
+.export-impact strong{display:block;color:var(--text-primary);margin-bottom:4px}
+.export-impact ul{margin:0;padding-left:16px;display:grid;gap:2px}
+.export-project-state{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-depth-3);font-size:11px;color:var(--text-secondary)}
+.export-project-state[hidden]{display:none}
 
 /* === BEFORE/AFTER SPLIT === */
 #ba-overlay{position:fixed;inset:0;z-index:29000;background:var(--bg-depth-0);display:none;flex-direction:column}
@@ -3604,33 +3611,148 @@ const OS = {
             });
         }; r.readAsDataURL(file);
     },
-    saveFile(fmt) {
-        this._enforceLayerInvariants({ render:false });
-        if (fmt === 'svg') { this._exportSVG(); return; }
-        const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0];
-        const boundary = this.canvas.getObjects().find(o => o.name === '__boundary__');
-        if (fmt === 'jpeg' && boundary) {
-            // JPEG needs solid white background (no transparency)
-            const origFill = boundary.fill;
-            boundary.set('fill', '#ffffff');
-            this.canvas.renderAll();
-            const url = this.canvas.toDataURL({ format:fmt, quality:0.92, left:0, top:0, width:this.canvasW, height:this.canvasH });
-            boundary.set('fill', origFill);
-            this.canvas.viewportTransform = vpt; this.canvas.renderAll();
-            const docName = (this._docName || 'openshop-export').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const a = document.createElement('a'); a.download = `${docName}.jpg`; a.href = url; a.click();
-        } else {
-            // PNG/WebP: hide boundary for transparency
-            if (boundary) boundary.set('opacity', 0);
-            this.canvas.renderAll();
-            const url = this.canvas.toDataURL({ format:fmt, quality:1, left:0, top:0, width:this.canvasW, height:this.canvasH });
-            if (boundary) boundary.set('opacity', 1);
-            this.canvas.viewportTransform = vpt; this.canvas.renderAll();
-            const docName = (this._docName || 'openshop-export').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const a = document.createElement('a'); a.download = `${docName}.${fmt}`; a.href = url; a.click();
+    _exportFileName(format) {
+        const base = (this._docName || 'openshop-export').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const extension = format === 'jpeg' ? 'jpg' : format;
+        return `${base}.${extension}`;
+    },
+    _normalizeExportOptions(options = {}) {
+        const format = String(options.format || 'png').toLowerCase();
+        if (!['png','jpeg','webp'].includes(format)) throw new Error('Unsupported raster export format');
+        const quality = Math.max(0.01, Math.min(1, Number(options.quality ?? (format === 'png' ? 1 : 0.92))));
+        const scale = Math.max(0.01, Math.min(4, Number(options.scale ?? 1)));
+        const width = Math.round(this.canvasW * scale);
+        const height = Math.round(this.canvasH * scale);
+        if (!Number.isFinite(quality) || !Number.isFinite(scale)) throw new Error('Export settings are invalid');
+        if (width < 1 || height < 1 || width > this._importLimits.maxImageDimension || height > this._importLimits.maxImageDimension || width * height > this._importLimits.maxImagePixels) {
+            throw new Error('Export dimensions exceed the 80 megapixel safety limit');
         }
-        this.toast(`Exported as ${fmt.toUpperCase()}`, 'success');
+        const matte = this._validHexColor(options.matte || '#ffffff');
+        if (!matte) throw new Error('Export matte color is invalid');
+        return {
+            format,
+            quality,
+            scale,
+            transparent:format !== 'jpeg' && options.transparent !== false,
+            matte
+        };
+    },
+    _withExportCanvasState({ transparent = true, matte = '#ffffff' } = {}, operation) {
+        this._enforceLayerInvariants({ render:false });
+        const viewportTransform = this.canvas.viewportTransform.slice();
+        const backgroundColor = this.canvas.backgroundColor;
+        const boundary = this.canvas.getObjects().find(object => object.name === '__boundary__');
+        const boundaryState = boundary ? {
+            opacity:boundary.opacity,
+            visible:boundary.visible,
+            fill:boundary.fill,
+            excludeFromExport:boundary.excludeFromExport
+        } : null;
+        try {
+            this.canvas.viewportTransform = [1,0,0,1,0,0];
+            if (boundary) {
+                boundary.set('excludeFromExport', true);
+                if (transparent) {
+                    boundary.set('opacity', 0);
+                } else {
+                    boundary.set('visible', true);
+                    boundary.set('opacity', 1);
+                    boundary.set('fill', matte);
+                }
+            } else {
+                this.canvas.backgroundColor = transparent ? null : matte;
+            }
+            this.canvas.renderAll();
+            return operation();
+        } finally {
+            this.canvas.backgroundColor = backgroundColor;
+            if (boundary && boundaryState) {
+                boundary.set('opacity', boundaryState.opacity);
+                boundary.set('visible', boundaryState.visible);
+                boundary.set('fill', boundaryState.fill);
+                boundary.set('excludeFromExport', boundaryState.excludeFromExport);
+            }
+            this.canvas.viewportTransform = viewportTransform;
+            this.canvas.renderAll();
+        }
+    },
+    _captureExportRaster(options = {}) {
+        const normalized = this._normalizeExportOptions(options);
+        const dataUrl = this._withExportCanvasState(normalized, () => {
+            const renderOptions = {
+                format:normalized.format,
+                quality:normalized.quality,
+                left:0,
+                top:0,
+                width:this.canvasW,
+                height:this.canvasH,
+                multiplier:normalized.scale
+            };
+            return this.canvas.toDataURL(renderOptions);
+        });
+        const mime = normalized.format === 'jpeg' ? 'image/jpeg' : `image/${normalized.format}`;
+        if (typeof dataUrl !== 'string' || !dataUrl.startsWith(`data:${mime}`)) {
+            throw new Error(`${normalized.format.toUpperCase()} encoding is not supported by this browser`);
+        }
+        return { dataUrl, options:normalized };
+    },
+    _downloadDataUrl(dataUrl, filename) {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = dataUrl;
+        link.click();
+        return true;
+    },
+    _getExportImpact(format, { transparent = true } = {}) {
+        const normalizedFormat = String(format || 'png').toLowerCase();
+        const objects = this.canvas.getObjects().filter(object => object.name !== '__boundary__' && !object.excludeFromExport);
+        const contentLayers = this.layers.filter(layer => layer.objects.some(object => object.name !== '__boundary__' && !object.excludeFromExport));
+        const warnings = [];
+        const raster = ['png','jpeg','webp'].includes(normalizedFormat);
+        const textCount = objects.filter(object => ['text','i-text','textbox'].includes(object.type)).length;
+        const vectorCount = objects.filter(object => ['rect','circle','ellipse','triangle','polygon','polyline','line','path'].includes(object.type)).length;
+        const maskCount = objects.filter(object => object.clipPath || object._hasMask).length;
+        const filteredCount = objects.filter(object => Array.isArray(object.filters) && object.filters.length).length;
+
+        if (raster || normalizedFormat === 'pdf') {
+            if (contentLayers.length > 1) warnings.push(`${contentLayers.length} editable layers will be flattened into one image.`);
+            if (textCount) warnings.push(`${textCount} text object${textCount === 1 ? '' : 's'} will no longer be editable.`);
+            if (vectorCount) warnings.push(`${vectorCount} vector object${vectorCount === 1 ? '' : 's'} will be rasterized.`);
+            if (maskCount) warnings.push(`${maskCount} mask${maskCount === 1 ? '' : 's'} will be baked into pixels.`);
+        } else if (normalizedFormat === 'svg') {
+            if (contentLayers.length > 1) warnings.push('OpenShop layer names, order metadata, locks, and blend settings are not stored as editable project layers in SVG.');
+            if (filteredCount) warnings.push(`${filteredCount} filtered image object${filteredCount === 1 ? '' : 's'} may be embedded as raster content.`);
+        } else if (normalizedFormat === 'psd') {
+            if (textCount) warnings.push(`${textCount} text object${textCount === 1 ? '' : 's'} will be rasterized by the current PSD exporter.`);
+            if (vectorCount) warnings.push(`${vectorCount} vector object${vectorCount === 1 ? '' : 's'} will be rasterized by the current PSD exporter.`);
+            if (maskCount) warnings.push(`${maskCount} OpenShop mask${maskCount === 1 ? '' : 's'} will be baked into layer pixels.`);
+            if (this.layers.some(layer => layer.blend && layer.blend !== 'source-over')) warnings.push('Non-normal OpenShop blend modes are not represented by the current PSD exporter.');
+        }
+        if (this._animFrames.length > 1) warnings.push(`Only the current canvas is exported; ${this._animFrames.length} animation frames remain in the project.`);
+        if (normalizedFormat === 'jpeg') warnings.push('JPEG has no alpha channel; transparent pixels will use the selected matte color.');
+        else if ((normalizedFormat === 'png' || normalizedFormat === 'webp') && !transparent) warnings.push('Transparency is disabled; transparent pixels will use the selected matte color.');
+        warnings.push('History, selections, guides, and other project-only editing state are not included in this export.');
+        if (this._isDirty) warnings.push('This export does not save the editable project; unsaved project changes will remain.');
+        return { format:normalizedFormat, warnings };
+    },
+    saveFile(format, options = {}) {
+        if (format === 'svg') return this._exportSVG();
+        try {
+            const captured = this._captureExportRaster({
+                format,
+                quality:options.quality,
+                scale:options.scale,
+                transparent:options.transparent ?? format !== 'jpeg',
+                matte:options.matte || '#ffffff'
+            });
+            this._downloadDataUrl(captured.dataUrl, this._exportFileName(captured.options.format));
+            this.toast(`Exported as ${captured.options.format.toUpperCase()}`, 'success');
+            return true;
+        } catch (error) {
+            console.error('Raster export error:', error);
+            this.toast(`Export failed: ${error.message}`, 'error');
+            return false;
+        }
     },
     _sanitizeSVG(svg) {
         const parser = new DOMParser();
@@ -3653,15 +3775,22 @@ const OS = {
         return new XMLSerializer().serializeToString(doc);
     },
     _exportSVG() {
-        this._enforceLayerInvariants({ render:false });
-        const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
-        let svg = this.canvas.toSVG({ viewBox: { x:0, y:0, width:this.canvasW, height:this.canvasH }, width:this.canvasW, height:this.canvasH });
-        svg = this._sanitizeSVG(svg);
-        this.canvas.viewportTransform = vpt; this.canvas.renderAll();
-        const blob = new Blob([svg], { type:'image/svg+xml' });
-        this._downloadBlob(blob, 'openshop-export.svg');
-        this.toast('Exported as SVG', 'success');
+        try {
+            let svg = this._withExportCanvasState({ transparent:true }, () => this.canvas.toSVG({
+                viewBox:{ x:0, y:0, width:this.canvasW, height:this.canvasH },
+                width:this.canvasW,
+                height:this.canvasH
+            }));
+            svg = this._sanitizeSVG(svg);
+            const blob = new Blob([svg], { type:'image/svg+xml' });
+            this._downloadBlob(blob, this._exportFileName('svg'));
+            this.toast('Exported as SVG', 'success');
+            return true;
+        } catch (error) {
+            console.error('SVG export error:', error);
+            this.toast(`SVG export failed: ${error.message}`, 'error');
+            return false;
+        }
     },
     batchExport() {
         const fmts = ['png','jpeg','webp','svg','pdf'];
@@ -6889,66 +7018,66 @@ self.onmessage = function(event) {
     },
 
     // ====================== PDF EXPORT ======================
-    exportPDF() {
-        if (typeof jspdf === 'undefined' && typeof window.jspdf === 'undefined') { this.toast('jsPDF not loaded', 'error'); return; }
-        this._enforceLayerInvariants({ render:false });
-        const { jsPDF } = window.jspdf;
-        const landscape = this.canvasW > this.canvasH;
-        const pdf = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'px', format: [this.canvasW, this.canvasH] });
-        const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
-        const dataUrl = this.canvas.toDataURL({ format: 'png', left: 0, top: 0, width: this.canvasW, height: this.canvasH });
-        this.canvas.viewportTransform = vpt; this.canvas.renderAll();
-        pdf.addImage(dataUrl, 'PNG', 0, 0, this.canvasW, this.canvasH);
-        pdf.save('openshop-export.pdf');
-        this.toast('Exported as PDF', 'success');
+    exportPDF({ matte = '#ffffff' } = {}) {
+        if (typeof jspdf === 'undefined' && typeof window.jspdf === 'undefined') { this.toast('jsPDF not loaded', 'error'); return false; }
+        try {
+            const { jsPDF } = window.jspdf;
+            const landscape = this.canvasW > this.canvasH;
+            const pdf = new jsPDF({ orientation:landscape ? 'landscape' : 'portrait', unit:'px', format:[this.canvasW, this.canvasH] });
+            const captured = this._captureExportRaster({ format:'png', transparent:false, matte });
+            pdf.addImage(captured.dataUrl, 'PNG', 0, 0, this.canvasW, this.canvasH);
+            pdf.save(this._exportFileName('pdf'));
+            this.toast('Exported as PDF', 'success');
+            return true;
+        } catch (error) {
+            console.error('PDF export error:', error);
+            this.toast(`PDF export failed: ${error.message}`, 'error');
+            return false;
+        }
     },
     exportPSD() {
         const lib = window.agPsd || (typeof agPsd !== 'undefined' ? agPsd : null);
-        if (!lib || !lib.writePsd) { this.toast('PSD library not loaded or does not support writing', 'error'); return; }
-        this._enforceLayerInvariants({ render:false });
+        if (!lib || !lib.writePsd) { this.toast('PSD library not loaded or does not support writing', 'error'); return false; }
         this.toast('Generating PSD...', 'info');
-        const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
-        const psd = { width: this.canvasW, height: this.canvasH, children: [] };
-        for (let i = 0; i < this.layers.length; i++) {
-            const layer = this.layers[i];
-            const objs = layer.objects.filter(o => o.name !== '__boundary__');
-            if (!objs.length) continue;
-            const layerCanvas = document.createElement('canvas');
-            layerCanvas.width = this.canvasW; layerCanvas.height = this.canvasH;
-            const layerCtx = layerCanvas.getContext('2d');
-            for (const obj of objs) {
-                if (!obj.visible) continue;
-                const tmpCanvas = document.createElement('canvas');
-                tmpCanvas.width = this.canvasW; tmpCanvas.height = this.canvasH;
-                const tmpCtx = tmpCanvas.getContext('2d');
-                const objCanvas = obj.toCanvasElement ? obj.toCanvasElement() : null;
-                if (objCanvas) {
-                    tmpCtx.drawImage(objCanvas, obj.left || 0, obj.top || 0);
-                }
-                layerCtx.globalAlpha = obj.opacity || 1;
-                layerCtx.drawImage(tmpCanvas, 0, 0);
-                layerCtx.globalAlpha = 1;
-            }
-            psd.children.push({
-                name: layer.name || 'Layer ' + i,
-                canvas: layerCanvas,
-                left: 0, top: 0,
-                opacity: Math.round((layer.opacity / 100) * 255),
-                hidden: !layer.visible,
-            });
-        }
-        this.canvas.viewportTransform = vpt; this.canvas.renderAll();
         try {
+            const psd = this._withExportCanvasState({ transparent:true }, () => {
+                const structure = { width:this.canvasW, height:this.canvasH, children:[] };
+                for (let i = 0; i < this.layers.length; i++) {
+                    const layer = this.layers[i];
+                    const objects = layer.objects.filter(object => object.name !== '__boundary__');
+                    if (!objects.length) continue;
+                    const layerCanvas = document.createElement('canvas');
+                    layerCanvas.width = this.canvasW;
+                    layerCanvas.height = this.canvasH;
+                    const layerContext = layerCanvas.getContext('2d');
+                    for (const object of objects) {
+                        if (!object.visible) continue;
+                        const objectCanvas = object.toCanvasElement ? object.toCanvasElement() : null;
+                        if (!objectCanvas) continue;
+                        layerContext.globalAlpha = object.opacity ?? 1;
+                        layerContext.drawImage(objectCanvas, object.left || 0, object.top || 0);
+                        layerContext.globalAlpha = 1;
+                    }
+                    structure.children.push({
+                        name:layer.name || 'Layer ' + i,
+                        canvas:layerCanvas,
+                        left:0,
+                        top:0,
+                        opacity:Math.round((layer.opacity / 100) * 255),
+                        hidden:!layer.visible
+                    });
+                }
+                return structure;
+            });
             const buffer = lib.writePsd(psd);
             const blob = new Blob([buffer], { type: 'application/octet-stream' });
-            const docName = (this._docName || 'openshop-export').replace(/[^a-zA-Z0-9_-]/g, '_');
-            this._downloadBlob(blob, `${docName}.psd`);
+            this._downloadBlob(blob, this._exportFileName('psd'));
             this.toast('Exported as PSD', 'success');
+            return true;
         } catch(e) {
             console.error('PSD export error:', e);
             this.toast('PSD export failed: ' + e.message, 'error');
+            return false;
         }
     },
 
@@ -9112,59 +9241,151 @@ self.onmessage = async function(e) {
     },
 
     // ====================== EXPORT SETTINGS ======================
-    showExportSettings() {
+    showExportSettings(initialFormat = 'png') {
         const o = document.createElement('div'); o.className = 'modal-overlay';
         o.innerHTML = `<div class="modal" style="min-width:380px"><h3>Export Settings</h3>
             <div class="export-format-row">
-                <button class="btn active" id="es-png" data-fmt="png">PNG</button>
+                <button class="btn" id="es-png" data-fmt="png">PNG</button>
                 <button class="btn" id="es-jpeg" data-fmt="jpeg">JPEG</button>
                 <button class="btn" id="es-webp" data-fmt="webp">WebP</button>
             </div>
             <div class="modal-row" id="es-quality-row" style="display:none"><label>Quality</label><input id="es-quality" type="range" min="1" max="100" value="92" data-suffix="%"><span class="opt-val">92%</span></div>
             <div class="modal-row"><label>Scale</label><select id="es-scale"><option value="1">1x (Original)</option><option value="0.5">0.5x (Half)</option><option value="2">2x (Double)</option><option value="0.25">0.25x (Quarter)</option></select></div>
-            <div class="modal-row"><label><input type="checkbox" id="es-transparent"> Transparent Background</label></div>
+            <div class="modal-row"><label><input type="checkbox" id="es-transparent" checked> Preserve transparent pixels</label><span id="es-alpha-help" style="font-size:10px;color:var(--text-muted)"></span></div>
+            <div class="modal-row" id="es-matte-row" style="display:none"><label>Matte</label><input type="color" id="es-matte" value="#ffffff"><span style="font-size:10px;color:var(--text-muted)">Fills transparent pixels</span></div>
             <div class="export-size-est" id="es-size">Est. size: calculating...</div>
-            <div class="export-preview" id="es-preview"></div>
+            <div class="export-preview alpha" id="es-preview" role="img" aria-label="Export preview"><span style="font-size:11px;color:var(--text-muted)">Rendering preview…</span></div>
+            <div class="export-impact" id="es-impact" role="status"></div>
+            <div class="export-project-state" id="es-project-state" hidden>
+                <span>Unsaved editable project changes remain after export.</span>
+                <button class="btn" type="button" data-es-save-project>Save Project</button>
+            </div>
             <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
             <button class="btn btn-primary" data-modal-action>Export</button></div></div>`;
-        o.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => this._esFormat(btn.dataset.fmt, btn)));
-        o.querySelector('#es-quality').addEventListener('input', () => this._esUpdateSize());
+        o.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => this._esFormat(btn.dataset.fmt, btn, o)));
+        o.querySelector('#es-quality').addEventListener('input', () => this._esUpdate(o));
+        o.querySelector('#es-scale').addEventListener('change', () => this._esUpdate(o));
+        o.querySelector('#es-transparent').addEventListener('change', () => {
+            o.querySelector('#es-matte-row').style.display = o.querySelector('#es-transparent').checked ? 'none' : 'flex';
+            this._esUpdate(o);
+        });
+        o.querySelector('#es-matte').addEventListener('input', () => this._esUpdate(o));
+        o.querySelector('[data-es-save-project]').addEventListener('click', async () => {
+            await this.saveProject();
+            this._esUpdate(o);
+        });
         o.querySelector('[data-modal-action]').addEventListener('click', () => this._doExportSettings(o));
-        document.body.appendChild(o); requestAnimationFrame(() => { o.classList.add('show'); this._esUpdateSize(); });
+        document.body.appendChild(o);
+        const requested = ['png','jpeg','webp'].includes(String(initialFormat).toLowerCase()) ? String(initialFormat).toLowerCase() : 'png';
+        const button = o.querySelector(`[data-fmt="${requested}"]`);
+        requestAnimationFrame(() => {
+            o.classList.add('show');
+            this._esFormat(requested, button, o);
+        });
+        return o;
     },
-    _esFormat(fmt, btn) {
+    _esFormat(fmt, btn, overlay = btn?.closest('.modal-overlay')) {
+        if (!btn || !overlay) return;
         btn.parentElement.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        document.getElementById('es-quality-row').style.display = fmt === 'png' ? 'none' : 'flex';
-        this._esUpdateSize();
+        const alpha = overlay.querySelector('#es-transparent');
+        const matteRow = overlay.querySelector('#es-matte-row');
+        const alphaHelp = overlay.querySelector('#es-alpha-help');
+        overlay.querySelector('#es-quality-row').style.display = fmt === 'png' ? 'none' : 'flex';
+        if (fmt === 'jpeg') {
+            alpha.dataset.previous = String(alpha.checked);
+            alpha.checked = false;
+            alpha.disabled = true;
+            matteRow.style.display = 'flex';
+            alphaHelp.textContent = 'JPEG always uses a matte';
+        } else {
+            alpha.disabled = false;
+            alpha.checked = alpha.dataset.previous ? alpha.dataset.previous === 'true' : true;
+            matteRow.style.display = alpha.checked ? 'none' : 'flex';
+            alphaHelp.textContent = 'PNG and WebP can preserve alpha';
+        }
+        this._esUpdate(overlay);
     },
-    _esUpdateSize() {
-        const fmt = document.querySelector('.export-format-row .btn.active')?.textContent?.toLowerCase() || 'png';
-        const scale = +document.getElementById('es-scale')?.value || 1;
+    _readExportSettings(overlay) {
+        const format = overlay.querySelector('.export-format-row .btn.active')?.dataset.fmt || 'png';
+        return {
+            format,
+            quality:(+overlay.querySelector('#es-quality').value || 92) / 100,
+            scale:+overlay.querySelector('#es-scale').value || 1,
+            transparent:format !== 'jpeg' && overlay.querySelector('#es-transparent').checked,
+            matte:overlay.querySelector('#es-matte').value || '#ffffff'
+        };
+    },
+    _esUpdateSize(overlay) {
+        const settings = this._readExportSettings(overlay);
+        const fmt = settings.format;
+        const scale = settings.scale;
         const cw = this.canvasW || 1920, ch = this.canvasH || 1080;
         const w = Math.round(cw * scale), h = Math.round(ch * scale);
-        const bpp = fmt === 'png' ? 4 : 3;
+        const bpp = fmt === 'jpeg' || !settings.transparent ? 3 : 4;
         const raw = w * h * bpp;
         const ratio = fmt === 'png' ? 0.5 : fmt === 'jpeg' ? 0.1 : 0.08;
         const est = Math.round(raw * ratio / 1024);
-        const el = document.getElementById('es-size');
+        const el = overlay.querySelector('#es-size');
         if (el) el.textContent = `${w}x${h} — Est. ~${est > 1024 ? (est/1024).toFixed(1)+'MB' : est+'KB'}`;
     },
+    _renderExportImpact(overlay) {
+        const settings = this._readExportSettings(overlay);
+        const impact = this._getExportImpact(settings.format, settings);
+        const container = overlay.querySelector('#es-impact');
+        this._clearNode(container);
+        const title = document.createElement('strong');
+        title.textContent = 'Export impact';
+        const list = document.createElement('ul');
+        impact.warnings.forEach(warning => {
+            const item = document.createElement('li');
+            item.textContent = warning;
+            list.appendChild(item);
+        });
+        container.append(title, list);
+        overlay.querySelector('#es-project-state').hidden = !this._isDirty;
+    },
+    _renderExportPreview(overlay) {
+        if (!overlay?.isConnected) return;
+        const settings = this._readExportSettings(overlay);
+        const preview = overlay.querySelector('#es-preview');
+        try {
+            const previewScale = Math.max(0.01, Math.min(1, 300 / this.canvasW, 100 / this.canvasH));
+            const captured = this._captureExportRaster({ ...settings, scale:previewScale });
+            this._clearNode(preview);
+            preview.classList.toggle('alpha', captured.options.transparent);
+            if (!captured.options.transparent) preview.style.background = captured.options.matte;
+            else preview.style.background = '';
+            const image = document.createElement('img');
+            image.src = captured.dataUrl;
+            image.alt = '';
+            const label = document.createElement('span');
+            label.className = 'export-preview-label';
+            label.textContent = captured.options.transparent
+                ? `${captured.options.format.toUpperCase()} · alpha preview`
+                : `${captured.options.format.toUpperCase()} · matte ${captured.options.matte}`;
+            preview.append(image, label);
+            preview.setAttribute('aria-label', label.textContent);
+        } catch (error) {
+            this._clearNode(preview);
+            preview.classList.remove('alpha');
+            preview.style.background = '';
+            preview.textContent = `Preview unavailable: ${error.message}`;
+            preview.setAttribute('aria-label', preview.textContent);
+        }
+    },
+    _esUpdate(overlay) {
+        if (!overlay?.isConnected) return;
+        this._esUpdateSize(overlay);
+        this._renderExportImpact(overlay);
+        clearTimeout(this._exportPreviewTimer);
+        this._exportPreviewTimer = setTimeout(() => this._renderExportPreview(overlay), 60);
+    },
     _doExportSettings(overlay) {
-        this._enforceLayerInvariants({ render:false });
-        const fmt = document.querySelector('.export-format-row .btn.active')?.textContent?.toLowerCase() || 'png';
-        const quality = (+document.getElementById('es-quality').value || 92) / 100;
-        const scale = +document.getElementById('es-scale').value || 1;
-        const transparent = document.getElementById('es-transparent').checked;
-        const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
-        const opts = { format: fmt, left: 0, top: 0, width: this.canvasW, height: this.canvasH, multiplier: scale };
-        if (fmt !== 'png') opts.quality = quality;
-        const dataUrl = this.canvas.toDataURL(opts);
-        this.canvas.viewportTransform = vpt; this.canvas.renderAll();
-        const link = document.createElement('a'); link.download = `openshop-export.${fmt==='jpeg'?'jpg':fmt}`;
-        link.href = dataUrl; link.click();
-        overlay.remove(); this.toast(`Exported ${fmt.toUpperCase()} @ ${Math.round(scale*100)}%`, 'success');
+        const settings = this._readExportSettings(overlay);
+        const success = this.saveFile(settings.format, settings);
+        if (success) overlay.remove();
+        return success;
     },
 
     // ====================== BEFORE / AFTER COMPARE ======================
