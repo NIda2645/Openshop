@@ -2769,6 +2769,9 @@ const OS = {
     _savedSnapshot: null,
     _savePromise: null,
     _lastSaveError: null,
+    _psdInterchange: null,
+    _lastPSDImportReport: null,
+    _lastPSDExportReport: null,
     history: [], historyIdx: -1, maxHistory: 60,
     _historySchemaVersion: 1,
     _historyBaseSnapshot: null,
@@ -2991,6 +2994,9 @@ const OS = {
             this._savedSnapshot = null;
             this._docName = 'Untitled';
         }
+        this._psdInterchange = null;
+        this._lastPSDImportReport = null;
+        this._lastPSDExportReport = null;
         this.canvasW = w; this.canvasH = h; this.layers = []; this.canvas.clear();
         this.canvas.setBackgroundColor(null, this.canvas.renderAll.bind(this.canvas));
         const boundary = this._createCheckerBoundary(w, h);
@@ -3215,6 +3221,7 @@ const OS = {
                 locked: Boolean(layer.locked),
                 opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
                 blend: this._safeText(layer.blend || 'source-over', 40),
+                psd: this._normalizePSDLayerMetadata(layer.psd),
                 objectIds
             };
         });
@@ -3268,6 +3275,9 @@ const OS = {
             animation: {
                 frames: this._animFrames.filter(frame => typeof frame === 'string' && frame.startsWith('data:image/')),
                 activeFrameIndex: Math.max(0, Math.min(this._animIdx || 0, Math.max(0, this._animFrames.length - 1)))
+            },
+            interchange: {
+                psd: this._normalizePSDInterchange(this._psdInterchange)
             },
             workspace: {
                 tool: this.state.tool,
@@ -3435,6 +3445,7 @@ const OS = {
                 locked: Boolean(layer.locked),
                 opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
                 blend: this._safeText(layer.blend || 'source-over', 40),
+                psd: this._normalizePSDLayerMetadata(layer.psd),
                 objects: []
             };
             (Array.isArray(layer.objectIds) ? layer.objectIds : []).forEach(id => {
@@ -3453,6 +3464,7 @@ const OS = {
             return restored;
         });
         if (!this.layers.length) this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
+        this._psdInterchange = this._normalizePSDInterchange(state.interchange?.psd);
         const activeLayerId = state.active?.layerId;
         this.activeLayerIdx = Math.max(0, this.layers.findIndex(layer => layer.id === activeLayerId));
         objects.forEach(object => {
@@ -3723,10 +3735,16 @@ const OS = {
             if (contentLayers.length > 1) warnings.push('OpenShop layer names, order metadata, locks, and blend settings are not stored as editable project layers in SVG.');
             if (filteredCount) warnings.push(`${filteredCount} filtered image object${filteredCount === 1 ? '' : 's'} may be embedded as raster content.`);
         } else if (normalizedFormat === 'psd') {
-            if (textCount) warnings.push(`${textCount} text object${textCount === 1 ? '' : 's'} will be rasterized by the current PSD exporter.`);
+            const nativeTextCount = contentLayers.filter(layer => {
+                const layerObjects = layer.objects.filter(object => object.name !== '__boundary__' && !object.excludeFromExport);
+                return layerObjects.length === 1 && Boolean(this._fabricTextToPSD(layerObjects[0]));
+            }).length;
+            const flattenedTextCount = Math.max(0, textCount - nativeTextCount);
+            if (nativeTextCount) warnings.push(`${nativeTextCount} single-style text layer${nativeTextCount === 1 ? '' : 's'} will remain editable in PSD.`);
+            if (flattenedTextCount) warnings.push(`${flattenedTextCount} text object${flattenedTextCount === 1 ? '' : 's'} will be rasterized because its layer contains mixed content.`);
             if (vectorCount) warnings.push(`${vectorCount} vector object${vectorCount === 1 ? '' : 's'} will be rasterized by the current PSD exporter.`);
             if (maskCount) warnings.push(`${maskCount} OpenShop mask${maskCount === 1 ? '' : 's'} will be baked into layer pixels.`);
-            if (this.layers.some(layer => layer.blend && layer.blend !== 'source-over')) warnings.push('Non-normal OpenShop blend modes are not represented by the current PSD exporter.');
+            if (this._psdInterchange?.groups?.length) warnings.push(`${this._psdInterchange.groups.length} imported PSD group${this._psdInterchange.groups.length === 1 ? '' : 's'} will be reconstructed.`);
         }
         if (this._animFrames.length > 1) warnings.push(`Only the current canvas is exported; ${this._animFrames.length} animation frames remain in the project.`);
         if (normalizedFormat === 'jpeg') warnings.push('JPEG has no alpha channel; transparent pixels will use the selected matte color.');
@@ -3929,6 +3947,123 @@ const OS = {
     _psdLibUrl: 'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
     openPSD() { document.getElementById('psd-input').click(); },
     handlePSDOpen(e) { const file = e.target.files[0]; if (file) this._loadPSDFile(file); e.target.value=''; },
+    _normalizePSDOpacity(value, fallback = 1) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return fallback;
+        return Math.max(0, Math.min(1, number > 1 ? number / 255 : number));
+    },
+    _psdBlendToCanvas(mode) {
+        const key = String(mode || 'normal').trim().toLowerCase();
+        const map = {
+            normal:'source-over',
+            'pass through':'source-over',
+            darken:'darken',
+            multiply:'multiply',
+            'color burn':'color-burn',
+            lighten:'lighten',
+            screen:'screen',
+            'color dodge':'color-dodge',
+            overlay:'overlay',
+            'soft light':'soft-light',
+            'hard light':'hard-light',
+            difference:'difference',
+            exclusion:'exclusion',
+            hue:'hue',
+            saturation:'saturation',
+            color:'color',
+            luminosity:'luminosity'
+        };
+        return map[key] || 'source-over';
+    },
+    _canvasBlendToPSD(mode) {
+        const key = String(mode || 'source-over').trim().toLowerCase();
+        const map = {
+            'source-over':'normal',
+            darken:'darken',
+            multiply:'multiply',
+            'color-burn':'color burn',
+            lighten:'lighten',
+            screen:'screen',
+            'color-dodge':'color dodge',
+            overlay:'overlay',
+            'soft-light':'soft light',
+            'hard-light':'hard light',
+            difference:'difference',
+            exclusion:'exclusion',
+            hue:'hue',
+            saturation:'saturation',
+            color:'color',
+            luminosity:'luminosity'
+        };
+        return map[key] || 'normal';
+    },
+    _isSupportedPSDBlend(mode) {
+        const normalized = String(mode || 'normal').trim().toLowerCase();
+        return this._psdBlendToCanvas(normalized) !== 'source-over' || normalized === 'normal' || normalized === 'pass through';
+    },
+    _normalizePSDTextMetadata(value) {
+        if (!value || typeof value !== 'object') return null;
+        const content = this._safeText(value.content || '', 10000);
+        if (!content) return null;
+        const transform = Array.isArray(value.transform)
+            ? value.transform.slice(0, 6).map(Number)
+            : [1,0,0,1,0,0];
+        const safeTransform = transform.length === 6 && transform.every(Number.isFinite) ? transform : [1,0,0,1,0,0];
+        return {
+            content,
+            fontFamily:this._safeText(value.fontFamily || 'Arial', 120) || 'Arial',
+            fontSize:Math.max(1, Math.min(2000, Number(value.fontSize) || 24)),
+            fillColor:this._validHexColor(value.fillColor) || '#000000',
+            transform:safeTransform,
+            simple:value.simple !== false
+        };
+    },
+    _normalizePSDLayerMetadata(value) {
+        if (!value || typeof value !== 'object') return null;
+        const sourceKind = ['bitmap','text','adjustment','smart-object','vector','empty'].includes(value.sourceKind)
+            ? value.sourceKind
+            : 'bitmap';
+        return {
+            sourceId:this._safeText(value.sourceId || '', 120),
+            parentId:this._safeText(value.parentId || '', 120) || null,
+            order:Math.max(0, Math.min(this._psdLimits.maxLayers, Math.round(Number(value.order) || 0))),
+            sourceKind,
+            originalBlendMode:this._safeText(value.originalBlendMode || 'normal', 40).toLowerCase(),
+            importedCanvasBlend:this._safeText(value.importedCanvasBlend || 'source-over', 40).toLowerCase(),
+            text:this._normalizePSDTextMetadata(value.text)
+        };
+    },
+    _normalizePSDInterchange(value) {
+        if (!value || typeof value !== 'object' || !Array.isArray(value.groups)) return null;
+        const ids = new Set();
+        const groups = [];
+        value.groups.slice(0, this._psdLimits.maxLayers).forEach((group, index) => {
+            if (!group || typeof group !== 'object') return;
+            let id = this._safeText(group.id || `psd-group-${index}`, 120).replace(/[^a-zA-Z0-9_.-]/g, '');
+            if (!id || ids.has(id)) id = `psd-group-${index}`;
+            ids.add(id);
+            groups.push({
+                id,
+                parentId:this._safeText(group.parentId || '', 120).replace(/[^a-zA-Z0-9_.-]/g, '') || null,
+                order:Math.max(0, Math.min(this._psdLimits.maxLayers, Math.round(Number(group.order) || 0))),
+                name:this._safeText(group.name || `Group ${index + 1}`, 120),
+                hidden:Boolean(group.hidden),
+                opacity:this._normalizePSDOpacity(group.opacity),
+                blendMode:this._safeText(group.blendMode || 'pass through', 40).toLowerCase(),
+                opened:group.opened !== false
+            });
+        });
+        groups.forEach(group => {
+            if (group.parentId && !ids.has(group.parentId)) group.parentId = null;
+        });
+        return {
+            schemaVersion:1,
+            groups,
+            warnings:Array.isArray(value.warnings)
+                ? value.warnings.map(item => this._safeText(item, 300)).filter(Boolean).slice(0, 100)
+                : []
+        };
+    },
     _readPSDHeader(bytes) {
         if (!bytes || bytes.byteLength < 26) throw new Error('PSD header is truncated');
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -4104,7 +4239,34 @@ self.onmessage = function(event) {
             }
             return { width: width, height: height, buffer: buffer };
         };
-        const simplify = function(node, depth) {
+        const colorHex = function(color) {
+            if (!color || typeof color !== 'object') return '#000000';
+            const channel = function(value) {
+                const number = Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+                return number.toString(16).padStart(2, '0');
+            };
+            return '#' + channel(color.r) + channel(color.g) + channel(color.b);
+        };
+        const takeText = function(text) {
+            if (!text || typeof text !== 'object') return null;
+            const content = String(text.text || '').replace(/[\\u0000-\\u001f\\u007f]/g, '').slice(0, 10000);
+            if (!content) return null;
+            const style = text.style && typeof text.style === 'object' ? text.style : {};
+            const transform = Array.isArray(text.transform) && text.transform.length >= 6
+                ? text.transform.slice(0, 6).map(Number)
+                : [1, 0, 0, 1, 0, 0];
+            const styleRuns = Array.isArray(text.styleRuns) ? text.styleRuns.length : 0;
+            const paragraphRuns = Array.isArray(text.paragraphStyleRuns) ? text.paragraphStyleRuns.length : 0;
+            return {
+                content: content,
+                fontFamily: String(style.font && style.font.name || 'Arial').slice(0, 120),
+                fontSize: Math.max(1, Math.min(2000, Number(style.fontSize) || 24)),
+                fillColor: colorHex(style.fillColor),
+                transform: transform.every(Number.isFinite) ? transform : [1, 0, 0, 1, 0, 0],
+                simple: text.orientation !== 'vertical' && styleRuns <= 1 && paragraphRuns <= 1
+            };
+        };
+        const simplify = function(node, depth, path, parentId) {
             if (depth > 80) throw new Error('PSD layer nesting exceeds import limits');
             layerCount += 1;
             if (layerCount > event.data.limits.maxLayers) throw new Error('PSD layer count exceeds import limits');
@@ -4118,7 +4280,30 @@ self.onmessage = function(event) {
                 width * height > event.data.limits.maxLayerPixels) {
                 throw new Error('PSD layer ' + layerCount + ' exceeds import limits');
             }
+            const isGroup = Array.isArray(node.children);
+            const text = takeText(node.text);
+            const sourceKind = isGroup ? 'group'
+                : node.adjustment ? 'adjustment'
+                : node.placedLayer ? 'smart-object'
+                : (node.vectorMask || node.vectorFill) ? 'vector'
+                : text ? 'text'
+                : node.imageData ? 'bitmap'
+                : 'empty';
+            const unsupported = [];
+            if (node.effects) unsupported.push('layer effects');
+            if (node.mask) unsupported.push('layer mask');
+            if (node.adjustment) unsupported.push('adjustment layer');
+            if (node.placedLayer) unsupported.push('smart object');
+            if (node.vectorMask || node.vectorFill) unsupported.push('vector content');
+            if (node.clipping) unsupported.push('clipping');
+            if (typeof node.fillOpacity === 'number' && node.fillOpacity !== 1) unsupported.push('fill opacity');
+            if (text && !text.simple) unsupported.push('rich text styles');
+            const id = 'psd-' + path.join('-');
             return {
+                id: id,
+                parentId: parentId || null,
+                order: path[path.length - 1] || 0,
+                sourceKind: sourceKind,
                 name: node.name || '',
                 left: left,
                 top: top,
@@ -4127,16 +4312,36 @@ self.onmessage = function(event) {
                 hidden: Boolean(node.hidden),
                 opacity: typeof node.opacity === 'number' ? node.opacity : 1,
                 blendMode: node.blendMode || 'normal',
-                pixels: takePixels(node.imageData, 'PSD layer ' + layerCount),
-                children: Array.isArray(node.children) ? node.children.map(function(child) { return simplify(child, depth + 1); }) : []
+                opened: node.opened !== false,
+                protected: Boolean(node.transparencyProtected || node.protected && (node.protected.transparency || node.protected.composite || node.protected.position)),
+                text: text,
+                unsupported: unsupported,
+                pixels: isGroup ? null : takePixels(node.imageData, 'PSD layer ' + layerCount),
+                children: isGroup ? node.children.map(function(child, index) { return simplify(child, depth + 1, path.concat(index), id); }) : []
             };
         };
+        const children = Array.isArray(psd.children)
+            ? psd.children.map(function(child, index) { return simplify(child, 0, [index], null); })
+            : [];
+        const hasLayerPixels = function(nodes) {
+            return nodes.some(function(node) {
+                return Boolean(node.pixels) || hasLayerPixels(node.children || []);
+            });
+        };
+        const needsCompositeFallback = function(nodes) {
+            const wholeDocumentReasons = new Set(['layer effects', 'layer mask', 'adjustment layer', 'clipping', 'fill opacity']);
+            return nodes.some(function(node) {
+                return (node.unsupported || []).some(function(reason) { return wholeDocumentReasons.has(reason); }) ||
+                    needsCompositeFallback(node.children || []);
+            });
+        };
+        const layerPixelsAvailable = hasLayerPixels(children);
         const result = {
             width: Number(psd.width),
             height: Number(psd.height),
             decodedBytes: 0,
-            composite: takePixels(psd.imageData, 'PSD composite'),
-            children: Array.isArray(psd.children) ? psd.children.map(function(child) { return simplify(child, 0); }) : []
+            composite: (!layerPixelsAvailable || needsCompositeFallback(children)) ? takePixels(psd.imageData, 'PSD composite') : null,
+            children: children
         };
         result.decodedBytes = decodedBytes;
         self.postMessage({ id: id, type: 'result', psd: result }, transfer);
@@ -4200,20 +4405,186 @@ self.onmessage = function(event) {
         context.putImageData(new ImageData(new Uint8ClampedArray(buffer), pixels.width, pixels.height), 0, 0);
         return new fabric.Image(canvas, options);
     },
+    _fabricTextFromPSD(layer, name) {
+        const text = this._normalizePSDTextMetadata(layer.text);
+        if (!text?.simple || !fabric.IText) return null;
+        const [a,b,c,d,tx,ty] = text.transform;
+        const scaleX = Math.max(0.0001, Math.hypot(a, b));
+        const scaleY = Math.max(0.0001, Math.hypot(c, d));
+        const angle = Math.atan2(b, a) * 180 / Math.PI;
+        return new fabric.IText(text.content, {
+            left:Number.isFinite(tx) ? tx : layer.left || 0,
+            top:Number.isFinite(ty) ? ty : layer.top || 0,
+            scaleX,
+            scaleY,
+            angle,
+            fontFamily:text.fontFamily,
+            fontSize:text.fontSize,
+            fill:text.fillColor,
+            name
+        });
+    },
+    _analyzePSDImport(psd) {
+        const groups = [];
+        const warnings = [];
+        const wholeDocumentReasons = new Set(['layer effects', 'layer mask', 'adjustment layer', 'clipping', 'fill opacity']);
+        let flattenWholeDocument = false;
+        let leafCount = 0;
+        const reasonText = {
+            'layer effects':'layer effects are not editable',
+            'layer mask':'layer-mask metadata is not editable',
+            'adjustment layer':'adjustment controls are not supported',
+            'clipping':'clipping relationships are not supported',
+            'fill opacity':'separate fill opacity is not supported',
+            'smart object':'smart-object source data is not retained',
+            'vector content':'vector paths are not retained',
+            'rich text styles':'multiple or vertical text styles are not editable'
+        };
+        const visit = (nodes, names = []) => {
+            (nodes || []).forEach((node, index) => {
+                const name = this._safeText(node.name || `${node.sourceKind === 'group' ? 'Group' : 'Layer'} ${index + 1}`, 120);
+                const path = [...names, name];
+                const label = `"${path.join(' / ')}"`;
+                const opacity = this._normalizePSDOpacity(node.opacity);
+                if (node.sourceKind === 'group') {
+                    groups.push({
+                        id:node.id,
+                        parentId:node.parentId || null,
+                        order:node.order,
+                        name,
+                        hidden:Boolean(node.hidden),
+                        opacity,
+                        blendMode:String(node.blendMode || 'pass through').toLowerCase(),
+                        opened:node.opened !== false
+                    });
+                    const groupBlend = String(node.blendMode || 'pass through').toLowerCase();
+                    if (opacity !== 1) warnings.push(`${label}: group opacity is approximated in the editor and preserved for PSD export.`);
+                    if (groupBlend !== 'pass through' && groupBlend !== 'normal') {
+                        warnings.push(`${label}: group ${groupBlend} blending is approximated in the editor and preserved for PSD export.`);
+                    }
+                } else {
+                    leafCount += 1;
+                }
+                (node.unsupported || []).forEach(reason => {
+                    if (wholeDocumentReasons.has(reason)) flattenWholeDocument = true;
+                    const fallback = wholeDocumentReasons.has(reason)
+                        ? 'the document composite is the safe fallback'
+                        : 'this layer uses its decoded pixel fallback';
+                    warnings.push(`${label}: ${reasonText[reason] || `${reason} is unsupported`}; ${fallback}.`);
+                });
+                const blendMode = String(node.blendMode || (node.sourceKind === 'group' ? 'pass through' : 'normal')).toLowerCase();
+                if (node.sourceKind !== 'group' && !this._isSupportedPSDBlend(blendMode)) {
+                    warnings.push(`${label}: ${blendMode} blending previews as Normal but is preserved when re-exported to PSD.`);
+                }
+                visit(node.children, path);
+            });
+        };
+        visit(psd.children || []);
+        if (flattenWholeDocument && psd.composite) {
+            warnings.unshift('Unsupported document-wide PSD compositing was detected, so OpenShop imported one flattened appearance layer instead of duplicating the composite beside partial layers.');
+        } else if (flattenWholeDocument && !psd.composite) {
+            warnings.unshift('Unsupported document-wide PSD compositing was detected, but no composite bitmap was available; the decoded layer fallbacks may not match the source appearance.');
+        }
+        return {
+            groups:this._normalizePSDInterchange({ groups, warnings })?.groups || [],
+            warnings:[...new Set(warnings)].slice(0, 100),
+            flattenWholeDocument:Boolean(flattenWholeDocument && psd.composite),
+            leafCount
+        };
+    },
+    _showPSDCompatibilityReport(report, title = 'PSD compatibility report') {
+        const warnings = Array.isArray(report?.warnings) ? report.warnings.filter(Boolean) : [];
+        if (!warnings.length) return null;
+        document.querySelector('.psd-compat-report')?.remove();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show psd-compat-report';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'psd-compat-title');
+        const heading = document.createElement('h3');
+        heading.id = 'psd-compat-title';
+        heading.textContent = title;
+        const intro = document.createElement('p');
+        intro.style.cssText = 'font-size:12px;color:var(--text-secondary);margin-bottom:10px';
+        intro.textContent = report.flattenWholeDocument
+            ? 'Appearance was prioritized through a flattened fallback.'
+            : 'Supported layers remain editable; the exceptions below use explicit pixel fallbacks.';
+        const list = document.createElement('ul');
+        list.style.cssText = 'max-height:260px;overflow:auto;padding-left:20px;font-size:12px;color:var(--text-secondary);display:grid;gap:6px';
+        warnings.forEach(warning => {
+            const item = document.createElement('li');
+            item.textContent = warning;
+            list.appendChild(item);
+        });
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-btns';
+        const close = document.createElement('button');
+        close.className = 'btn btn-primary';
+        close.type = 'button';
+        close.textContent = 'Continue';
+        close.addEventListener('click', () => overlay.remove());
+        buttons.appendChild(close);
+        modal.append(heading, intro, list, buttons);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        close.focus();
+        return overlay;
+    },
+    _getPSDGroupState(layer) {
+        const metadata = layer?.psd;
+        const groups = this._psdInterchange?.groups;
+        if (!metadata?.parentId || !Array.isArray(groups)) return { visible:true, opacity:1 };
+        const byId = new Map(groups.map(group => [group.id, group]));
+        const visited = new Set();
+        let id = metadata.parentId;
+        let visible = true;
+        let opacity = 1;
+        while (id && byId.has(id) && !visited.has(id)) {
+            visited.add(id);
+            const group = byId.get(id);
+            visible = visible && !group.hidden;
+            opacity *= this._normalizePSDOpacity(group.opacity);
+            id = group.parentId;
+        }
+        return { visible, opacity };
+    },
     async _preparePSDImport(psd, job) {
         const boundary = this._createCheckerBoundary(psd.width, psd.height);
         const layers = [
             { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:[boundary] }
         ];
         const objects = [boundary];
-        if (psd.composite) {
-            const image = this._fabricImageFromPSDPixels(psd.composite, { left:0, top:0, selectable:true, name:'PSD Composite' });
-            layers.push({ id:this._newDocumentId('layer'), name:'PSD Composite', visible:true, locked:false, opacity:100, blend:'source-over', objects:[image] });
+        const report = this._analyzePSDImport(psd);
+        const decodedLayers = this._flattenPSDChildren(psd.children || [])
+            .filter(layer => layer.sourceKind !== 'group' && (layer.pixels || layer.text?.simple));
+        if (report.flattenWholeDocument) {
+            const image = this._fabricImageFromPSDPixels(psd.composite, {
+                left:0,
+                top:0,
+                selectable:true,
+                name:'PSD Flattened Appearance'
+            });
+            layers.push({
+                id:this._newDocumentId('layer'),
+                name:'PSD Flattened Appearance',
+                visible:true,
+                locked:false,
+                opacity:100,
+                blend:'source-over',
+                objects:[image]
+            });
             objects.push(image);
-        } else {
-            layers.push({ id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
+            return {
+                boundary,
+                layers,
+                objects,
+                decodedLayerCount:1,
+                psdInterchange:null,
+                report
+            };
         }
-        const decodedLayers = this._flattenPSDChildren(psd.children || []).filter(layer => layer.pixels);
         for (let index = 0; index < decodedLayers.length; index++) {
             if (job.cancelled) {
                 const error = new Error('PSD import cancelled');
@@ -4221,25 +4592,58 @@ self.onmessage = function(event) {
                 throw error;
             }
             const layer = decodedLayers[index];
-            const opacityValue = Number(layer.opacity);
-            const opacity = Math.max(0, Math.min(1, opacityValue > 1 ? opacityValue / 255 : opacityValue));
+            const opacity = this._normalizePSDOpacity(layer.opacity);
             const name = this._safeText(layer.name || `PSD Layer ${index + 1}`, 80);
-            const image = this._fabricImageFromPSDPixels(layer.pixels, {
+            const importedCanvasBlend = this._psdBlendToCanvas(layer.blendMode);
+            const groupState = (() => {
+                const byId = new Map(report.groups.map(group => [group.id, group]));
+                let id = layer.parentId;
+                let visible = true;
+                let inheritedOpacity = 1;
+                const visited = new Set();
+                while (id && byId.has(id) && !visited.has(id)) {
+                    visited.add(id);
+                    const group = byId.get(id);
+                    visible = visible && !group.hidden;
+                    inheritedOpacity *= this._normalizePSDOpacity(group.opacity);
+                    id = group.parentId;
+                }
+                return { visible, opacity:inheritedOpacity };
+            })();
+            const sharedOptions = {
                 left:layer.left || 0,
                 top:layer.top || 0,
-                selectable:!layer.hidden,
-                evented:!layer.hidden,
+                selectable:!layer.hidden && !layer.protected && groupState.visible,
+                evented:!layer.hidden && !layer.protected && groupState.visible,
                 name,
-                visible:!layer.hidden,
-                opacity
-            });
+                visible:!layer.hidden && groupState.visible,
+                opacity:opacity * groupState.opacity,
+                globalCompositeOperation:importedCanvasBlend
+            };
+            let image = layer.text?.simple
+                ? this._fabricTextFromPSD(layer, name)
+                : this._fabricImageFromPSDPixels(layer.pixels, sharedOptions);
+            if (!image && layer.pixels) {
+                image = this._fabricImageFromPSDPixels(layer.pixels, sharedOptions);
+            }
+            if (!image) continue;
+            image.set(sharedOptions);
             layers.push({
                 id:this._newDocumentId('layer'),
                 name,
                 visible:!layer.hidden,
-                locked:false,
+                locked:Boolean(layer.protected),
                 opacity:Math.round(opacity * 100),
-                blend:'source-over',
+                blend:importedCanvasBlend,
+                psd:this._normalizePSDLayerMetadata({
+                    sourceId:layer.id,
+                    parentId:layer.parentId,
+                    order:layer.order,
+                    sourceKind:layer.sourceKind,
+                    originalBlendMode:layer.blendMode,
+                    importedCanvasBlend,
+                    text:layer.text
+                }),
                 objects:[image]
             });
             objects.push(image);
@@ -4248,7 +4652,24 @@ self.onmessage = function(event) {
                 await new Promise(resolve => requestAnimationFrame(resolve));
             }
         }
-        return { boundary, layers, objects, decodedLayerCount:decodedLayers.length };
+        if (layers.length === 1 && psd.composite) {
+            const image = this._fabricImageFromPSDPixels(psd.composite, { left:0, top:0, selectable:true, name:'PSD Composite Fallback' });
+            layers.push({ id:this._newDocumentId('layer'), name:'PSD Composite Fallback', visible:true, locked:false, opacity:100, blend:'source-over', objects:[image] });
+            objects.push(image);
+            report.warnings.unshift('No supported drawable layer pixels were available, so the document composite was imported as one flattened fallback layer.');
+            report.flattenWholeDocument = true;
+        }
+        if (layers.length === 1) {
+            layers.push({ id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
+        }
+        return {
+            boundary,
+            layers,
+            objects,
+            decodedLayerCount:Math.max(0, layers.length - 1),
+            psdInterchange:this._normalizePSDInterchange({ groups:report.groups, warnings:report.warnings }),
+            report
+        };
     },
     _commitPSDImport(prepared, psd, file) {
         const previous = {
@@ -4278,7 +4699,9 @@ self.onmessage = function(event) {
             isDirty:this._isDirty,
             autoSaveDirty:this._autoSaveDirty,
             persistenceState:this._persistenceState,
-            savedSnapshot:this._savedSnapshot
+            savedSnapshot:this._savedSnapshot,
+            psdInterchange:this._psdInterchange,
+            lastPSDImportReport:this._lastPSDImportReport
         };
         try {
             this.canvas.discardActiveObject();
@@ -4292,6 +4715,8 @@ self.onmessage = function(event) {
             this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
             this._projectFileHandle = null;
             this._savedSnapshot = null;
+            this._psdInterchange = prepared.psdInterchange;
+            this._lastPSDImportReport = prepared.report;
             this._documentGeneration += 1;
             this.guides = [];
             this._selectionMask = null;
@@ -4328,6 +4753,8 @@ self.onmessage = function(event) {
             this._isDirty = previous.isDirty;
             this._autoSaveDirty = previous.autoSaveDirty;
             this._savedSnapshot = previous.savedSnapshot;
+            this._psdInterchange = previous.psdInterchange;
+            this._lastPSDImportReport = previous.lastPSDImportReport;
             if (previous.activeObject) this.canvas.setActiveObject(previous.activeObject);
             this.canvas.renderAll();
             this._setPersistenceState(previous.persistenceState);
@@ -4376,6 +4803,7 @@ self.onmessage = function(event) {
             this._updatePSDImportProgress(job, 'Committing document…');
             this._commitPSDImport(prepared, psd, file);
             this.toast(`PSD imported: ${prepared.decodedLayerCount} layers`, 'success');
+            this._showPSDCompatibilityReport(prepared.report, 'PSD import compatibility');
             return true;
         } catch (error) {
             if (error.name === 'AbortError') this.toast('PSD import cancelled', 'info');
@@ -4434,7 +4862,8 @@ self.onmessage = function(event) {
     },
     _isLayerEditable(layerOrIndex = this.activeLayerIdx) {
         const layer = typeof layerOrIndex === 'number' ? this.layers[layerOrIndex] : layerOrIndex;
-        return Boolean(layer && layer.visible !== false && !layer.locked);
+        const groupState = this._getPSDGroupState(layer);
+        return Boolean(layer && layer.visible !== false && groupState.visible && !layer.locked);
     },
     _isObjectEditable(object) {
         if (object?.type === 'activeSelection' && object.forEachObject) {
@@ -4510,9 +4939,14 @@ self.onmessage = function(event) {
             }
             const index = this._getObjectLayerIndex(object);
             const layer = index >= 0 ? this.layers[index] : null;
-            const visible = layer?.visible !== false;
+            const groupState = this._getPSDGroupState(layer);
+            const visible = layer?.visible !== false && groupState.visible;
             const editable = visible && !layer?.locked;
             object.visible = visible;
+            if (layer?.psd) {
+                object.opacity = Math.max(0, Math.min(1, (Number(layer.opacity ?? 100) / 100) * groupState.opacity));
+                object.globalCompositeOperation = layer.blend || 'source-over';
+            }
             object.selectable = selectMode && editable;
             object.evented = (selectMode && editable) || (fillMode && editable) || (readTargetMode && visible);
         });
@@ -4660,7 +5094,8 @@ self.onmessage = function(event) {
         const opacity = Math.max(0, Math.min(100, Number(val)));
         if (!Number.isFinite(opacity) || opacity === l.opacity) return false;
         l.opacity = opacity;
-        l.objects.forEach(o => { if (o.name !== '__boundary__') o.opacity = opacity/100; });
+        const groupOpacity = this._getPSDGroupState(l).opacity;
+        l.objects.forEach(o => { if (o.name !== '__boundary__') o.opacity = (opacity/100) * groupOpacity; });
         document.getElementById('layer-opacity-val').textContent = opacity;
         this.canvas.renderAll();
         const command = this._makeCommand('layer.opacity.set', { layerId:this._ensureLayerId(l), opacity });
@@ -7035,44 +7470,232 @@ self.onmessage = function(event) {
             return false;
         }
     },
+    _colorToPSD(value) {
+        const color = String(value || '').trim();
+        let match = color.match(/^#([0-9a-f]{6})$/i);
+        if (match) {
+            return {
+                r:parseInt(match[1].slice(0, 2), 16),
+                g:parseInt(match[1].slice(2, 4), 16),
+                b:parseInt(match[1].slice(4, 6), 16)
+            };
+        }
+        match = color.match(/^#([0-9a-f]{3})$/i);
+        if (match) {
+            return {
+                r:parseInt(match[1][0] + match[1][0], 16),
+                g:parseInt(match[1][1] + match[1][1], 16),
+                b:parseInt(match[1][2] + match[1][2], 16)
+            };
+        }
+        match = color.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+        if (match) {
+            return {
+                r:Math.max(0, Math.min(255, Math.round(Number(match[1])))),
+                g:Math.max(0, Math.min(255, Math.round(Number(match[2])))),
+                b:Math.max(0, Math.min(255, Math.round(Number(match[3]))))
+            };
+        }
+        return { r:0, g:0, b:0 };
+    },
+    _fabricTextToPSD(object) {
+        const type = String(object?.type || '').toLowerCase();
+        if (!object || !['i-text','itext','text','textbox'].includes(type) || typeof object.text !== 'string') return null;
+        const angle = Number(object.angle || 0) * Math.PI / 180;
+        const scaleX = Number(object.scaleX || 1);
+        const scaleY = Number(object.scaleY || 1);
+        return {
+            text:this._safeText(object.text, 10000),
+            transform:[
+                Math.cos(angle) * scaleX,
+                Math.sin(angle) * scaleX,
+                -Math.sin(angle) * scaleY,
+                Math.cos(angle) * scaleY,
+                Number(object.left || 0),
+                Number(object.top || 0)
+            ],
+            style:{
+                font:{ name:this._safeText(object.fontFamily || 'Arial', 120) || 'Arial' },
+                fontSize:Math.max(1, Math.min(2000, Number(object.fontSize) || 24)),
+                fillColor:this._colorToPSD(object.fill)
+            }
+        };
+    },
+    _renderLayerCanvasForPSD(layer, report) {
+        const objects = (layer.objects || []).filter(object => object.name !== '__boundary__' && !object.excludeFromExport);
+        if (!objects.length) return { canvas:null, opacity:this._normalizePSDOpacity(Number(layer.opacity ?? 100) / 100) };
+        const layerOpacity = this._normalizePSDOpacity(Number(layer.opacity ?? 100) / 100);
+        const importedSingleLayer = Boolean(layer.psd && objects.length === 1);
+        const opacityAlreadyMatchesLayer = objects.every(object => Math.abs(Number(object.opacity ?? 1) - layerOpacity) < 0.002);
+        const canSeparateLayerOpacity = importedSingleLayer || opacityAlreadyMatchesLayer;
+        const canvas = document.createElement('canvas');
+        canvas.width = this.canvasW;
+        canvas.height = this.canvasH;
+        const context = canvas.getContext('2d');
+        for (const object of objects) {
+            const state = {
+                visible:object.visible,
+                opacity:object.opacity,
+                globalCompositeOperation:object.globalCompositeOperation,
+                excludeFromExport:object.excludeFromExport
+            };
+            try {
+                object.visible = true;
+                object.excludeFromExport = false;
+                object.globalCompositeOperation = 'source-over';
+                if (canSeparateLayerOpacity) object.opacity = 1;
+                const objectCanvas = object.toCanvasElement ? object.toCanvasElement({
+                    enableRetinaScaling:false,
+                    withoutTransform:false,
+                    withoutShadow:false
+                }) : null;
+                if (!objectCanvas) {
+                    report.warnings.push(`"${layer.name}": one object could not be rasterized and was omitted.`);
+                    continue;
+                }
+                const bounds = object.getBoundingRect?.();
+                const left = Number.isFinite(bounds?.left) ? bounds.left : Number(object.left || 0);
+                const top = Number.isFinite(bounds?.top) ? bounds.top : Number(object.top || 0);
+                context.drawImage(objectCanvas, Math.round(left), Math.round(top));
+            } finally {
+                object.visible = state.visible;
+                object.opacity = state.opacity;
+                object.globalCompositeOperation = state.globalCompositeOperation;
+                object.excludeFromExport = state.excludeFromExport;
+            }
+        }
+        if (!canSeparateLayerOpacity && layerOpacity !== 1) {
+            report.warnings.push(`"${layer.name}": mixed object opacity was baked into pixels, so PSD layer opacity was normalized to 100%.`);
+        }
+        return { canvas, opacity:canSeparateLayerOpacity ? layerOpacity : 1 };
+    },
+    _capturePSDCompositeCanvas() {
+        return this._withExportCanvasState({ transparent:true }, () => {
+            if (!this.canvas.toCanvasElement) return null;
+            const rendered = this.canvas.toCanvasElement(1, {
+                left:0,
+                top:0,
+                width:this.canvasW,
+                height:this.canvasH
+            });
+            const copy = document.createElement('canvas');
+            copy.width = this.canvasW;
+            copy.height = this.canvasH;
+            copy.getContext('2d').drawImage(rendered, 0, 0);
+            return copy;
+        });
+    },
+    _buildPsdExportStructure() {
+        const report = { warnings:[], flattenWholeDocument:false };
+        const structure = {
+            width:this.canvasW,
+            height:this.canvasH,
+            children:[]
+        };
+        const composite = this._capturePSDCompositeCanvas();
+        if (composite) structure.canvas = composite;
+
+        const groups = this._normalizePSDInterchange(this._psdInterchange)?.groups || [];
+        const groupNodes = new Map();
+        const entries = new Map([[null, []]]);
+        groups.forEach(group => {
+            entries.set(group.id, []);
+            groupNodes.set(group.id, {
+                name:group.name,
+                children:[],
+                opacity:this._normalizePSDOpacity(group.opacity),
+                hidden:Boolean(group.hidden),
+                blendMode:group.blendMode || 'pass through',
+                opened:group.opened !== false
+            });
+        });
+        groups.forEach((group, groupIndex) => {
+            const parentId = group.parentId && groupNodes.has(group.parentId) ? group.parentId : null;
+            if (!entries.has(parentId)) entries.set(parentId, []);
+            entries.get(parentId).push({
+                order:Number(group.order) || 0,
+                sequence:groupIndex,
+                node:groupNodes.get(group.id)
+            });
+        });
+
+        this.layers.forEach((layer, layerIndex) => {
+            const objects = (layer.objects || []).filter(object => object.name !== '__boundary__' && !object.excludeFromExport);
+            if (!objects.length && !layer.psd) return;
+            const rendered = this._renderLayerCanvasForPSD(layer, report);
+            const originalBlend = layer.psd?.originalBlendMode;
+            const importedBlend = layer.psd?.importedCanvasBlend;
+            const blendMode = originalBlend && importedBlend === layer.blend
+                ? originalBlend
+                : this._canvasBlendToPSD(layer.blend);
+            const node = {
+                name:this._safeText(layer.name || `Layer ${layerIndex}`, 120),
+                opacity:rendered.opacity,
+                hidden:layer.visible === false,
+                blendMode,
+                protected:layer.locked ? { transparency:true, composite:true, position:true } : undefined
+            };
+            if (rendered.canvas) node.canvas = rendered.canvas;
+            const nativeText = objects.length === 1 ? this._fabricTextToPSD(objects[0]) : null;
+            if (nativeText) {
+                node.text = nativeText;
+            } else {
+                const textCount = objects.filter(object => ['i-text','itext','text','textbox'].includes(String(object.type || '').toLowerCase())).length;
+                const vectorCount = objects.filter(object => !['image'].includes(String(object.type || '').toLowerCase())).length - textCount;
+                if (textCount) report.warnings.push(`"${node.name}": ${textCount} text object${textCount === 1 ? '' : 's'} were flattened because the layer is not one basic editable text object.`);
+                if (vectorCount > 0) report.warnings.push(`"${node.name}": ${vectorCount} vector object${vectorCount === 1 ? '' : 's'} were rasterized.`);
+            }
+            if (objects.some(object => object._hasMask || object.clipPath)) {
+                report.warnings.push(`"${node.name}": OpenShop masks were baked into the PSD layer pixels.`);
+            }
+            if (objects.some(object => Array.isArray(object.filters) && object.filters.length)) {
+                report.warnings.push(`"${node.name}": pixel filters were baked into the PSD layer pixels.`);
+            }
+            if (layer.psd?.sourceKind === 'smart-object') {
+                report.warnings.push(`"${node.name}": the imported smart object remains a raster fallback; its embedded source was not available.`);
+            }
+            if (layer.psd?.sourceKind === 'vector') {
+                report.warnings.push(`"${node.name}": imported PSD vector data remains a raster fallback.`);
+            }
+            const requestedParent = layer.psd?.parentId;
+            const parentId = requestedParent && groupNodes.has(requestedParent) ? requestedParent : null;
+            if (!entries.has(parentId)) entries.set(parentId, []);
+            entries.get(parentId).push({
+                order:layer.psd ? Number(layer.psd.order) || 0 : this._psdLimits.maxLayers + layerIndex,
+                sequence:groups.length + layerIndex,
+                node
+            });
+        });
+
+        const populate = parentId => {
+            const values = entries.get(parentId) || [];
+            values.sort((a, b) => a.order - b.order || a.sequence - b.sequence);
+            const children = values.map(entry => entry.node);
+            children.forEach(node => {
+                const groupEntry = [...groupNodes.entries()].find(([, candidate]) => candidate === node);
+                if (groupEntry) node.children = populate(groupEntry[0]);
+            });
+            return children;
+        };
+        structure.children = populate(null);
+        report.warnings = [...new Set(report.warnings)].slice(0, 100);
+        return { structure, report };
+    },
     exportPSD() {
         const lib = window.agPsd || (typeof agPsd !== 'undefined' ? agPsd : null);
         if (!lib || !lib.writePsd) { this.toast('PSD library not loaded or does not support writing', 'error'); return false; }
         this.toast('Generating PSD...', 'info');
         try {
-            const psd = this._withExportCanvasState({ transparent:true }, () => {
-                const structure = { width:this.canvasW, height:this.canvasH, children:[] };
-                for (let i = 0; i < this.layers.length; i++) {
-                    const layer = this.layers[i];
-                    const objects = layer.objects.filter(object => object.name !== '__boundary__');
-                    if (!objects.length) continue;
-                    const layerCanvas = document.createElement('canvas');
-                    layerCanvas.width = this.canvasW;
-                    layerCanvas.height = this.canvasH;
-                    const layerContext = layerCanvas.getContext('2d');
-                    for (const object of objects) {
-                        if (!object.visible) continue;
-                        const objectCanvas = object.toCanvasElement ? object.toCanvasElement() : null;
-                        if (!objectCanvas) continue;
-                        layerContext.globalAlpha = object.opacity ?? 1;
-                        layerContext.drawImage(objectCanvas, object.left || 0, object.top || 0);
-                        layerContext.globalAlpha = 1;
-                    }
-                    structure.children.push({
-                        name:layer.name || 'Layer ' + i,
-                        canvas:layerCanvas,
-                        left:0,
-                        top:0,
-                        opacity:Math.round((layer.opacity / 100) * 255),
-                        hidden:!layer.visible
-                    });
-                }
-                return structure;
-            });
-            const buffer = lib.writePsd(psd);
+            const { structure, report } = this._withExportCanvasState(
+                { transparent:true },
+                () => this._buildPsdExportStructure()
+            );
+            const buffer = lib.writePsd(structure, { trimImageData:true, noBackground:true });
             const blob = new Blob([buffer], { type: 'application/octet-stream' });
             this._downloadBlob(blob, this._exportFileName('psd'));
-            this.toast('Exported as PSD', 'success');
+            this._lastPSDExportReport = report;
+            this.toast(report.warnings.length ? `Exported as PSD with ${report.warnings.length} compatibility note${report.warnings.length === 1 ? '' : 's'}` : 'Exported as PSD', 'success');
+            this._showPSDCompatibilityReport(report, 'PSD export compatibility');
             return true;
         } catch(e) {
             console.error('PSD export error:', e);

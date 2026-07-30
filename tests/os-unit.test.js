@@ -941,8 +941,36 @@ describe('OpenShop core object', () => {
     OS.canvasH = 300;
     OS.layers = [
       { name: 'BG', visible: true, opacity: 100, blend: 'source-over', objects: [boundary] },
-      { name: 'Subject', visible: true, opacity: 80, blend: 'multiply', objects: [photo] }
+      {
+        name: 'Subject',
+        visible: true,
+        opacity: 80,
+        blend: 'multiply',
+        psd: {
+          sourceId: 'psd-0-0',
+          parentId: 'psd-0',
+          order: 0,
+          sourceKind: 'bitmap',
+          originalBlendMode: 'multiply',
+          importedCanvasBlend: 'multiply'
+        },
+        objects: [photo]
+      }
     ];
+    OS._psdInterchange = {
+      schemaVersion: 1,
+      groups: [{
+        id: 'psd-0',
+        parentId: null,
+        order: 0,
+        name: 'Portraits',
+        hidden: false,
+        opacity: 0.75,
+        blendMode: 'pass through',
+        opened: false
+      }],
+      warnings: []
+    };
     quietUiMethods(OS);
 
     let writtenPsd = null;
@@ -962,11 +990,44 @@ describe('OpenShop core object', () => {
     expect(writtenPsd.width).toBe(400);
     expect(writtenPsd.height).toBe(300);
     expect(writtenPsd.children).toHaveLength(1);
-    expect(writtenPsd.children[0].name).toBe('Subject');
-    expect(writtenPsd.children[0].opacity).toBe(Math.round(0.8 * 255));
+    expect(writtenPsd.children[0]).toEqual(expect.objectContaining({
+      name: 'Portraits',
+      opacity: 0.75,
+      blendMode: 'pass through',
+      opened: false
+    }));
+    expect(writtenPsd.children[0].children).toHaveLength(1);
+    expect(writtenPsd.children[0].children[0]).toEqual(expect.objectContaining({
+      name: 'Subject',
+      opacity: 0.8,
+      blendMode: 'multiply'
+    }));
     expect(clicks[0].download).toBe('openshop-export.psd');
 
     delete globalThis.agPsd;
+  });
+
+  it('chooses one explicit PSD composite fallback for unsupported document-wide semantics', () => {
+    const OS = loadOpenShop();
+    const report = OS._analyzePSDImport({
+      width: 100,
+      height: 80,
+      composite: { width: 100, height: 80, buffer: new ArrayBuffer(100 * 80 * 4) },
+      children: [{
+        id: 'psd-0',
+        sourceKind: 'bitmap',
+        name: 'Clipped glow',
+        blendMode: 'normal',
+        opacity: 1,
+        unsupported: ['clipping', 'layer effects'],
+        children: []
+      }]
+    });
+
+    expect(report.flattenWholeDocument).toBe(true);
+    expect(report.warnings[0]).toMatch(/one flattened appearance layer instead of duplicating the composite/);
+    expect(report.warnings.join(' ')).toMatch(/clipping relationships are not supported/);
+    expect(report.warnings.join(' ')).toMatch(/layer effects are not editable/);
   });
 
   it('wires modal close and action buttons via data attributes', () => {

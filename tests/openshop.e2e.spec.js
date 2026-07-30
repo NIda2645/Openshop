@@ -426,13 +426,209 @@ test('decodes and bounds PSD pixels in a worker before committing the document',
     workerCalls: 1,
     mainThreadReadCalls: 0,
     dimensions: [8, 6],
-    layers: ['Background', 'PSD Composite', 'Blue worker layer'],
+    layers: ['Background', 'Blue worker layer'],
     progressClosed: true,
     dirty: true
   }));
   expect(result.heartbeats).toBeGreaterThan(0);
   expect(result.bluePixel[2]).toBeGreaterThan(result.bluePixel[0]);
   expect(result.decodedLimit).toBe(256 * 1024 * 1024);
+  expect(pageErrors).toEqual([]);
+});
+
+test('round-trips nested PSD groups, blends, opacity, and basic text without duplicating the composite', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const makeCanvas = (color, width = 16, height = 12) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      context.fillStyle = color;
+      context.fillRect(0, 0, width, height);
+      return canvas;
+    };
+    const sourceBytes = agPsd.writePsd({
+      width: 16,
+      height: 12,
+      canvas: makeCanvas('#ee3344'),
+      children: [{
+        name: 'Outer',
+        opacity: 0.75,
+        blendMode: 'pass through',
+        opened: false,
+        children: [{
+          name: 'Inner',
+          blendMode: 'pass through',
+          children: [{
+            name: 'Blue',
+            opacity: 0.5,
+            blendMode: 'multiply',
+            canvas: makeCanvas('#2244cc')
+          }, {
+            name: 'Caption',
+            opacity: 0.6,
+            blendMode: 'screen',
+            canvas: makeCanvas('#222222'),
+            text: {
+              text: 'Hello',
+              transform: [1, 0, 0, 1, 3, 4],
+              style: {
+                font: { name: 'Arial' },
+                fontSize: 5,
+                fillColor: { r: 255, g: 255, b: 255 }
+              }
+            }
+          }]
+        }]
+      }]
+    }, { trimImageData: true, noBackground: true });
+
+    const summarizeDocument = () => ({
+      layers: OS.layers.map((layer) => ({
+        name: layer.name,
+        opacity: layer.opacity,
+        blend: layer.blend,
+        type: layer.objects[0]?.type || null,
+        text: layer.objects[0]?.text || null,
+        parentId: layer.psd?.parentId || null,
+        effectiveOpacity: layer.objects[0]?.opacity ?? null
+      })),
+      groups: OS._psdInterchange?.groups.map((group) => ({
+        name: group.name,
+        parentId: group.parentId,
+        opacity: group.opacity,
+        blendMode: group.blendMode,
+        opened: group.opened
+      })) || [],
+      compositeLayerCount: OS.layers.filter((layer) => /Composite/.test(layer.name)).length
+    });
+
+    const firstImport = await OS._loadPSDFile(new File(
+      [sourceBytes],
+      'nested.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const first = summarizeDocument();
+    const importWarning = document.querySelector('.psd-compat-report')?.innerText || '';
+    document.querySelector('.psd-compat-report')?.remove();
+
+    const built = OS._buildPsdExportStructure();
+    const exportedBytes = agPsd.writePsd(built.structure, { trimImageData: true, noBackground: true });
+    const parsed = agPsd.readPsd(exportedBytes, {
+      useImageData: true,
+      skipThumbnail: true
+    });
+    const outer = parsed.children[0];
+    const inner = outer.children[0];
+
+    const secondImport = await OS._loadPSDFile(new File(
+      [exportedBytes],
+      'nested-roundtrip.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const second = summarizeDocument();
+    document.querySelector('.psd-compat-report')?.remove();
+
+    const clippedBytes = agPsd.writePsd({
+      width: 8,
+      height: 8,
+      canvas: makeCanvas('#cc2233', 8, 8),
+      children: [{
+        name: 'Clipped glow',
+        clipping: true,
+        canvas: makeCanvas('#2244cc', 8, 8)
+      }]
+    });
+    const fallbackImport = await OS._loadPSDFile(new File(
+      [clippedBytes],
+      'unsupported.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const fallback = {
+      layers: OS.layers.map((layer) => layer.name),
+      warning: document.querySelector('.psd-compat-report')?.innerText || '',
+      flattened: OS._lastPSDImportReport?.flattenWholeDocument
+    };
+
+    return {
+      firstImport,
+      secondImport,
+      fallbackImport,
+      first,
+      second,
+      importWarning,
+      exportWarnings: built.report.warnings,
+      parsed: {
+        hasComposite: Boolean(parsed.imageData),
+        rootNames: parsed.children.map((child) => child.name),
+        outer: {
+          opacity: outer.opacity,
+          blendMode: outer.blendMode,
+          opened: outer.opened
+        },
+        innerNames: inner.children.map((child) => child.name),
+        leaves: inner.children.map((child) => ({
+          name: child.name,
+          opacity: child.opacity,
+          blendMode: child.blendMode,
+          text: child.text?.text || null
+        }))
+      },
+      fallback
+    };
+  });
+
+  expect(result.firstImport).toBe(true);
+  expect(result.secondImport).toBe(true);
+  expect(result.fallbackImport).toBe(true);
+  for (const snapshot of [result.first, result.second]) {
+    expect(snapshot.compositeLayerCount).toBe(0);
+    expect(snapshot.layers.map((layer) => layer.name)).toEqual(['Background', 'Blue', 'Caption']);
+    expect(snapshot.layers[1]).toEqual(expect.objectContaining({
+      opacity: 50,
+      blend: 'multiply',
+      type: 'image'
+    }));
+    expect(snapshot.layers[1].effectiveOpacity).toBeCloseTo(0.375, 2);
+    expect(snapshot.layers[2]).toEqual(expect.objectContaining({
+      opacity: 60,
+      blend: 'screen',
+      type: 'i-text',
+      text: 'Hello'
+    }));
+    expect(snapshot.groups.map((group) => group.name)).toEqual(['Outer', 'Inner']);
+    expect(snapshot.groups[0]).toEqual(expect.objectContaining({
+      parentId: null,
+      blendMode: 'pass through',
+      opened: false
+    }));
+    expect(snapshot.groups[0].opacity).toBeCloseTo(0.75, 2);
+  }
+  expect(result.importWarning).toContain('group opacity is approximated');
+  expect(result.exportWarnings).toEqual([]);
+  expect(result.parsed.hasComposite).toBe(true);
+  expect(result.parsed.rootNames).toEqual(['Outer']);
+  expect(result.parsed.outer.opacity).toBeCloseTo(0.75, 2);
+  expect(result.parsed.outer.blendMode).toBe('pass through');
+  expect(result.parsed.outer.opened).toBe(false);
+  expect(result.parsed.innerNames).toEqual(['Blue', 'Caption']);
+  expect(result.parsed.leaves).toEqual([
+    expect.objectContaining({ name: 'Blue', blendMode: 'multiply', text: null }),
+    expect.objectContaining({ name: 'Caption', blendMode: 'screen', text: 'Hello' })
+  ]);
+  expect(result.parsed.leaves[0].opacity).toBeCloseTo(0.5, 2);
+  expect(result.parsed.leaves[1].opacity).toBeCloseTo(0.6, 2);
+  expect(result.fallback).toEqual(expect.objectContaining({
+    layers: ['Background', 'PSD Flattened Appearance'],
+    flattened: true
+  }));
+  expect(result.fallback.warning).toContain('one flattened appearance layer instead of duplicating the composite');
+  expect(result.fallback.warning).toContain('clipping relationships are not supported');
   expect(pageErrors).toEqual([]);
 });
 

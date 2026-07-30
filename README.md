@@ -47,7 +47,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **WebP** | Yes | Yes |
 | **SVG** | — | Yes |
 | **PDF** | — | Yes |
-| **PSD** | Yes (layers preserved) | Yes (layers preserved) |
+| **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text) | Yes (same supported semantics; explicit raster fallbacks) |
 | **GIF** | — | Yes (animated, frame-based) |
 | **OpenShop JSON** | Yes | Yes (full project with layers) |
 
@@ -220,7 +220,9 @@ No. Everything runs in your browser. Images are processed locally via Canvas API
 After the first load, CDN resources are cached via the Cache API. Most features work offline. AI features require their models to be cached from a prior use. Install as a PWA for the best offline experience.
 
 **Q: How does PSD import/export work?**
-OpenShop uses the ag-psd library to parse and write `.psd` files client-side. Import decoding runs in a worker with explicit resource limits and a cancel action, so a rejected import leaves the open document unchanged. Pixel layers, opacity, and visibility are carried into the editor; group hierarchy, non-normal blend semantics, layer effects, smart objects, and adjustment layers can be flattened or simplified.
+OpenShop uses ag-psd to parse and write `.psd` files client-side. Import decoding runs in a worker with explicit resource limits and a cancel action, so a rejected import leaves the open document unchanged. Drawable layer files import without duplicating Photoshop's document composite. Nested group metadata, supported blend modes, opacity, visibility, locks, and single-style horizontal text survive PSD import → export → reimport. Group compositing is approximated while editing but its metadata is retained for PSD export.
+
+OpenShop shows a compatibility report whenever exact semantics are unavailable. Layer effects, masks, adjustment layers, clipping relationships, and separate fill opacity use the document composite as one flattened appearance layer. Smart objects, vector content, and rich text use per-layer decoded-pixel fallbacks. OpenShop masks and pixel filters are baked into exported PSD layer pixels; mixed-content text and vector objects are rasterized. The editable OpenShop project format is the lossless choice for OpenShop-only history, selections, guides, animation, and object structure.
 
 **Q: Why not React/Vue/Svelte?**
 Simplicity. A single HTML file can be hosted anywhere, shared as an email attachment, opened from a USB drive, or embedded in any environment. No build toolchain means zero maintenance burden.
