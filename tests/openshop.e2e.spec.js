@@ -3995,3 +3995,103 @@ test('animation playback moves the highlight without rebuilding the strip', asyn
   // Stopping returns the highlight to the frame that is actually loaded.
   expect(result.highlightedAfterStop).toBe(0);
 });
+
+test('falls back cleanly when an optional platform capability is missing @cross-browser', async ({ page, browserName }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const out = {};
+    // What this engine actually offers. Recorded so the gap is measured rather
+    // than assumed: every runtime observation used to come from Chromium.
+    out.present = {
+      showOpenFilePicker: typeof window.showOpenFilePicker === 'function',
+      ImageDecoder: typeof window.ImageDecoder !== 'undefined',
+      locks: Boolean(navigator.locks?.request),
+      broadcastChannel: typeof BroadcastChannel !== 'undefined',
+      opfs: Boolean(navigator.storage?.getDirectory),
+      structuredClone: typeof structuredClone === 'function'
+    };
+
+    // 1. No File System Access API: the hidden <input type=file> is the fallback.
+    const picker = window.showOpenFilePicker;
+    delete window.showOpenFilePicker;
+    const input = document.getElementById('file-input');
+    let inputClicked = 0;
+    const clickSpy = () => { inputClicked++; };
+    input.addEventListener('click', clickSpy);
+    await OS.openFile();
+    input.removeEventListener('click', clickSpy);
+    if (picker) window.showOpenFilePicker = picker;
+    out.fileInputFallback = inputClicked;
+
+    // 2. No ImageDecoder: an animated GIF still opens as a static image.
+    // Built by hand: connect-src does not allow data: URLs, by design.
+    const gifBytes = Uint8Array.from(atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'), c => c.charCodeAt(0));
+    const file = new File([gifBytes], 'still.gif', { type: 'image/gif' });
+    const decoder = window.ImageDecoder;
+    if (decoder) delete window.ImageDecoder;
+    OS._docName = 'before-gif';
+    OS._handleFileLoad(file);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    if (decoder) window.ImageDecoder = decoder;
+    // _addDecodedImageToCanvas names the document only once the decode lands.
+    out.gifStaticFallback = OS._docName;
+
+    // 3. No Web Locks: the recovery critical section still runs.
+    const locks = navigator.locks;
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
+    out.lockFallback = await OS._withRecoveryLock(async () => 'ran');
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: locks });
+
+    // 4. No BroadcastChannel: coordination is skipped, not fatal.
+    const channel = OS._recoveryChannel;
+    const Broadcast = window.BroadcastChannel;
+    OS._recoveryChannel = null;
+    delete window.BroadcastChannel;
+    let coordinationThrew = false;
+    try {
+      OS._initRecoveryCoordination();
+      OS._claimRecoveryOwnership();
+    } catch (error) {
+      coordinationThrew = true;
+    }
+    if (Broadcast) window.BroadcastChannel = Broadcast;
+    OS._recoveryChannel = channel;
+    out.coordinationThrew = coordinationThrew;
+
+    // 5. No OPFS: autosave reports rather than rejecting.
+    const storage = navigator.storage;
+    Object.defineProperty(navigator, 'storage', { configurable: true, value: {} });
+    out.autoSaveWithoutOpfs = await OS._autoSave();
+    Object.defineProperty(navigator, 'storage', { configurable: true, value: storage });
+
+    return out;
+  });
+
+  expect(result.fileInputFallback).toBe(1);
+  expect(result.gifStaticFallback).toBe('still');
+  expect(result.lockFallback).toBe('ran');
+  expect(result.coordinationThrew).toBe(false);
+  expect(result.autoSaveWithoutOpfs).toBe(false);
+
+  expect(result.present.structuredClone).toBe(true);
+  expect(result.present.broadcastChannel).toBe(true);
+  // WebKit exposes no origin-private file system to an opaque (file://) origin,
+  // so autosave and crash recovery are simply absent there — the app degrades
+  // to manual saves rather than failing, which is what the assertions above
+  // check. Under a real https origin WebKit does provide OPFS.
+  expect(result.present.opfs).toBe(browserName !== 'webkit');
+  if (browserName === 'chromium') {
+    expect(result.present.showOpenFilePicker).toBe(true);
+    expect(result.present.ImageDecoder).toBe(true);
+    expect(result.present.locks).toBe(true);
+  }
+  if (browserName === 'firefox') {
+    // No File System Access API: the <input type=file> path above is the
+    // shipping experience there, not a fallback. ImageDecoder is present, so
+    // animated GIF import does work.
+    expect(result.present.showOpenFilePicker).toBe(false);
+    expect(result.present.ImageDecoder).toBe(true);
+  }
+});

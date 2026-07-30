@@ -215,8 +215,8 @@ npm run test:release
 | Browser | Status | Evidence |
 |---------|--------|----------|
 | Chrome / Edge 90+ | Full support (including AI via WebGPU) | Full automated suite runs on every change |
-| Firefox 90+ | Core editing supported (AI via WASM fallback) | Open, edit, filter, save, recover, export, keyboard and dialog flows run automatically |
-| Safari 15+ / WebKit | Core editing supported (AI via WASM fallback, auto-save via Worker) | Same automated flows run on WebKit; not yet verified on Safari hardware |
+| Firefox 90+ | Core editing supported (AI via WASM fallback). No File System Access API, so Open uses the file picker and Save Project downloads rather than writing in place | Open, edit, filter, save, recover, export, keyboard and dialog flows run automatically, plus a capability probe asserting each fallback |
+| Safari 15+ / WebKit | Core editing supported (AI via WASM fallback, auto-save via Worker). Opening the single HTML file directly gives no auto-save or crash recovery — WebKit exposes no origin-private file system to a `file://` origin, so host it to get them | Same automated flows run on WebKit, including a per-engine capability probe; not yet verified on Safari hardware |
 | Mobile Chrome/Safari | Responsive shell and dialogs; precision canvas work is best on a larger display | Viewport tests only; not verified on a physical device |
 
 Run the cross-engine flows yourself with `npm run test:cross-browser`.
