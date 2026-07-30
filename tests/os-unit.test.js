@@ -863,6 +863,35 @@ describe('OpenShop core object', () => {
     )).toThrow(/exceeds import limits/);
   });
 
+  it('restores the previous document when a project fails to load', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._docName = 'Original';
+    OS._isDirty = true;
+    OS._captureDocumentState = () => ({ kind: 'openshop-document', tag: 'original' });
+
+    const loaded = [];
+    OS._loadDocumentState = async (state, opts = {}) => {
+      loaded.push(state.tag);
+      // The failure surfaces only after the canvas has already been replaced.
+      if (!opts.trusted) throw new Error('Project selection data is truncated');
+    };
+    OS._advanceDocumentGeneration = vi.fn();
+    OS._clearAutoSave = vi.fn();
+    const toasts = [];
+    OS.toast = (message, type) => toasts.push({ message, type });
+
+    const file = { size: 10, text: async () => JSON.stringify({ tag: 'broken' }) };
+    const ok = await OS._loadProjectFile(file);
+
+    expect(ok).toBe(false);
+    expect(loaded).toEqual(['broken', 'original']);
+    expect(OS._docName).toBe('Original');
+    expect(OS._isDirty).toBe(true);
+    expect(toasts.at(-1).message).toMatch(/previous document restored/);
+  });
+
   it('walks history one step per undo when restores overlap', async () => {
     const OS = loadOpenShop();
     OS.canvas = createCanvasMock();

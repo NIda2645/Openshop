@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-vFDSdiVUTFQwB6EXJGZps77dZ47Hu/o0NMm8CZxUm8Q=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-11U4rNtK4XPk5QBwTOgjaAo4JG5264VkjKKCVJQWfRY=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -4724,10 +4724,15 @@ const OS = {
             .then(ok => ok && this._loadProjectFile(file));
     },
     async _loadProjectFile(file, { handle = null } = {}) {
+        let rollback = null;
         try {
             this._assertJsonFileBudget(file, 'Project');
             const json = JSON.parse(await file.text());
             if (this._autoSaveInFlight) await this._autoSaveInFlight;
+            // Some failures (a truncated selection mask, an object that will not
+            // enliven) only surface after the canvas has been replaced, so keep
+            // a snapshot to restore instead of leaving a half-loaded document.
+            rollback = this._captureRollbackState();
             this._advanceDocumentGeneration('An opened project replaced this operation');
             await this._loadDocumentState(json, { fitToViewport:true });
             this._projectFileHandle = handle;
@@ -4737,7 +4742,46 @@ const OS = {
             this.toast(this._t('Project loaded'),'success');
             return true;
         } catch(error) {
-            this.toast('Invalid project: ' + error.message,'error');
+            const restored = await this._restoreRollbackState(rollback);
+            this.toast(restored
+                ? `Invalid project: ${error.message} — previous document restored`
+                : `Invalid project: ${error.message}`, 'error');
+            return false;
+        }
+    },
+    _captureRollbackState() {
+        try {
+            return {
+                snapshot: JSON.stringify(this._captureDocumentState()),
+                docName: this._docName,
+                documentId: this._documentId,
+                projectFileHandle: this._projectFileHandle,
+                isDirty: this._isDirty,
+                autoSaveDirty: this._autoSaveDirty,
+                savedSnapshot: this._savedSnapshot,
+                persistenceState: this._persistenceState
+            };
+        } catch (error) {
+            console.warn('Could not capture rollback state:', error.message);
+            return null;
+        }
+    },
+    async _restoreRollbackState(state) {
+        if (!state) return false;
+        try {
+            await this._loadDocumentState(JSON.parse(state.snapshot), { trusted:true });
+            this._docName = state.docName;
+            this._documentId = state.documentId;
+            this._projectFileHandle = state.projectFileHandle;
+            this._isDirty = state.isDirty;
+            this._autoSaveDirty = state.autoSaveDirty;
+            this._savedSnapshot = state.savedSnapshot;
+            this._setPersistenceState(state.persistenceState);
+            this.updateLayersPanel();
+            this.updateStatus();
+            return true;
+        } catch (error) {
+            console.error('Rollback after failed project open failed:', error);
             return false;
         }
     },
@@ -10037,9 +10081,11 @@ self.onmessage = function(event) {
         return this._restoreRecoveryText(record.payloadText, overlay, { asCopy, record });
     },
     async _restoreRecoveryText(jsonText, overlay, { asCopy = false, record = null } = {}) {
+        let rollback = null;
         try {
             const json = JSON.parse(jsonText);
             if (this._autoSaveInFlight) await this._autoSaveInFlight;
+            rollback = this._captureRollbackState();
             this._advanceDocumentGeneration('A recovered project replaced this operation');
             await this._loadDocumentState(json, { fitToViewport:true });
             if (asCopy) {
@@ -10059,7 +10105,10 @@ self.onmessage = function(event) {
             if (overlay) overlay.remove();
             return true;
         } catch(e) {
-            this.toast('Recovery failed: ' + e.message, 'error');
+            const restored = await this._restoreRollbackState(rollback);
+            this.toast(restored
+                ? `Recovery failed: ${e.message} — previous document restored`
+                : `Recovery failed: ${e.message}`, 'error');
             return false;
         }
     },
