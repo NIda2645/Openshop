@@ -758,7 +758,7 @@ describe('OpenShop core object', () => {
     });
     await OS.saveProject();
     expect(clicks).toHaveLength(1);
-    expect(clicks[0].download).toBe('openshop-project.json');
+    expect(clicks[0].download).toBe('openshop-project.openshop');
 
     const hostile = {
       _openShop: { w: '640', h: '480' },
@@ -768,6 +768,47 @@ describe('OpenShop core object', () => {
     expect(hostile._openShop.w).toBe(640);
     expect(hostile.objects[0].name).not.toContain('onerror=');
     expect(hostile.objects[0].src).not.toContain('javascript:');
+  });
+
+  it('registers one installed-app launch consumer and routes supported files', async () => {
+    const OS = loadOpenShop();
+    quietUiMethods(OS);
+    OS.dismissWelcome = vi.fn();
+    OS._loadPSDFile = vi.fn().mockResolvedValue(true);
+    OS._loadProjectFile = vi.fn().mockResolvedValue(true);
+    OS._handleFileLoad = vi.fn();
+
+    let consumer;
+    Object.defineProperty(window, 'launchQueue', {
+      configurable: true,
+      value: {
+        setConsumer: vi.fn((callback) => { consumer = callback; })
+      }
+    });
+
+    expect(OS._initFileLaunchQueue()).toBe(true);
+    expect(window.launchQueue.setConsumer).toHaveBeenCalledTimes(1);
+
+    const psd = { name: 'layers.psd', type: 'image/vnd.adobe.photoshop' };
+    await consumer({ files: [{ getFile: vi.fn().mockResolvedValue(psd) }] });
+    expect(OS._loadPSDFile).toHaveBeenCalledWith(psd);
+
+    const project = { name: 'layout.openshop', type: 'application/vnd.openshop+json' };
+    const projectHandle = { getFile: vi.fn().mockResolvedValue(project) };
+    await OS._handleLaunchedFile(projectHandle);
+    expect(OS._loadProjectFile).toHaveBeenCalledWith(project, { handle: projectHandle });
+
+    const image = { name: 'photo.png', type: 'image/png' };
+    await OS._handleLaunchedFile({ getFile: vi.fn().mockResolvedValue(image) });
+    expect(OS._handleFileLoad).toHaveBeenCalledWith(image);
+    expect(OS.dismissWelcome).toHaveBeenCalledTimes(3);
+
+    const unsupported = await OS._handleLaunchedFile({
+      getFile: vi.fn().mockResolvedValue({ name: 'notes.txt', type: 'text/plain' })
+    });
+    expect(unsupported).toBe(false);
+    expect(OS.toast).toHaveBeenCalledWith('Could not open launched file: Unsupported launched file type', 'error');
+    delete window.launchQueue;
   });
 
   it('clears dirty and recovery state only after an acknowledged project write', async () => {

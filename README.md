@@ -17,10 +17,10 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 ## Quick Start
 
 1. Visit **https://sysadmindoc.github.io/Openshop/**
-2. Or download the single HTML file and open it in any modern browser
+2. Or download the single HTML file and open it in any modern browser (network is required for a cold standalone launch)
 3. Start editing
 
-**Self-host it** — drop the file on any static host (GitHub Pages, Netlify, S3, Nginx) and it works as a full web app. No build step, no bundler, no `node_modules`.
+**Self-host it** — deploy the static files to GitHub Pages, Netlify, S3, or Nginx. There is no build step, bundler, or runtime `node_modules`; include the PWA companions described below if you want verified offline reloads and installation.
 
 ## Features
 
@@ -49,7 +49,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **PDF** | — | Yes |
 | **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text) | Yes (same supported semantics; explicit raster fallbacks) |
 | **GIF** | — | Yes (animated, frame-based) |
-| **OpenShop JSON** | Yes | Yes (full project with layers) |
+| **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
 
 Batch export to multiple formats in one click. Export Settings previews real PNG/WebP alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
 
@@ -85,7 +85,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | **Marching Ants** | Animated selection borders |
 | **Welcome Screen** | Template presets for common canvas sizes |
 | **Tab Toggle** | `Tab` hides all panels for distraction-free editing |
-| **PWA Support** | Installable as a standalone desktop app with offline CDN caching |
+| **Offline & Install** | The hosted HTTPS lane stages and verifies its complete core shell, supports install prompts, exposes cache/model state, and rolls back an update that cannot confirm startup; the one-file `file://` lane is explicitly network-first |
 | **Accessibility** | ARIA roles, keyboard navigation, focus indicators, reduced-motion support, hidden canvas-state mirror, and live status announcements |
 | **Save State** | The status bar and document title distinguish clean, unsaved, saving, saved, and failed writes; unload warnings follow actual dirty state |
 
@@ -147,7 +147,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | [Photon 0.3.3](https://github.com/silvia-odwyer/photon) | Optional WASM acceleration for supported pixel filters (loaded on demand) |
 | [Google Fonts](https://fonts.google.com/) | JetBrains Mono + DM Sans |
 
-OpenShop JSON files use document schema v1. The same envelope drives project save/open, recovery, and undo/redo so layer membership and order, masks, guides, selections, animation frames, and active state stay synchronized. Legacy Fabric 5 / OpenShop 0.18.13 project JSON is migrated on load.
+OpenShop `.openshop` files are JSON-encoded document schema v1. The same envelope drives project save/open, recovery, and undo/redo so layer membership and order, masks, guides, selections, animation frames, and active state stay synchronized. Legacy `.json`, Fabric 5, and OpenShop 0.18.13 projects are migrated on load.
 
 Recovery uses checksum-verified, immutable generations keyed by stable document IDs rather than one overwrite-in-place file. Writes stage and verify a temporary OPFS file before promotion, retain up to five generations per document, rebuild from snapshot files if the index is damaged, and fall back to the newest verified older generation when necessary. Web Locks serialize the shared index and active tab leases fork competing documents into separate recovery streams. Recovery Storage shows quota and durable/best-effort status and supports metadata preview, naming, export, restore, open-as-copy, and per-generation discard. The legacy singleton autosave migrates on first supported startup.
 
@@ -167,18 +167,32 @@ Recovery uses checksum-verified, immutable generations keyed by stable document 
 - SVG export is sanitized to strip script tags and event handlers
 - jsPDF upgraded to 4.2.1 to patch CVE-2026-25755
 
+## Offline, Install, and File Launch
+
+OpenShop has two explicit distribution contracts:
+
+- `index.html` opened from disk remains the portable one-file editor. Core libraries are pinned but CDN-hosted, so a cold launch and any uncached optional helper require a connection. Browsers do not allow this lane to register a service worker.
+- An HTTPS or localhost deployment that includes `sw.js`, `manifest.webmanifest`, `icon-192.png`, and `icon-512.png` stages the editor, manifest, icons, Fabric, ag-psd, and jsPDF as one verified shell. The status bar reports readiness. Once ready, the core editor reloads offline.
+
+Hosted updates install into a separate cache and remain waiting until applied. The new shell must complete an editor health check; if it does not, the next launch returns to the last verified shell. The Offline & Install dialog exposes update, rollback, connection, install, optional-helper, and pinned AI-model cache state.
+
+Installed-app file launch is progressively enhanced through `launchQueue`. Supporting desktop Chromium releases can launch PNG, JPEG, WebP, GIF, PSD, and `.openshop` project files; other browsers retain Open, drag/drop, and file-picker workflows. AI models are intentionally outside the core shell and require one successful online use before their own cache can help offline.
+
 ## Self-Hosting
 
 ```bash
-# Simplest possible deployment
+# Portable, network-first standalone
 cp index.html /var/www/html/index.html
+
+# Hosted offline/install lane
+cp index.html sw.js manifest.webmanifest icon-192.png icon-512.png /var/www/html/
 
 # Or with GitHub Pages
 git init && git add . && git commit -m "init"
 # Enable Pages in repo settings → serves as a live editor
 ```
 
-No build step. No bundler. No `node_modules`. One file.
+No build step. No bundler. No runtime `node_modules`. `index.html` remains usable by itself; the four static companions enable the hosted PWA contract.
 
 ## Testing
 
@@ -203,11 +217,13 @@ npm run test:release
 | Safari 15+ | Full support (AI via WASM fallback, auto-save via Worker) |
 | Mobile Chrome/Safari | Responsive shell and dialogs; precision canvas work is best on a larger display |
 
+Offline installation depends on service-worker/PWA support. Operating-system file associations are currently a desktop Chromium capability; OpenShop feature-detects them and does not claim them in Firefox or Safari.
+
 ## Related Tools
 
 | Tool | Type | Best For |
 |------|------|----------|
-| **OpenShop** (this repo) | Single-file browser app | Zero-install editing in any browser — 34 tools, PSD import/export, client-side AI, works offline |
+| **OpenShop** (this repo) | Single-file browser app + optional hosted PWA | Zero-install editing — 34 tools, PSD import/export, client-side AI, and verified hosted-shell offline reloads |
 | [PyShop](https://github.com/SysAdminDoc/PyShop) | Python desktop app | Native desktop image editor if you prefer a traditional installed application |
 
 ## FAQ
@@ -219,7 +235,7 @@ Yes. All CSS, HTML, and JavaScript are in a single self-contained file. External
 No. Everything runs in your browser. Images are processed locally via Canvas API and never leave your machine. AI models are downloaded once to your browser cache and run client-side.
 
 **Q: Can I use this offline?**
-After the first load, CDN resources are cached via the Cache API. Most features work offline. AI features require their models to be cached from a prior use. Install as a PWA for the best offline experience.
+The answer depends on how OpenShop is launched. A downloaded `index.html` is network-first because its pinned core libraries come from CDNs. The hosted HTTPS build becomes offline-ready only after its status indicator says **Offline ready**; its service worker then serves the verified core shell and can fall back after a bad update. Optional Photon/GIF helpers and AI models work offline only when their resources were previously cached, and the Offline & Install dialog reports the state it can verify.
 
 **Q: How does PSD import/export work?**
 OpenShop uses ag-psd to parse and write `.psd` files client-side. Import decoding runs in a worker with explicit resource limits and a cancel action, so a rejected import leaves the open document unchanged. Drawable layer files import without duplicating Photoshop's document composite. Nested group metadata, supported blend modes, opacity, visibility, locks, and single-style horizontal text survive PSD import → export → reimport. Group compositing is approximated while editing but its metadata is retained for PSD export.

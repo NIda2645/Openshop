@@ -898,7 +898,7 @@ test('stores atomic recovery generations, falls back from corruption, and forks 
     OS._exportRecovery(record);
   }, renamed.filename);
   const recoveryDownload = await downloadPromise;
-  expect(recoveryDownload.suggestedFilename()).toBe('Named_checkpoint.openshop.json');
+  expect(recoveryDownload.suggestedFilename()).toBe('Named_checkpoint.openshop');
 
   const restoredCopy = await page.evaluate(async ({ filename, originalDocumentId }) => {
     const record = (await OS._listRecoveryGenerations()).find((candidate) => candidate.filename === filename);

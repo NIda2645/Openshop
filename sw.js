@@ -1,0 +1,364 @@
+'use strict';
+
+const SHELL_REVISION = '0.20.0-r1';
+const STATE_SCHEMA = 1;
+const SHELL_CACHE_PREFIX = 'openshop-shell-';
+const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SHELL_REVISION}`;
+const RUNTIME_CACHE = 'openshop-runtime-v1';
+const META_CACHE = 'openshop-offline-meta-v1';
+const SCOPE_URL = new URL('./', self.registration.scope).href;
+const STATE_URL = new URL('./__openshop_offline_state__', self.registration.scope).href;
+
+const REQUIRED_ASSETS = [
+    './',
+    './index.html',
+    './manifest.webmanifest',
+    './icon-192.png',
+    './icon-512.png',
+    'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js',
+    'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
+    'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js'
+];
+
+const OPTIONAL_ASSETS = [
+    'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap',
+    'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',
+    'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm',
+    'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js',
+    'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+];
+
+const RUNTIME_ORIGINS = new Set([
+    'https://cdn.jsdelivr.net',
+    'https://fonts.googleapis.com',
+    'https://fonts.gstatic.com'
+]);
+
+function shellCacheName(revision) {
+    return `${SHELL_CACHE_PREFIX}${revision}`;
+}
+
+function resolveAsset(asset) {
+    return new URL(asset, SCOPE_URL).href;
+}
+
+function defaultState() {
+    return {
+        schemaVersion: STATE_SCHEMA,
+        workerRevision: SHELL_REVISION,
+        activeRevision: null,
+        previousRevision: null,
+        stagedRevision: null,
+        confirmed: false,
+        trialStarted: false,
+        rolledBackFrom: null,
+        failedRevision: null,
+        reports: {}
+    };
+}
+
+async function readState() {
+    try {
+        const cache = await caches.open(META_CACHE);
+        const response = await cache.match(STATE_URL);
+        if (!response) return defaultState();
+        const parsed = await response.json();
+        if (parsed?.schemaVersion !== STATE_SCHEMA) return defaultState();
+        return { ...defaultState(), ...parsed, reports: parsed.reports || {} };
+    } catch {
+        return defaultState();
+    }
+}
+
+async function writeState(state) {
+    const cache = await caches.open(META_CACHE);
+    const normalized = {
+        ...defaultState(),
+        ...state,
+        schemaVersion: STATE_SCHEMA,
+        workerRevision: SHELL_REVISION,
+        updatedAt: new Date().toISOString()
+    };
+    await cache.put(STATE_URL, new Response(JSON.stringify(normalized), {
+        headers: {
+            'content-type': 'application/json',
+            'cache-control': 'no-store'
+        }
+    }));
+    return normalized;
+}
+
+async function fetchAndCache(cache, asset) {
+    const href = resolveAsset(asset);
+    const url = new URL(href);
+    const sameOrigin = url.origin === self.location.origin;
+    const request = new Request(href, {
+        cache: 'reload',
+        credentials: sameOrigin ? 'same-origin' : 'omit',
+        mode: sameOrigin ? 'same-origin' : 'cors'
+    });
+    const response = await fetch(request);
+    if (!response.ok) throw new Error(`${response.status} ${href}`);
+    await cache.put(href, response.clone());
+}
+
+async function stageShell() {
+    await caches.delete(SHELL_CACHE);
+    const cache = await caches.open(SHELL_CACHE);
+    const requiredMissing = [];
+    for (const asset of REQUIRED_ASSETS) {
+        try {
+            await fetchAndCache(cache, asset);
+        } catch (error) {
+            requiredMissing.push({ asset, error: error.message });
+        }
+    }
+    if (requiredMissing.length) {
+        await caches.delete(SHELL_CACHE);
+        throw new Error(`OpenShop shell staging failed: ${requiredMissing.map(item => item.asset).join(', ')}`);
+    }
+
+    const optionalMissing = [];
+    for (const asset of OPTIONAL_ASSETS) {
+        try {
+            await fetchAndCache(cache, asset);
+        } catch (error) {
+            optionalMissing.push({ asset, error: error.message });
+        }
+    }
+
+    const state = await readState();
+    const reports = {
+        ...state.reports,
+        [SHELL_REVISION]: {
+            requiredTotal: REQUIRED_ASSETS.length,
+            requiredCached: REQUIRED_ASSETS.length,
+            optionalTotal: OPTIONAL_ASSETS.length,
+            optionalCached: OPTIONAL_ASSETS.length - optionalMissing.length,
+            optionalMissing,
+            stagedAt: new Date().toISOString()
+        }
+    };
+    const revisions = Object.keys(reports);
+    while (revisions.length > 4) delete reports[revisions.shift()];
+    await writeState({
+        ...state,
+        stagedRevision: SHELL_REVISION,
+        reports
+    });
+}
+
+async function trimShellCaches(keepRevisions) {
+    const keep = new Set([...keepRevisions].filter(Boolean).map(shellCacheName));
+    const names = await caches.keys();
+    await Promise.all(names
+        .filter(name => name.startsWith(SHELL_CACHE_PREFIX) && !keep.has(name))
+        .map(name => caches.delete(name)));
+}
+
+async function activateShell() {
+    let state = await readState();
+    if (state.stagedRevision === SHELL_REVISION && state.activeRevision !== SHELL_REVISION) {
+        state = await writeState({
+            ...state,
+            previousRevision: state.activeRevision,
+            activeRevision: SHELL_REVISION,
+            stagedRevision: null,
+            confirmed: !state.activeRevision,
+            trialStarted: false,
+            rolledBackFrom: null,
+            failedRevision: null,
+            activatedAt: new Date().toISOString()
+        });
+    } else if (!state.activeRevision) {
+        state = await writeState({
+            ...state,
+            activeRevision: SHELL_REVISION,
+            stagedRevision: null,
+            confirmed: true,
+            activatedAt: new Date().toISOString()
+        });
+    }
+    await trimShellCaches([state.activeRevision, state.previousRevision, SHELL_REVISION]);
+    await self.clients.claim();
+}
+
+async function revisionForNavigation() {
+    let state = await readState();
+    if (state.activeRevision === SHELL_REVISION && !state.confirmed && state.previousRevision) {
+        if (state.trialStarted) {
+            const failedRevision = state.activeRevision;
+            const fallbackRevision = state.previousRevision;
+            state = await writeState({
+                ...state,
+                activeRevision: fallbackRevision,
+                previousRevision: null,
+                confirmed: true,
+                trialStarted: false,
+                rolledBackFrom: failedRevision,
+                failedRevision,
+                rollbackAt: new Date().toISOString()
+            });
+            await caches.delete(shellCacheName(failedRevision));
+            return state.activeRevision;
+        }
+        state = await writeState({
+            ...state,
+            trialStarted: true,
+            trialStartedAt: new Date().toISOString()
+        });
+    }
+    return state.activeRevision || SHELL_REVISION;
+}
+
+async function activeRevision() {
+    const state = await readState();
+    return state.activeRevision || SHELL_REVISION;
+}
+
+async function cachedShellResponse(request, revision, navigation = false) {
+    const cache = await caches.open(shellCacheName(revision));
+    if (navigation) {
+        return await cache.match(resolveAsset('./index.html'))
+            || await cache.match(resolveAsset('./'));
+    }
+    return cache.match(request);
+}
+
+async function handleNavigation(request) {
+    const revision = await revisionForNavigation();
+    const cached = await cachedShellResponse(request, revision, true);
+    if (cached) return cached;
+    try {
+        return await fetch(request);
+    } catch {
+        return new Response(
+            '<!doctype html><meta charset="utf-8"><title>OpenShop unavailable</title><h1>OpenShop is not ready offline</h1><p>Reconnect once so the hosted shell can finish caching.</p>',
+            { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } }
+        );
+    }
+}
+
+async function handleAsset(request) {
+    const revision = await activeRevision();
+    const shellResponse = await cachedShellResponse(request, revision, false);
+    if (shellResponse) return shellResponse;
+
+    const runtime = await caches.open(RUNTIME_CACHE);
+    const cached = await runtime.match(request);
+    if (cached) return cached;
+    const response = await fetch(request);
+    if (response && (response.ok || response.type === 'opaque')) {
+        await runtime.put(request, response.clone());
+    }
+    return response;
+}
+
+async function statusPayload() {
+    const state = await readState();
+    const revision = state.activeRevision || SHELL_REVISION;
+    const cacheName = shellCacheName(revision);
+    const cacheNames = await caches.keys();
+    const report = state.reports?.[revision] || {};
+    let requiredCached = 0;
+    if (cacheNames.includes(cacheName)) {
+        const cache = await caches.open(cacheName);
+        const matches = await Promise.all(REQUIRED_ASSETS.map(asset => cache.match(resolveAsset(asset))));
+        requiredCached = matches.filter(Boolean).length;
+    }
+    return {
+        ...state,
+        workerRevision: SHELL_REVISION,
+        activeRevision: revision,
+        requiredTotal: REQUIRED_ASSETS.length,
+        requiredCached,
+        optionalTotal: OPTIONAL_ASSETS.length,
+        optionalCached: Number(report.optionalCached || 0),
+        shellReady: requiredCached === REQUIRED_ASSETS.length,
+        rollbackAvailable: Boolean(state.previousRevision && cacheNames.includes(shellCacheName(state.previousRevision)))
+    };
+}
+
+async function confirmBoot(expectedRevision) {
+    const state = await readState();
+    if (expectedRevision && expectedRevision !== state.activeRevision) {
+        throw new Error('The running shell is no longer the active cached revision');
+    }
+    const confirmed = await writeState({
+        ...state,
+        confirmed: true,
+        trialStarted: false,
+        confirmedAt: new Date().toISOString()
+    });
+    await trimShellCaches([confirmed.activeRevision, confirmed.previousRevision]);
+    return statusPayload();
+}
+
+async function rollbackShell() {
+    const state = await readState();
+    if (!state.previousRevision) throw new Error('No previous verified shell is available');
+    const failedRevision = state.activeRevision;
+    const rolledBack = await writeState({
+        ...state,
+        activeRevision: state.previousRevision,
+        previousRevision: null,
+        confirmed: true,
+        trialStarted: false,
+        rolledBackFrom: failedRevision,
+        failedRevision,
+        rollbackAt: new Date().toISOString()
+    });
+    await caches.delete(shellCacheName(failedRevision));
+    await trimShellCaches([rolledBack.activeRevision]);
+    return statusPayload();
+}
+
+self.addEventListener('install', event => {
+    event.waitUntil(stageShell());
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(activateShell());
+});
+
+self.addEventListener('fetch', event => {
+    const request = event.request;
+    if (request.method !== 'GET') return;
+    if (request.mode === 'navigate') {
+        event.respondWith(handleNavigation(request));
+        return;
+    }
+    const url = new URL(request.url);
+    if (url.origin === self.location.origin || RUNTIME_ORIGINS.has(url.origin)) {
+        event.respondWith(handleAsset(request));
+    }
+});
+
+self.addEventListener('message', event => {
+    const type = event.data?.type;
+    const reply = payload => event.ports?.[0]?.postMessage(payload);
+    if (type === 'OPENSHOP_APPLY_UPDATE') {
+        event.waitUntil((async () => {
+            await self.skipWaiting();
+            reply({ ok: true });
+        })());
+        return;
+    }
+    if (type === 'OPENSHOP_GET_STATUS') {
+        event.waitUntil(statusPayload()
+            .then(status => reply({ ok: true, status }))
+            .catch(error => reply({ ok: false, error: error.message })));
+        return;
+    }
+    if (type === 'OPENSHOP_CONFIRM_BOOT') {
+        event.waitUntil(confirmBoot(event.data?.revision)
+            .then(status => reply({ ok: true, status }))
+            .catch(error => reply({ ok: false, error: error.message })));
+        return;
+    }
+    if (type === 'OPENSHOP_ROLLBACK') {
+        event.waitUntil(rollbackShell()
+            .then(status => reply({ ok: true, status }))
+            .catch(error => reply({ ok: false, error: error.message })));
+    }
+});
