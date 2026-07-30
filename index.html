@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-65TwdUs/+DIVyN9dUHqgmE3RYgUdPhEaAOtNndz5N2Y=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-+fBNwgNYe5UWUFLcKtKM1/8W7LWOSiXrR823p1ieOe0=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -594,7 +594,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 
 /* === ANNOTATION / STICKY NOTES === */
 .sticky-note{position:absolute;min-width:120px;min-height:80px;padding:8px;border-radius:6px;font-size:11px;color:#1a1a2e;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:move;z-index:100;resize:both;overflow:auto;font-family:'DM Sans',sans-serif;line-height:1.4}
-.sticky-note .sticky-close{position:absolute;top:2px;right:5px;cursor:pointer;font-size:14px;opacity:.5;transition:opacity .15s}
+.sticky-note .sticky-close{position:absolute;top:2px;right:5px;cursor:pointer;font-size:14px;opacity:.5;transition:opacity .15s;background:none;border:0;color:inherit;line-height:1;padding:2px 4px}
 .sticky-note .sticky-close:hover{opacity:1}
 .sticky-note textarea{width:100%;height:calc(100% - 14px);border:none;background:transparent;color:inherit;font:inherit;resize:none;outline:none}
 
@@ -2927,15 +2927,21 @@ const OS = {
         if (!this._runtimeAssetPromises.has(name)) {
             const asset = this._runtimeAssets[name];
             const pending = (async () => {
-                const response = await fetch(asset.url, {
-                    cache:'force-cache',
-                    credentials:'omit',
-                    mode:'cors'
-                });
-                if (!response.ok) throw new Error(`Runtime asset request failed (${response.status})`);
-                const bytes = await response.arrayBuffer();
-                await this._verifyRuntimeBytes(bytes, asset.integrity);
-                return { asset, bytes };
+                const load = async cache => {
+                    const response = await fetch(asset.url, { cache, credentials:'omit', mode:'cors' });
+                    if (!response.ok) throw new Error(`Runtime asset request failed (${response.status})`);
+                    const bytes = await response.arrayBuffer();
+                    await this._verifyRuntimeBytes(bytes, asset.integrity);
+                    return bytes;
+                };
+                try {
+                    return { asset, bytes: await load('force-cache') };
+                } catch (error) {
+                    // A poisoned or truncated HTTP cache entry would otherwise
+                    // fail every retry for the lifetime of that cache entry.
+                    console.warn('Runtime asset failed from cache, refetching:', name, error.message);
+                    return { asset, bytes: await load('reload') };
+                }
             })().catch(error => {
                 this._runtimeAssetPromises.delete(name);
                 throw error;
@@ -12873,28 +12879,38 @@ self.onmessage = async function(e) {
         note.style.left = (e.clientX || 200) + 'px';
         note.style.top = (e.clientY || 200) + 'px';
         note.style.pointerEvents = 'all';
-        const close = document.createElement('span');
+        // Every note used to add permanent document-level listeners; an
+        // AbortController ties them to the note's lifetime instead.
+        const controller = new AbortController();
+        const { signal } = controller;
+        const close = document.createElement('button');
+        close.type = 'button';
         close.className = 'sticky-close';
         close.textContent = '×';
+        close.setAttribute('aria-label', 'Delete note');
+        close.title = 'Delete note';
         close.addEventListener('click', () => {
+            controller.abort();
             note.remove();
             this._stickyNotes = this._stickyNotes.filter(n => n !== note);
-        });
+        }, { signal });
         const textarea = document.createElement('textarea');
         textarea.placeholder = 'Type a note...';
+        textarea.setAttribute('aria-label', 'Note text');
         note.append(close, textarea);
         // Make draggable
         let dragging = false, offX, offY;
         note.addEventListener('mousedown', ev => {
             if (ev.target.tagName === 'TEXTAREA' || ev.target.classList.contains('sticky-close')) return;
             dragging = true; offX = ev.clientX - note.offsetLeft; offY = ev.clientY - note.offsetTop;
-        });
+        }, { signal });
         document.addEventListener('mousemove', ev => {
             if (!dragging) return;
             note.style.left = (ev.clientX - offX) + 'px';
             note.style.top = (ev.clientY - offY) + 'px';
-        });
-        document.addEventListener('mouseup', () => { dragging = false; });
+        }, { signal });
+        document.addEventListener('mouseup', () => { dragging = false; }, { signal });
+        note._osCleanup = () => controller.abort();
         container.appendChild(note);
         this._stickyNotes.push(note);
         note.querySelector('textarea').focus();

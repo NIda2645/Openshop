@@ -42,6 +42,8 @@ All notable changes to Openshop will be documented in this file.
 - Restore the previous document when opening a project or recovery generation fails partway through, instead of leaving a half-replaced canvas whose layers panel, history, and save state disagree
 - Enforce the PSD decode budget before any pixels are allocated by reading the layer structure first; the previous `totalMemoryLimit` option does not exist in ag-psd and was silently ignored, so a small crafted file could exhaust memory during decode
 - Export eraser strokes as erased pixels rather than solid black in PSD layers
+- Release sticky-note drag listeners when a note is deleted instead of leaving document-level handlers behind for the session
+- Retry a lazily loaded runtime library once bypassing the HTTP cache when its integrity check fails, so a poisoned cache entry no longer disables that feature until the cache expires
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden

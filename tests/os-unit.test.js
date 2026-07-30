@@ -468,10 +468,16 @@ describe('OpenShop core object', () => {
     await expect(OS._fetchVerifiedRuntimeAsset('fixture')).rejects.toThrow('integrity check failed');
     expect(OS._runtimeAssetPromises.has('fixture')).toBe(false);
 
+    // A failed check retries once bypassing the HTTP cache, so a poisoned
+    // cache entry cannot pin the failure for the cache's lifetime.
+    expect(fetchRuntime).toHaveBeenCalledTimes(2);
+    expect(fetchRuntime.mock.calls[0][1].cache).toBe('force-cache');
+    expect(fetchRuntime.mock.calls[1][1].cache).toBe('reload');
+
     responseBytes = trusted;
     const verified = await OS._fetchVerifiedRuntimeAsset('fixture');
     expect(verified.bytes.byteLength).toBe(trusted.byteLength);
-    expect(fetchRuntime).toHaveBeenCalledTimes(2);
+    expect(fetchRuntime).toHaveBeenCalledTimes(3);
     await expect(OS._fetchVerifiedRuntimeAsset('undeclared')).rejects.toThrow('Unknown runtime asset');
     vi.unstubAllGlobals();
   });
