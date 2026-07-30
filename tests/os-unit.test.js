@@ -59,7 +59,10 @@ describe('OpenShop core object', () => {
     expect(OS.layers).toHaveLength(1);
     expect(OS.layers[0].name).toBe('Layer 0');
     expect(OS.activeLayerIdx).toBe(0);
-    expect(OS.saveHistory).toHaveBeenCalledWith('New Layer');
+    expect(OS.saveHistory).toHaveBeenCalledWith(
+      'New Layer',
+      expect.objectContaining({ command: expect.objectContaining({ id: 'layer.add', schemaVersion: 1 }) })
+    );
 
     OS.layers[0].objects.push(canvasObject);
     OS.deleteLayer();
@@ -68,7 +71,10 @@ describe('OpenShop core object', () => {
     expect(OS.layers).toHaveLength(1);
     expect(OS.layers[0].name).toBe('Layer 0');
     expect(OS.layers[0].objects).toHaveLength(0);
-    expect(OS.saveHistory).toHaveBeenCalledWith('Delete Layer');
+    expect(OS.saveHistory).toHaveBeenCalledWith(
+      'Delete Layer',
+      expect.objectContaining({ command: expect.objectContaining({ id: 'layer.delete', schemaVersion: 1 }) })
+    );
   });
 
   it('keeps layer ownership, canvas stacking, and edit eligibility canonical', () => {
@@ -163,6 +169,33 @@ describe('OpenShop core object', () => {
     expect(restored).toEqual(['Initial', 'Edited']);
     expect(OS.historyIdx).toBe(1);
     expect(OS.setTool).toHaveBeenCalledWith('select');
+  });
+
+  it('keeps initialization out of transaction history and validates versioned action files', () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ id: 'layer-subject', name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    OS.activeLayerIdx = 0;
+    quietUiMethods(OS);
+
+    OS._initializeHistory('New Document');
+
+    expect(OS.history).toEqual([]);
+    expect(OS.historyIdx).toBe(-1);
+    expect(OS._historyBaseSnapshot).toContain('"kind":"openshop-document"');
+    expect(OS._historyBaseLabel).toBe('New Document');
+
+    const command = OS._makeCommand('layer.opacity.set', { layerId: 'layer-subject', opacity: 55 });
+    const parsed = OS._parseMacroPayload({
+      kind: 'openshop-command-sequence',
+      schemaVersion: 1,
+      commands: [command]
+    });
+    expect(parsed).toEqual([command]);
+    expect(() => OS._parseMacroPayload([{ action: 'setLayerOpacity', params: [55] }])).toThrow('Unsupported command schema');
+    expect(() => OS._makeCommand('layer.opacity.set', { layerId: 'layer-subject', opacity: 101 })).toThrow('out of range');
+    expect(() => OS._makeCommand('_privateMethod', {})).toThrow('Unknown command');
   });
 
   it('exports PNG using a sanitized download name', () => {
@@ -742,6 +775,7 @@ describe('OpenShop core object', () => {
 
     const pending = OS.saveProject();
     await vi.waitFor(() => expect(close).toHaveBeenCalled());
+    object.name = 'Newer Subject';
     OS.saveHistory('Newer edit');
     finishClose();
     await expect(pending).resolves.toBe(true);

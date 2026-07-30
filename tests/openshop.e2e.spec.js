@@ -851,6 +851,279 @@ test('keeps layer stacking, locks, visibility, and history in one canonical mode
   expect(result.reopenedInteraction).toEqual({ selectable: false, evented: false });
 });
 
+test('records validated commands and replays mixed edits as one atomic action', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(160, 120, { resetProject: true, clean: true });
+    const subject = new fabric.Rect({
+      left: 20,
+      top: 18,
+      width: 70,
+      height: 50,
+      fill: '#c43d55',
+      name: 'Subject'
+    });
+    OS.canvas.add(subject);
+    OS.layers[1].name = 'Subject layer';
+    OS.layers[1].objects.push(subject);
+    OS.canvas.setActiveObject(subject);
+    OS._enforceLayerInvariants();
+    OS.updateLayersPanel();
+    OS._initializeHistory('Command Baseline');
+    OS._markDocumentClean(OS._historyBaseSnapshot, 'clean');
+
+    const summarize = () => {
+      const object = OS.canvas.getObjects().find((candidate) => candidate.name === 'Subject');
+      const layer = OS.layers.find((candidate) => candidate.objects.includes(object));
+      return {
+        layerName: layer?.name,
+        opacity: layer?.opacity,
+        angle: object?.angle || 0,
+        active: OS.canvas.getActiveObject()?.name || null
+      };
+    };
+    const baseline = summarize();
+    const initializationTransactions = OS.history.length;
+
+    OS._macroSteps = [];
+    OS._macroRecording = true;
+    OS.renameLayer(OS.activeLayerIdx, 'Retouched subject');
+    OS.setLayerOpacity(75, false);
+    OS.setLayerOpacity(55, false);
+    const previewHistoryLength = OS.history.length;
+    OS.commitLayerOpacity();
+    OS.canvas.setActiveObject(subject);
+    OS.rotateObj(30);
+    OS._macroRecording = false;
+
+    const recorded = JSON.parse(JSON.stringify(OS._macroSteps));
+    const edited = summarize();
+    const transactionIds = OS.history.map((entry) => entry.command?.id);
+
+    for (let index = 0; index < 3; index++) await OS.undo();
+    const undone = summarize();
+    const replaySucceeded = await OS.playMacro();
+    const replayed = summarize();
+    const replayEntry = OS.history.at(-1);
+
+    const beforeFailure = JSON.stringify(OS._captureDocumentState());
+    const beforeFailureHistoryLength = OS.history.length;
+    const layerId = OS.layers.find((layer) => layer.name === 'Retouched subject').id;
+    const failedSequence = OS._makeCommand('macro.sequence', {
+      commands: [
+        OS._makeCommand('layer.rename', { layerId, name: 'Must roll back' }),
+        OS._makeCommand('object.rotate', { objectId: 'object-does-not-exist', degrees: 45 })
+      ]
+    });
+    const failedSequenceResult = await OS._executeCommand(failedSequence, { recordMacro: false });
+    const afterFailure = JSON.stringify(OS._captureDocumentState());
+
+    const invalidResult = await OS._executeCommand({
+      schemaVersion: 1,
+      id: 'layer.opacity.set',
+      args: { layerId, opacity: 999 }
+    }, { recordMacro: false });
+
+    return {
+      initializationTransactions,
+      previewHistoryLength,
+      baseline,
+      edited,
+      undone,
+      replaySucceeded,
+      replayed,
+      recorded,
+      transactionIds,
+      replayEntry: {
+        kind: replayEntry?.kind,
+        schemaVersion: replayEntry?.schemaVersion,
+        commandId: replayEntry?.command?.id,
+        childIds: replayEntry?.command?.args?.commands?.map((command) => command.id)
+      },
+      failedSequenceResult,
+      failureRolledBack: beforeFailure === afterFailure,
+      failureHistoryUnchanged: OS.history.length === beforeFailureHistoryLength,
+      invalidResult,
+      layerNameAfterFailures: OS.layers.find((layer) => layer.id === layerId)?.name
+    };
+  });
+
+  expect(result.initializationTransactions).toBe(0);
+  expect(result.previewHistoryLength).toBe(1);
+  expect(result.transactionIds).toEqual(['layer.rename', 'layer.opacity.set', 'object.rotate']);
+  expect(result.recorded.map((command) => [command.schemaVersion, command.id])).toEqual([
+    [1, 'layer.rename'],
+    [1, 'layer.opacity.set'],
+    [1, 'object.rotate']
+  ]);
+  expect(result.recorded.every((command) => !('timestamp' in command) && !('action' in command))).toBe(true);
+  expect(result.undone).toEqual(result.baseline);
+  expect(result.replaySucceeded).toBe(true);
+  expect(result.replayed).toEqual(result.edited);
+  expect(result.replayEntry).toEqual({
+    kind: 'openshop-history-entry',
+    schemaVersion: 1,
+    commandId: 'macro.sequence',
+    childIds: ['layer.rename', 'layer.opacity.set', 'object.rotate']
+  });
+  expect(result.failedSequenceResult).toBe(false);
+  expect(result.failureRolledBack).toBe(true);
+  expect(result.failureHistoryUnchanged).toBe(true);
+  expect(result.invalidResult).toBe(false);
+  expect(result.layerNameAfterFailures).toBe('Retouched subject');
+  expect(pageErrors).toEqual([]);
+});
+
+test('undoes destructive canvas and frame transactions without state loss', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(96, 64, { resetProject: true, clean: true });
+    const subject = new fabric.Rect({
+      left: 12,
+      top: 10,
+      width: 42,
+      height: 30,
+      fill: '#d1425b',
+      name: 'Subject'
+    });
+    OS.canvas.add(subject);
+    OS.layers[1].name = 'Subject';
+    OS.layers[1].objects.push(subject);
+    OS.canvas.setActiveObject(subject);
+    OS._enforceLayerInvariants();
+    OS.updateLayersPanel();
+    OS._initializeHistory('Destructive Baseline');
+    OS._markDocumentClean(OS._historyBaseSnapshot, 'clean');
+
+    const snapshot = () => JSON.stringify(OS._captureDocumentState());
+    const baseline = snapshot();
+    const operations = [];
+    const verifyOperation = async (id, run) => {
+      const succeeded = await run();
+      const after = snapshot();
+      const entryId = OS.history.at(-1)?.command?.id;
+      const undoSucceeded = await OS.undo();
+      const exactUndo = snapshot() === baseline;
+      const redoSucceeded = await OS.redo();
+      const exactRedo = snapshot() === after;
+      await OS.undo();
+      operations.push({ id, succeeded, entryId, undoSucceeded, exactUndo, redoSucceeded, exactRedo });
+    };
+
+    await verifyOperation('canvas.flatten', () => OS.flattenImage());
+    await verifyOperation('canvas.rotate', () => OS.canvasRotate(90));
+    await verifyOperation('canvas.flip', () => OS.canvasFlip('h'));
+    await verifyOperation('canvas.crop', () => {
+      const vpt = OS.canvas.viewportTransform;
+      OS._cropRegion = {
+        x: vpt[4] + 8 * vpt[0],
+        y: vpt[5] + 6 * vpt[3],
+        w: 60 * vpt[0],
+        h: 40 * vpt[3]
+      };
+      return OS.applyCrop();
+    });
+
+    const originalFromURL = fabric.Image.fromURL;
+    const beforeFailure = snapshot();
+    const historyBeforeFailure = OS.history.length;
+    fabric.Image.fromURL = () => Promise.reject(new Error('Synthetic image decode failure'));
+    const failedFlatten = await OS.flattenImage();
+    fabric.Image.fromURL = originalFromURL;
+    const failedFlattenRolledBack = snapshot() === beforeFailure && OS.history.length === historyBeforeFailure;
+
+    const frameBase = snapshot();
+    const addSucceeded = await OS.addFrame();
+    const afterAdd = snapshot();
+    await OS.undo();
+    const addUndoExact = snapshot() === frameBase;
+    await OS.redo();
+    const addRedoExact = snapshot() === afterAdd;
+
+    await OS.addFrame();
+    const liveSubject = OS.canvas.getObjects().find((object) => object.name === 'Subject');
+    liveSubject.set('fill', '#315fd1');
+    OS.canvas.renderAll();
+    const beforeSelect = snapshot();
+    const selectSucceeded = await OS.selectFrame(0);
+    const afterSelect = snapshot();
+    await OS.undo();
+    const selectUndoExact = snapshot() === beforeSelect;
+    await OS.redo();
+    const selectRedoExact = snapshot() === afterSelect;
+    await OS.undo();
+
+    const beforeDuplicate = snapshot();
+    const duplicateSucceeded = await OS.dupFrame();
+    const afterDuplicate = snapshot();
+    await OS.undo();
+    const duplicateUndoExact = snapshot() === beforeDuplicate;
+    await OS.redo();
+    const duplicateRedoExact = snapshot() === afterDuplicate;
+    await OS.undo();
+
+    const beforeRemove = snapshot();
+    const removeSucceeded = await OS.removeFrame(0);
+    const afterRemove = snapshot();
+    await OS.undo();
+    const removeUndoExact = snapshot() === beforeRemove;
+    await OS.redo();
+    const removeRedoExact = snapshot() === afterRemove;
+
+    return {
+      operations,
+      failedFlatten,
+      failedFlattenRolledBack,
+      frames: {
+        addSucceeded,
+        addUndoExact,
+        addRedoExact,
+        selectSucceeded,
+        selectUndoExact,
+        selectRedoExact,
+        duplicateSucceeded,
+        duplicateUndoExact,
+        duplicateRedoExact,
+        removeSucceeded,
+        removeUndoExact,
+        removeRedoExact
+      }
+    };
+  });
+
+  expect(result.operations).toEqual([
+    expect.objectContaining({ id: 'canvas.flatten', succeeded: true, entryId: 'canvas.flatten', undoSucceeded: true, exactUndo: true, redoSucceeded: true, exactRedo: true }),
+    expect.objectContaining({ id: 'canvas.rotate', succeeded: true, entryId: 'canvas.rotate', undoSucceeded: true, exactUndo: true, redoSucceeded: true, exactRedo: true }),
+    expect.objectContaining({ id: 'canvas.flip', succeeded: true, entryId: 'canvas.flip', undoSucceeded: true, exactUndo: true, redoSucceeded: true, exactRedo: true }),
+    expect.objectContaining({ id: 'canvas.crop', succeeded: true, entryId: 'canvas.crop', undoSucceeded: true, exactUndo: true, redoSucceeded: true, exactRedo: true })
+  ]);
+  expect(result.failedFlatten).toBe(false);
+  expect(result.failedFlattenRolledBack).toBe(true);
+  expect(result.frames).toEqual({
+    addSucceeded: true,
+    addUndoExact: true,
+    addRedoExact: true,
+    selectSucceeded: true,
+    selectUndoExact: true,
+    selectRedoExact: true,
+    duplicateSucceeded: true,
+    duplicateUndoExact: true,
+    duplicateRedoExact: true,
+    removeSucceeded: true,
+    removeUndoExact: true,
+    removeRedoExact: true
+  });
+  expect(pageErrors).toEqual([]);
+});
+
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();

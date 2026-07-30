@@ -34,7 +34,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Selection Tools** | Rectangular/Elliptical Marquee, Magic Wand (contiguous + global), Lasso, Color Range dialog with fuzziness, presets, and live preview |
 | **Selection Operations** | Select All, Deselect, Reselect, Inverse, Grow, Similar, Modify (Expand, Contract, Feather, Border, Smooth) |
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |
-| **Undo/Redo** | 60-step history with named entries and visual history panel |
+| **Undo/Redo** | 60-step versioned transaction history with named entries, exact destructive-edit rollback, and a visual history panel |
 | **Free Transform** | Resize, rotate, skew, perspective, and warp on any object |
 | **Auto-Save** | Dirty project revisions are written to browser recovery storage every 30 seconds and cleared only after the storage path acknowledges the write |
 
@@ -77,6 +77,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 |---------|-------------|
 | **Precision Studio UI** | High-contrast dark workspace with a floating tool dock, structured inspector cards, responsive local-first launcher, and default, midnight, and OLED variants |
 | **Command Palette** | `Ctrl+K` to search and run any command |
+| **Action Recorder** | Records validated, versioned edit commands and replays mixed actions atomically; a failed step rolls back the whole action |
 | **Context Menus** | Right-click for contextual actions |
 | **Rulers & Guides** | Draggable guides with snapping and pixel grid at high zoom |
 | **Grid Overlay** | Toggleable composition grid |
@@ -232,7 +233,7 @@ When contributing:
 - Test in Chrome and Firefox at minimum
 - Maintain the single-file architecture
 - Keep the dark theme consistent with existing CSS variables
-- Add undo history entries (`saveHistory('Action Name')`) for any canvas-modifying operation
+- Route replayable edits through a schema-v1 command and one history transaction; use `saveHistory()` only for a completed synchronous mutation
 - Heavy pixel operations should use `_runFilterInWorker()` to avoid blocking the UI
 
 ## License
