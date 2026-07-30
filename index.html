@@ -9,8 +9,8 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Uo9omc8GabkqlAd9QNEgSeD4g/hmDZ2dbfP0jgoTun4=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
-<title>OpenShop v0.22.0 — Online Image Editor</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Pb8V/UPrBoHgqPEeBOMKva40FDSBmjTeN4eWqTasOck=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<title>OpenShop v0.23.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -1684,10 +1684,10 @@ body{
 
 <!-- ===== TOP MENU ===== -->
 <div id="topbar">
-    <div class="logo" aria-label="OpenShop version 0.22.0">
+    <div class="logo" aria-label="OpenShop version 0.23.0">
         <span class="logo-mark">OS</span>
         <span class="logo-word">OpenShop</span>
-        <span class="logo-version">v0.22</span>
+        <span class="logo-version">v0.23</span>
     </div>
     <div class="menu-bar" role="menubar" aria-label="Main menu">
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
@@ -2552,7 +2552,7 @@ body{
 
 <script>
 // ================================================================
-//  OpenShop v0.22.0 — Core Engine (Phase 10: Pro Toolbar)
+//  OpenShop v0.23.0 — Core Engine (Phase 10: Pro Toolbar)
 // ================================================================
 // Static controls declare opaque action IDs; executable behavior lives only in this reviewed registry.
 const OS_EVENT_HANDLERS = Object.freeze({
@@ -3697,7 +3697,7 @@ const OS = {
         if (label) label.textContent = labels[this._persistenceState];
         const dirtyPrefix = this._isDirty ? '* ' : '';
         const stateSuffix = this._persistenceState === 'saving' ? ' (Saving)' : this._persistenceState === 'error' ? ' (Save failed)' : '';
-        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.22.0`;
+        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.23.0`;
     },
     _markDocumentDirty() {
         this._documentRevision += 1;

@@ -2,7 +2,7 @@
 
 All notable changes to Openshop will be documented in this file.
 
-## [Unreleased]
+## [v0.23.0] - 2026-07-30
 
 ### Performance
 - Bound undo history by retained memory as well as entry count. Each entry embeds full base64 image sources, so 60 steps on a 12 MP photo could retain gigabytes; history now evicts against a 192 MB budget, always keeping at least one entry, and Image Information reports the retained size
