@@ -4,6 +4,9 @@ All notable changes to Openshop will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+- Move the highlight during animation playback instead of rebuilding the whole thumbnail strip on every tick. A 20-frame timeline at 12 fps was creating a div, an 80px canvas, an image decode and two listeners per frame, 12 times a second — roughly 240 decodes a second purely to move a border
+
 ### Security
 - Drop `https://cdn.jsdelivr.net` from `script-src`. Fabric, ag-psd and jsPDF were `<script src>` tags on that host, and CSP does not require SRI on scripts it permits by host — so an allowance covering three pinned tags also let any HTML-injection sink load an arbitrary npm package. All three are now fetched, SHA-384 verified in page, and executed from `blob:` URLs, the same path the eight lazy assets already took, leaving `script-src 'self' <hashes> 'wasm-unsafe-eval' blob:`. Substituted bytes stop the editor with a visible message instead of quietly becoming the engine
 - Judge every `href` in an exported SVG regardless of namespace, against an allowlist. The old `[xlink\:href]` selector matched nothing — attribute selectors match the local name in the null namespace, and `xlink:href` is exactly what fabric emits for images — so that branch was dead, and the plain-`href` checks were case-sensitive, letting `JAVASCRIPT:` and `Data:text/html` through a file handed to the user as sanitized

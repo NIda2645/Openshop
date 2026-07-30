@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-It5bu0io3O7fM0adESQIN6cpmYL/6SUcS6R1A+LyI3w=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-e+l/5bQXOrD7O0nCL9gB9sr51S2432Yg4Fx3rggJniE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -14964,6 +14964,15 @@ self.onmessage = async function(e) {
     selectFrame(index) {
         return this._executeCommand(this._makeCommand('frame.select', { index }));
     },
+    // Playback only moves the highlight, so rebuilding the strip meant a div,
+    // an 80px canvas, an image decode and two listeners per frame per tick —
+    // 240 decodes a second on a 20-frame timeline at 12 fps.
+    _highlightActiveFrame() {
+        const container = document.getElementById('timeline-frames');
+        if (!container) return;
+        const activeIndex = this._animPlaying ? this._animPreviewIdx : this._animIdx;
+        [...container.children].forEach((child, index) => child.classList.toggle('active', index === activeIndex));
+    },
     _renderFrames() {
         const container = document.getElementById('timeline-frames');
         this._clearNode(container);
@@ -14995,7 +15004,7 @@ self.onmessage = async function(e) {
     togglePlay() {
         if (this._animPlaying) {
             this._stopAnimationPlayback();
-            this._renderFrames();
+            this._highlightActiveFrame();
             return;
         }
         if (this._animFrames.length === 0) {
@@ -15008,7 +15017,7 @@ self.onmessage = async function(e) {
         document.getElementById('tl-play').classList.add('active');
         this._animTimer = setInterval(() => {
             this._animPreviewIdx = (this._animPreviewIdx + 1) % this._animFrames.length;
-            this._renderFrames();
+            this._highlightActiveFrame();
         }, 1000 / fps);
     },
     async _loadGifJs() {

@@ -3950,3 +3950,48 @@ test('refuses to start when a boot library fails its integrity check', async ({ 
   expect(await page.evaluate(() => window.jspdf?.tampered)).toBeUndefined();
   expect(consoleErrors.join('\n')).toMatch(/integrity check/i);
 });
+
+test('animation playback moves the highlight without rebuilding the strip', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    OS._animFrames = Array.from({ length: 12 }, () => pixel);
+    OS._animIdx = 0;
+    OS._renderFrames();
+
+    const container = document.getElementById('timeline-frames');
+    const before = [...container.children];
+    let created = 0;
+    const observer = new MutationObserver(records => {
+      records.forEach(record => { created += record.addedNodes.length; });
+    });
+    observer.observe(container, { childList: true, subtree: true });
+
+    document.getElementById('tl-fps').value = '24';
+    OS.togglePlay();
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const highlightedDuringPlayback = [...container.children].findIndex(child => child.classList.contains('active'));
+    OS.togglePlay();
+    observer.disconnect();
+
+    const after = [...container.children];
+    return {
+      created,
+      // The same element objects, not replacements that merely look the same.
+      sameNodes: before.length === after.length && before.every((node, index) => node === after[index]),
+      highlightedDuringPlayback,
+      highlightedAfterStop: [...container.children].findIndex(child => child.classList.contains('active')),
+      frames: after.length
+    };
+  });
+
+  expect(result.frames).toBe(12);
+  // At 24 fps over 400ms this used to create roughly 400 nodes.
+  expect(result.created).toBe(0);
+  expect(result.sameNodes).toBe(true);
+  expect(result.highlightedDuringPlayback).toBeGreaterThan(0);
+  // Stopping returns the highlight to the frame that is actually loaded.
+  expect(result.highlightedAfterStop).toBe(0);
+});
