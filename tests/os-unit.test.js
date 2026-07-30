@@ -1648,6 +1648,70 @@ describe('history eviction, coalescing, and commit guards', () => {
     expect(JSON.parse(OS._historyBaseSnapshot)).toEqual({ state: 'before-b' });
   });
 
+
+  it('evicts history on the byte budget, not just the entry count', () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._captureDocumentState = vi.fn(() => ({ state: OS.__state ?? 'base' }));
+    OS._initializeHistory('Baseline');
+
+    // Well under the entry cap, so only the byte budget can evict here.
+    OS.maxHistory = 60;
+    OS.maxHistoryBytes = 4000;
+
+    const bulk = 'x'.repeat(900);
+    for (let step = 1; step <= 10; step++) {
+      OS.__state = `${bulk}-${step}`;
+      OS.saveHistory(`Step ${step}`);
+    }
+
+    expect(OS.history.length).toBeLessThan(10);
+    expect(OS.historyByteSize()).toBeLessThanOrEqual(OS.maxHistoryBytes);
+    // The cursor still points at the newest entry after eviction.
+    expect(OS.historyIdx).toBe(OS.history.length - 1);
+    expect(OS.history.at(-1).action).toBe('Step 10');
+    // The baseline tracks the entry that fell off the front.
+    expect(OS._historyBaseLabel).toBe(`Step ${10 - OS.history.length}`);
+  });
+
+  it('never empties the history even when one entry exceeds the whole budget', () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._captureDocumentState = vi.fn(() => ({ state: OS.__state ?? 'base' }));
+    OS._initializeHistory('Baseline');
+    OS.maxHistoryBytes = 10;
+
+    OS.__state = 'y'.repeat(5000);
+    OS.saveHistory('Huge');
+    OS.__state = 'z'.repeat(5000);
+    OS.saveHistory('Huge 2');
+
+    // Undo has to remain possible, so the newest entry is kept regardless.
+    expect(OS.history).toHaveLength(1);
+    expect(OS.history[0].action).toBe('Huge 2');
+    expect(OS.historyIdx).toBe(0);
+  });
+
+  it('leaves history alone when the byte budget is disabled', () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._captureDocumentState = vi.fn(() => ({ state: OS.__state ?? 'base' }));
+    OS._initializeHistory('Baseline');
+    OS.maxHistory = 60;
+    OS.maxHistoryBytes = 0;
+
+    const bulk = 'x'.repeat(900);
+    for (let step = 1; step <= 10; step++) {
+      OS.__state = `${bulk}-${step}`;
+      OS.saveHistory(`Step ${step}`);
+    }
+
+    expect(OS.history).toHaveLength(10);
+  });
+
   it('coalesces same-key entries while keeping the original pre-coalesce state', () => {
     const OS = primeHistory(loadOpenShop());
 

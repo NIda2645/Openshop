@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-eTOKvWS4Pnxoz322b/HBWNr+tqmO6TZBzy1NluVlMDA=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-xpTZOg1a9ETSPf1tzJK58OjTnk1bDoQbhvmdrmLzd2g=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3289,6 +3289,11 @@ const OS = {
     _lastPSDImportReport: null,
     _lastPSDExportReport: null,
     history: [], historyIdx: -1, maxHistory: 60,
+    // Entry count alone does not bound memory: _replaceActiveImage turns each
+    // edit into a base64 PNG, so one 12 MP photo makes every snapshot several
+    // megabytes and 60 of them retain gigabytes. Cap the retained characters
+    // too. JS strings are UTF-16, so the real footprint is about twice this.
+    maxHistoryBytes: 192 * 1024 * 1024,
     _historySchemaVersion: 1,
     _historyBaseSnapshot: null,
     _historyBaseLabel: 'Document Baseline',
@@ -8076,12 +8081,8 @@ self.onmessage = function(event) {
         } else {
             this.history.push(entry);
             this.historyIdx = this.history.length - 1;
-            if (this.history.length > this.maxHistory) {
-                const dropped = this.history.shift();
-                this._historyBaseSnapshot = this.history[0]?.beforeSnapshot || dropped.snapshot;
-                this._historyBaseLabel = dropped.action;
-                this.historyIdx -= 1;
-            }
+            while (this.history.length > this.maxHistory) this._evictOldestHistoryEntry();
+            this._enforceHistoryByteBudget();
         }
         this._historyCursorSnapshot = snapshot;
         this._lastAction = entry.action;
@@ -8091,6 +8092,35 @@ self.onmessage = function(event) {
         if (recordMacro && normalizedCommand) this.recordMacroStep(normalizedCommand);
         this._scheduleInspectorRefresh();
         return true;
+    },
+    _evictOldestHistoryEntry() {
+        if (this.history.length <= 1) return false;
+        const dropped = this.history.shift();
+        // The retained entry's own starting point is the truthful new baseline;
+        // fall back to the dropped entry's result when it has none.
+        this._historyBaseSnapshot = this.history[0]?.beforeSnapshot || dropped.snapshot;
+        this._historyBaseLabel = dropped.action;
+        this.historyIdx -= 1;
+        return true;
+    },
+    historyByteSize() {
+        return this.history.reduce(
+            (total, entry) => total + (entry.snapshot?.length || 0) + (entry.beforeSnapshot?.length || 0),
+            0
+        );
+    },
+    _enforceHistoryByteBudget() {
+        const budget = Number(this.maxHistoryBytes);
+        if (!Number.isFinite(budget) || budget <= 0) return 0;
+        let evicted = 0;
+        // Always leave one entry: an empty history would make undo impossible
+        // and is worse than briefly exceeding the budget.
+        while (this.history.length > 1 && this.historyByteSize() > budget) {
+            if (!this._evictOldestHistoryEntry()) break;
+            evicted++;
+        }
+        if (evicted && this.historyIdx < 0) this.historyIdx = 0;
+        return evicted;
     },
     // Minimap and histogram both re-render the whole canvas; coalesce them into
     // one frame so a burst of edits pays the cost once.
@@ -11399,6 +11429,7 @@ self.onmessage = async function(event) {
                 <dt>Text Objects</dt><dd>${textObjs.length}</dd>
                 <dt>Shapes</dt><dd>${objs.length - imgObjs.length - textObjs.length}</dd>
                 <dt>History States</dt><dd>${this.history.length} / ${this.maxHistory}</dd>
+                <dt>History Memory</dt><dd>${(this.historyByteSize() / 1024 / 1024).toFixed(1)} MB of ${Math.round(this.maxHistoryBytes / 1024 / 1024)} MB</dd>
                 <dt>Zoom</dt><dd>${Math.round(this.zoom * 100)}%</dd>
                 <dt>Color Mode</dt><dd>RGB 8-bit</dd>
                 <dt>Est. Memory</dt><dd>~${Math.round(this.canvasW * this.canvasH * 4 / 1024 / 1024)} MB (uncompressed)</dd>

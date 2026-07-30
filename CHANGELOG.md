@@ -5,6 +5,7 @@ All notable changes to Openshop will be documented in this file.
 ## [Unreleased]
 
 ### Performance
+- Bound undo history by retained memory as well as entry count. Each entry embeds full base64 image sources, so 60 steps on a 12 MP photo could retain gigabytes; history now evicts against a 192 MB budget, always keeping at least one entry, and Image Information reports the retained size
 - Keep the Levels and Color Balance sliders interactive on large photos: each tick used to run a full-resolution pixel pass, encode the result to a PNG data URL, and decode it again. Previews now run on a downscaled proxy, swap the working canvas straight into the layer, and use a 256-entry lookup table instead of three `Math.pow` calls per pixel; Apply still commits at full resolution
 
 ### Fixed
