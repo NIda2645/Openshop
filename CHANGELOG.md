@@ -8,7 +8,12 @@ All notable changes to Openshop will be documented in this file.
 - Bound undo history by retained memory as well as entry count. Each entry embeds full base64 image sources, so 60 steps on a 12 MP photo could retain gigabytes; history now evicts against a 192 MB budget, always keeping at least one entry, and Image Information reports the retained size
 - Keep the Levels and Color Balance sliders interactive on large photos: each tick used to run a full-resolution pixel pass, encode the result to a PNG data URL, and decode it again. Previews now run on a downscaled proxy, swap the working canvas straight into the layer, and use a 256-entry lookup table instead of three `Math.pow` calls per pixel; Apply still commits at full resolution
 
+### Added
+- A pseudo-locale that accents and brackets every translated string, so any interface text that never went through the localisation machinery is obvious at a glance; the Chinese map is now gated at parity with English apart from format names and single-letter typographic controls
+
 ### Fixed
+- Set the document's language and direction when the locale changes, which assistive technology, hyphenation, and bidirectional text all depend on and which the locale switch never touched
+- Give canvas text an explicit direction and mirror the menu chrome with logical properties, so a right-to-left locale no longer strands shortcuts and submenu arrows on the wrong edge or reorders Arabic mixed with Latin and numerals
 - Collapse the two competing mobile stylesheets into one. The first block was almost entirely overridden — it set a 36px topbar against 44px, a flush-bottom toolbar against the floating one, and a 200px tablet panel against 248px — so edits to it did nothing and any reordering would have flipped the mobile layout wholesale. The animation timeline also now clears the floating toolbar instead of sitting under it
 - Honour the New Image background choice: the colour picker was read by nothing, so every new document came out transparent whatever was selected. The dialog now offers Transparent, White, or a custom colour, and the swatch is enabled only when it applies
 - Save every preference, not just the language: default canvas size, grid size, snap tolerance, history cap, and accent colour now survive a reload, and a corrupted store is clamped on the way in rather than being able to disable undo

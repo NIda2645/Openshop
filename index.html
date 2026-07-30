@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-xpTZOg1a9ETSPf1tzJK58OjTnk1bDoQbhvmdrmLzd2g=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-07iToB6PfW+7e+9K8Ufi83sO66KfkNDX9MP+xiPBJmA=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -125,22 +125,24 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 #topbar .logo span{color:var(--text-muted);font-weight:400;font-size:9.5px;opacity:.7}
 .menu-item{position:relative;padding:6px 11px;border-radius:5px;cursor:pointer;color:var(--text-secondary);font-size:12.5px;transition:all .15s var(--ease-out)}
 .menu-item:hover{background:var(--bg-depth-3);color:var(--text-primary)}
-.menu-dropdown{display:none;position:absolute;top:calc(100% + 2px);left:0;min-width:220px;background:var(--bg-depth-2);border:1px solid var(--border);border-radius:8px;padding:4px;z-index:1000;box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset}
+.menu-dropdown{display:none;position:absolute;top:calc(100% + 2px);inset-inline-start:0;min-width:220px;background:var(--bg-depth-2);border:1px solid var(--border);border-radius:8px;padding:4px;z-index:1000;box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset}
 .menu-bar{display:flex;align-items:center;gap:1px}
 .menu-item:hover>.menu-dropdown,.menu-item.open>.menu-dropdown{display:block}
 .dd-item{padding:7px 12px;border-radius:5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;color:var(--text-secondary);transition:all .1s var(--ease-out);white-space:nowrap;font-size:12.5px}
 .dd-item:hover{background:var(--accent-dim);color:var(--text-primary)}
-.dd-shortcut{float:right;color:var(--text-muted);font-size:10px;font-family:'JetBrains Mono',monospace;opacity:.7;margin-left:16px}
+.dd-shortcut{margin-inline-start:16px;color:var(--text-muted);font-size:10px;font-family:'JetBrains Mono',monospace;opacity:.7}
 .dd-note{padding:6px 12px;font-size:10.5px;color:var(--text-muted);pointer-events:none;user-select:none;font-style:italic}
 .dd-sep{height:1px;background:var(--border);margin:4px 8px}
-.dd-sub{position:relative}.dd-sub>.menu-dropdown{display:none;left:100%;top:-4px}
+.dd-sub{position:relative}.dd-sub>.menu-dropdown{display:none;inset-inline-start:100%;left:auto;right:auto;top:-4px}
 .dd-sub:hover>.menu-dropdown,.dd-sub.open>.menu-dropdown{display:block}
-.dd-sub.flip-left>.menu-dropdown{left:auto;right:100%}
-.dd-sub::after{content:'\25B8';float:right;margin-left:12px;font-size:9px;color:var(--text-muted)}
-.ctx-sub{position:relative}.ctx-sub>.ctx-submenu{display:none;position:absolute;left:100%;top:-4px;min-width:180px;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);padding:4px;z-index:30001}
+.dd-sub.flip-left>.menu-dropdown{inset-inline-start:auto;inset-inline-end:100%}
+.dd-sub::after{content:'\25B8';margin-inline-start:12px;font-size:9px;color:var(--text-muted)}
+[dir="rtl"] .dd-sub::after{content:'\25C2'}
+.ctx-sub{position:relative}.ctx-sub>.ctx-submenu{display:none;position:absolute;inset-inline-start:100%;top:-4px;min-width:180px;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);padding:4px;z-index:30001}
 .ctx-sub:hover>.ctx-submenu{display:block}
-.ctx-sub.flip-left>.ctx-submenu{left:auto;right:100%}
-.ctx-sub::after{content:'\25B8';float:right;margin-left:12px;font-size:9px;color:var(--text-muted)}
+.ctx-sub.flip-left>.ctx-submenu{inset-inline-start:auto;inset-inline-end:100%}
+.ctx-sub::after{content:'\25B8';margin-inline-start:12px;font-size:9px;color:var(--text-muted)}
+[dir="rtl"] .ctx-sub::after{content:'\25C2'}
 
 /* === TOOLBAR === */
 #toolbar{position:absolute;left:0;top:var(--topbar-h);bottom:var(--statusbar-h);width:var(--toolbar-w);background:var(--bg-depth-1);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:2px;z-index:50;overflow-y:auto}
@@ -382,7 +384,7 @@ animation:marchAnts .4s linear infinite}
 .recent-files{text-align:left;margin-top:20px}
 .recent-files h3{color:var(--text-secondary);font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
 .recent-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:4px;cursor:default;color:var(--text-secondary);font-size:12px}
-.recent-item .ri-date{margin-left:auto;font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+.recent-item .ri-date{margin-inline-start:auto;font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
 
 /* === GRID OVERLAY === */
 .canvas-grid{position:absolute;inset:0;pointer-events:none;z-index:5;opacity:.3;display:none}
@@ -581,7 +583,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .ctx-item{padding:7px 14px;font-size:12.5px;color:var(--text-primary);cursor:pointer;border-radius:5px;display:flex;align-items:center;gap:8px;transition:background .1s var(--ease-out)}
 .ctx-item:hover{background:var(--accent-dim)}
 .ctx-sep{height:1px;background:var(--border);margin:4px 10px}
-.ctx-item .ctx-shortcut{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);opacity:.7}
+.ctx-item .ctx-shortcut{margin-inline-start:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);opacity:.7}
 
 /* === MINIMAP / NAVIGATOR === */
 .minimap-wrap{position:relative;width:100%;aspect-ratio:16/9;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer}
@@ -3235,7 +3237,32 @@ const OS = {
         "Vibrance applied": "已应用自然饱和度"
     } },
     _lang: 'en',
-    _t(key) { return (this._locales[this._lang] || {})[key] || key; },
+    _t(key) {
+        const dict = this._locales[this._lang] || {};
+        if (Object.prototype.hasOwnProperty.call(dict, key)) return dict[key];
+        // The pseudo-locale exists so untranslated strings are obvious: anything
+        // still plain ASCII on screen never went through _t or data-i18n.
+        return this._lang === 'pseudo' ? this._pseudoTranslate(key) : key;
+    },
+    // Accent every letter and pad the string so both missing translations and
+    // layouts that cannot survive longer text show up immediately.
+    _pseudoTranslate(text) {
+        const map = { a:'á', e:'é', i:'í', o:'ó', u:'ú', c:'ç', n:'ñ', s:'š', y:'ý',
+                      A:'Á', E:'É', I:'Í', O:'Ó', U:'Ú', C:'Ç', N:'Ñ', S:'Š', Y:'Ý' };
+        const body = String(text).replace(/[a-zA-Z]/g, ch => map[ch] || ch);
+        return `⟦${body}⟧`;
+    },
+    // Direction comes from the locale itself, so a locale added later needs no
+    // further code. Intl.Locale#textInfo is the authority where it exists.
+    _localeDirection(lang) {
+        if (lang === 'pseudo') return 'ltr';
+        try {
+            const info = new Intl.Locale(lang)?.textInfo || new Intl.Locale(lang)?.getTextInfo?.();
+            if (info?.direction) return info.direction;
+        } catch (e) { /* fall through to the static list */ }
+        const rtl = ['ar', 'he', 'fa', 'ur', 'ps', 'sd', 'yi', 'dv', 'ckb'];
+        return rtl.includes(String(lang).split('-')[0].toLowerCase()) ? 'rtl' : 'ltr';
+    },
     _initI18n() {
         const selectors = '.dd-item, .menu-item, .panel-tab, .opt-group label, .panel-section h4, .pref-row label';
         document.querySelectorAll(selectors).forEach(el => {
@@ -3251,23 +3278,66 @@ const OS = {
             btn.dataset.i18nTip = btn.dataset.tip;
         });
     },
+    _applyDirectionToObject(object) {
+        const textTypes = ['text', 'i-text', 'textbox'];
+        if (object && textTypes.includes(object.type) && this._textDirection === 'rtl') {
+            object.set({ direction: 'rtl' });
+            object.initDimensions?.();
+        }
+        return object;
+    },
     setLocale(lang) {
         this._lang = lang;
         const dict = this._locales[lang] || {};
+        // Assistive technology, hyphenation, and bidi all key off these two
+        // attributes; the locale switch never touched them before.
+        const direction = this._localeDirection(lang);
+        document.documentElement.setAttribute('lang', lang === 'pseudo' ? 'en-x-pseudo' : lang);
+        document.documentElement.setAttribute('dir', direction);
+        this._textDirection = direction;
+        this._applyTextDirection(direction);
         document.querySelectorAll('[data-i18n]').forEach(el => {
             const key = el.dataset.i18n;
             // Fall back to the key itself (the original English text) so
             // switching back to English restores the UI.
-            const val = dict[key] || key;
+            const val = Object.prototype.hasOwnProperty.call(dict, key)
+                ? dict[key]
+                : (lang === 'pseudo' ? this._pseudoTranslate(key) : key);
             const tn = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
             if (tn) tn.textContent = val;
             else el.textContent = val;
         });
         document.querySelectorAll('[data-i18n-tip]').forEach(el => {
             const key = el.dataset.i18nTip;
-            const val = dict[key] || key;
+            const val = Object.prototype.hasOwnProperty.call(dict, key)
+                ? dict[key]
+                : (lang === 'pseudo' ? this._pseudoTranslate(key) : key);
             el.dataset.tip = val; el.setAttribute('aria-label', val);
         });
+    },
+    _textDirection: 'ltr',
+    // Fabric text has no bidi contract of its own: without an explicit
+    // direction, Arabic or Hebrew mixed with Latin and digits reorders wrongly.
+    _applyTextDirection(direction) {
+        const textTypes = ['text', 'i-text', 'textbox'];
+        this.canvas?.getObjects?.().forEach(object => {
+            if (!textTypes.includes(object.type)) return;
+            object.set({ direction });
+            object.initDimensions?.();
+        });
+        this.canvas?.requestRenderAll?.();
+    },
+    // Every locale key the UI can currently reach, so parity with a translation
+    // map is measurable rather than assumed.
+    i18nKeys() {
+        const keys = new Set();
+        document.querySelectorAll('[data-i18n]').forEach(el => keys.add(el.dataset.i18n));
+        document.querySelectorAll('[data-i18n-tip]').forEach(el => keys.add(el.dataset.i18nTip));
+        return [...keys];
+    },
+    missingLocaleKeys(lang) {
+        const dict = this._locales[lang] || {};
+        return this.i18nKeys().filter(key => !Object.prototype.hasOwnProperty.call(dict, key));
     },
     canvas: null, layers: [], activeLayerIdx: 0,
     _documentSchemaVersion: 1,
@@ -6427,7 +6497,7 @@ self.onmessage = function(event) {
         if (tool==='clone'&&opt.e.altKey) { this._cloneSource={x:ptr.x,y:ptr.y}; this._cloneOffset=null; this.toast(this._t('Clone source set'),'info'); return; }
         if (tool==='clone'&&this._cloneSource) { this._cloneStart(ptr, opt.e); return; }
         if (tool==='text') {
-            const text = new fabric.IText('Type here', { left:ptr.x, top:ptr.y, fontFamily:this.state.textFont, fontSize:this.state.textSize, fill:this.state.textColor, editable:true, fontWeight:this.state.textBold?'bold':'normal', fontStyle:this.state.textItalic?'italic':'normal' });
+            const text = this._applyDirectionToObject(new fabric.IText('Type here', { left:ptr.x, top:ptr.y, fontFamily:this.state.textFont, fontSize:this.state.textSize, fill:this.state.textColor, editable:true, fontWeight:this.state.textBold?'bold':'normal', fontStyle:this.state.textItalic?'italic':'normal' }));
             this.canvas.add(text); this.layers[this.activeLayerIdx].objects.push(text);
             this.canvas.setActiveObject(text); text.enterEditing(); this.saveHistory('Add Text'); this.updateLayersPanel(); return;
         }

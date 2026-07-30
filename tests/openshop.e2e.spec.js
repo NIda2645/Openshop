@@ -3570,3 +3570,159 @@ test('keeps one tablet block with the winning panel width', async ({ page }) => 
   expect(tablet.panelWidth).toBe('248px');
   expect(tablet.toolbarWidth).toBe('58px');
 });
+
+test('updates document language and direction when the locale changes @cross-browser', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    const read = () => ({
+      lang: document.documentElement.getAttribute('lang'),
+      dir: document.documentElement.getAttribute('dir')
+    });
+    const out = {};
+
+    OS.setLocale('zh');
+    out.zh = read();
+
+    // Direction is derived from the locale, so a right-to-left one flips the
+    // document without needing its own code path.
+    OS.setLocale('ar');
+    out.ar = read();
+    out.arDirections = ['ar', 'he', 'fa', 'ur'].map(l => OS._localeDirection(l));
+    out.ltrDirections = ['en', 'zh', 'de', 'ja'].map(l => OS._localeDirection(l));
+
+    OS.setLocale('en');
+    out.en = read();
+    return out;
+  });
+
+  expect(result.zh).toEqual({ lang: 'zh', dir: 'ltr' });
+  expect(result.ar).toEqual({ lang: 'ar', dir: 'rtl' });
+  expect(result.en).toEqual({ lang: 'en', dir: 'ltr' });
+  expect(result.arDirections).toEqual(['rtl', 'rtl', 'rtl', 'rtl']);
+  expect(result.ltrDirections).toEqual(['ltr', 'ltr', 'ltr', 'ltr']);
+});
+
+test('gives canvas text a direction so mixed scripts and numerals stay ordered', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    const text = new fabric.IText('مرحبا OpenShop 2026', { left: 10, top: 10, fontSize: 20 });
+    OS.canvas.add(text);
+    OS.layers[OS.activeLayerIdx].objects.push(text);
+
+    const before = text.direction;
+    OS.setLocale('ar');
+    const afterRtl = text.direction;
+
+    // Text created while an RTL locale is active is born with the direction.
+    const fresh = OS._applyDirectionToObject(new fabric.IText('نص جديد 42', { left: 10, top: 60 }));
+    const freshDirection = fresh.direction;
+
+    OS.setLocale('en');
+    const afterLtr = text.direction;
+    return { before, afterRtl, freshDirection, afterLtr, rendered: text.text };
+  });
+
+  expect(result.afterRtl).toBe('rtl');
+  expect(result.freshDirection).toBe('rtl');
+  expect(result.afterLtr).toBe('ltr');
+  // The string itself is never rewritten — only its resolved direction.
+  expect(result.rendered).toBe('مرحبا OpenShop 2026');
+});
+
+test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const measure = () => page.evaluate(() => {
+    const root = document.querySelector('.menu-bar > .menu-item');
+    root.classList.add('open');
+    const dropdown = root.querySelector(':scope > .menu-dropdown');
+    const sub = dropdown.querySelector('.dd-sub');
+    sub.classList.add('open');
+    const submenu = sub.querySelector(':scope > .menu-dropdown');
+
+    const rowWithShortcut = document.querySelector('.dd-item .dd-shortcut')?.parentElement;
+    const shortcut = rowWithShortcut?.querySelector('.dd-shortcut');
+
+    const out = {
+      dropdownStart: Math.round(dropdown.getBoundingClientRect().left - root.getBoundingClientRect().left),
+      submenuBeyondParent: submenu.getBoundingClientRect().left > sub.getBoundingClientRect().left,
+      shortcutBeyondLabel: shortcut
+        ? shortcut.getBoundingClientRect().left > rowWithShortcut.getBoundingClientRect().left
+        : null,
+      // A row must never be so cramped that the shortcut overlaps the label.
+      shortcutOverflows: shortcut
+        ? shortcut.getBoundingClientRect().right > rowWithShortcut.getBoundingClientRect().right + 1
+        : null
+    };
+    sub.classList.remove('open');
+    root.classList.remove('open');
+    return out;
+  });
+
+  const ltr = await measure();
+  expect(ltr.dropdownStart).toBe(0);
+  expect(ltr.submenuBeyondParent).toBe(true);
+  expect(ltr.shortcutOverflows).toBe(false);
+
+  await page.evaluate(() => OS.setLocale('ar'));
+  const rtl = await measure();
+  // In RTL the dropdown hangs from the menu's right edge and submenus open
+  // leftwards, which physical `left:100%` could never do.
+  expect(rtl.submenuBeyondParent).toBe(false);
+  expect(rtl.shortcutOverflows).toBe(false);
+
+  await page.evaluate(() => OS.setLocale('en'));
+});
+
+test('flags untranslated interface strings through the pseudo-locale', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    const sample = () => [...document.querySelectorAll('.menu-bar > .menu-item')]
+      .map(item => item.getAttribute('aria-label') || '')
+      .concat([...document.querySelectorAll('.panel-tab')].map(tab => tab.textContent.trim()));
+
+    OS.setLocale('pseudo');
+    // Read the row's own text node: textContent would also pull in the
+    // shortcut span, which is not a translated string.
+    const ownText = el => [...el.childNodes]
+      .filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
+    const pseudo = [...document.querySelectorAll('.dd-item')].slice(0, 5).map(ownText);
+    const toast = OS._t('Project loaded');
+    const lang = document.documentElement.getAttribute('lang');
+    const direction = document.documentElement.getAttribute('dir');
+
+    OS.setLocale('en');
+    const restored = sample();
+    return {
+      pseudo,
+      toast,
+      lang,
+      direction,
+      restored,
+      keys: OS.i18nKeys().length,
+      missingInChinese: OS.missingLocaleKeys('zh')
+    };
+  });
+
+  // Every string that went through the locale machinery is visibly marked.
+  expect(result.pseudo.every(text => text.startsWith('⟦') && text.endsWith('⟧'))).toBe(true);
+  expect(result.toast).toBe('⟦Prójéçt lóádéd⟧');
+  expect(result.lang).toBe('en-x-pseudo');
+  expect(result.direction).toBe('ltr');
+  // Switching back restores real English rather than leaving markers behind.
+  expect(result.restored.some(text => text.includes('⟦'))).toBe(false);
+  expect(result.keys).toBeGreaterThan(50);
+  // Chinese has parity with English apart from format names, units, and the
+  // single-letter typographic controls, which are the same in every locale.
+  const sameEverywhere = new Set([
+    'PNG', 'JPEG', 'WebP', 'SVG', 'PDF', 'PSD (Photoshop)', 'AI', '100%', 'B', 'I', 'W', 'x', 'H'
+  ]);
+  expect(result.missingInChinese.filter(key => !sameEverywhere.has(key))).toEqual([]);
+});
