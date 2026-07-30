@@ -38,9 +38,10 @@ test.describe('hosted offline contract', () => {
   });
 
   test('caches the complete core shell and reloads it offline', async ({ page, context, request, browserName }) => {
-    // Boot fetches and verifies three libraries before the app wires up; on a
-    // cold HTTP cache that lands on top of the shell install.
-    test.setTimeout(90000);
+    // Cold-cache worst case: the shell install and the page boot both pull the
+    // same three libraries over the network while the rest of the suite runs in
+    // parallel. Network-bound, not slow code.
+    test.setTimeout(180000);
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
 

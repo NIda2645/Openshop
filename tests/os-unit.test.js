@@ -1993,3 +1993,67 @@ describe('history eviction, coalescing, and commit guards', () => {
     expect(OS._filterJobCallbacks).toEqual({});
   });
 });
+
+describe('component treatment', () => {
+  const source = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
+  const css = source.slice(source.indexOf('<style>'), source.lastIndexOf('</style>'));
+
+  it('draws one slider thumb, in both engines', () => {
+    const thumbs = [...css.matchAll(/([^\n{}]*::-(?:webkit-slider|moz-range)-thumb)\s*\{([^}]*)\}/g)]
+      .map(([, selector, body]) => ({ selector: selector.trim(), body }));
+    const sized = thumbs.filter(rule => /width:/.test(rule.body));
+
+    // One design per engine. Three used to coexist, and Firefox kept the
+    // pre-redesign thumb everywhere because only the -webkit- rule was restyled.
+    expect(sized).toHaveLength(2);
+    expect(sized.map(rule => rule.selector)).toEqual([
+      'input[type="range"]::-webkit-slider-thumb',
+      'input[type="range"]::-moz-range-thumb'
+    ]);
+    const dimensions = sized.map(rule => rule.body.match(/width:([^;]+);\s*height:([^;]+);/).slice(1, 3).join('x'));
+    expect(new Set(dimensions).size).toBe(1);
+    const background = sized.map(rule => rule.body.match(/background:([^;]+);/)[1]);
+    expect(new Set(background).size).toBe(1);
+
+    // Each vendor pseudo-element needs its own rule: an unknown pseudo in a
+    // selector list invalidates the list for every engine.
+    expect(css).not.toMatch(/::-webkit-slider-thumb[^{]*,[^{]*::-moz-range-thumb/);
+  });
+
+  it('animates named properties from a small set of duration tokens', () => {
+    // `transition:all` animates layout-affecting properties too.
+    expect(css).not.toMatch(/transition:\s*all\b/);
+    expect(css).toMatch(/--transition-chrome:/);
+    expect(css).toMatch(/--dur-fast:/);
+    expect(css).toMatch(/--radius-sm:/);
+  });
+
+  it('gives menu-like rows one hover treatment and stops hover from overlapping siblings', () => {
+    const hover = selector => [...css.matchAll(new RegExp(`${selector}:hover\\s*\\{([^}]*)\\}`, 'g'))]
+      .map(([, body]) => body);
+    // Neutral for the menu bar, accent-tinted for dropdown rows and
+    // --accent-dim for the context menu: three systems for one kind of control.
+    expect(hover('\\.menu-item').every(body => /accent/.test(body))).toBe(true);
+    expect(hover('\\.dd-item').every(body => /accent/.test(body))).toBe(true);
+    expect(hover('\\.ctx-item').every(body => /accent/.test(body))).toBe(true);
+
+    // A scaled swatch tucks under the swatches after it without this.
+    expect(hover('\\.color-swatch')[0]).toMatch(/z-index:2/);
+    expect(hover('\\.palette-swatch')[0]).toMatch(/z-index:2/);
+    // The active frame is marked with a ring rather than a scale that
+    // overlapped its flex siblings.
+    expect(css).toMatch(/\.frame-thumb\.active\{[^}]*\}/);
+    expect(css.match(/\.frame-thumb\.active\{([^}]*)\}/)[1]).not.toMatch(/scale\(/);
+  });
+
+  it('uses the radius scale for the components that had drifted', () => {
+    const radiusOf = selector => (css.match(new RegExp(`${selector}\\s*\\{[^}]*border-radius:([^;}]+)`)) || [])[1];
+    expect(radiusOf('\\.btn')).toBe('var(--radius-sm)');
+    expect(radiusOf('\\.preset-btn')).toBe('var(--radius-sm)');
+    expect(radiusOf('\\.tool-btn')).toBe('var(--radius-md)');
+    expect(radiusOf('\\.modal')).toBe('var(--radius-lg)');
+    expect(radiusOf('\\.filter-panel')).toBe('var(--radius-lg)');
+    // ...including every later override, which is how they drifted apart.
+    expect(css).not.toMatch(/\.modal\{border-radius:14px\}/);
+  });
+});
