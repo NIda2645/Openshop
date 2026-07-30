@@ -87,6 +87,13 @@ export function createCanvasMock(initialObjects = []) {
       const index = objects.indexOf(object);
       if (index >= 0) objects.splice(index, 1);
     }),
+    moveObjectTo: vi.fn((object, index) => {
+      const current = objects.indexOf(object);
+      if (current < 0) return false;
+      objects.splice(current, 1);
+      objects.splice(Math.max(0, Math.min(index, objects.length)), 0, object);
+      return true;
+    }),
     renderAll: vi.fn(),
     requestRenderAll: vi.fn(),
     forEachObject: vi.fn((callback) => {

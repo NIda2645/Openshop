@@ -12,6 +12,7 @@ All notable changes to Openshop will be documented in this file.
 - Make project and recovery writes transactional with visible clean/dirty/saving/saved/error states, acknowledged worker autosaves, revision-safe concurrent edits, and stale file-handle resets on new/open/recovery flows
 - Move the complete PSD decode into a cancellable worker and atomically prepare every decoded layer before replacing the open document
 - Keep all onboarding actions and dialog footers reachable at supported phone, tablet, portrait, and landscape sizes with safe-area spacing, touch-sized controls, and keyboard dismissal
+- Keep layer ownership, panel order, Fabric stacking, export order, and edit eligibility synchronized; lock, visibility, opacity, blend, rename, and reorder changes now round-trip through history and project files
 
 ### Security
 - Upgrade Fabric.js from 5.3.1 to 7.4.0 with legacy project adapters and browser regressions for stored-SVG injection through object IDs and gradient colors

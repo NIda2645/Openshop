@@ -28,7 +28,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 
 | Feature | Description |
 |---------|-------------|
-| **Layer System** | Multi-layer canvas with add, delete, duplicate, merge, flatten, visibility toggle, opacity, blend modes, and drag reorder |
+| **Layer System** | Multi-layer canvas with canonical render/export stacking, protected hidden or locked content, and undoable visibility, lock, opacity, blend, rename, and drag-reorder changes |
 | **34 Tools** | Move, Brush, Pencil, Eraser, Spray, Clone Stamp, Healing Brush, Dodge, Burn, Sponge, Smudge, Shapes (rect, ellipse, triangle, polygon, star, arrow, line), Pen, Text, Gradient, Pattern Fill, Flood Fill, Eyedropper, Crop, Measure, Sticky Notes, AI Segment Select, Pan, Zoom |
 | **Brush Engine** | Round, Soft, Flat, Scatter, Pixel presets with adjustable size, opacity, and flow |
 | **Selection Tools** | Rectangular/Elliptical Marquee, Magic Wand (contiguous + global), Lasso, Color Range dialog with fuzziness, presets, and live preview |

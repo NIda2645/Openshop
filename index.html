@@ -2194,7 +2194,7 @@ body{
                 </div>
                 <div class="opt-group" style="margin-bottom:6px">
                     <label>Opacity</label>
-                    <input type="range" id="layer-opacity" min="0" max="100" value="100" oninput="OS.setLayerOpacity(this.value)">
+                    <input type="range" id="layer-opacity" min="0" max="100" value="100" oninput="OS.setLayerOpacity(this.value,false)" onchange="OS.commitLayerOpacity()">
                     <span class="opt-val" id="layer-opacity-val">100</span>
                 </div>
                 <div id="layers-list" role="listbox" aria-label="Layers"></div>
@@ -2851,6 +2851,12 @@ const OS = {
         this.canvas.on('selection:cleared', () => this.updateStatus());
         this.canvas.on('mouse:wheel', opt => this.onMouseWheel(opt));
         this.canvas.on('path:created', e => {
+            if (!this._isLayerEditable()) {
+                this.canvas.remove(e.path);
+                this.canvas.renderAll();
+                this.toast('Show and unlock the active layer before drawing', 'error');
+                return;
+            }
             if (this.state.tool === 'eraser') {
                 e.path.globalCompositeOperation = 'destination-out';
                 e.path.stroke = 'rgba(0,0,0,1)';
@@ -3142,6 +3148,7 @@ const OS = {
         return { w, h, mask };
     },
     _captureDocumentState() {
+        this._enforceLayerInvariants({ render:false });
         const canvasObjects = this.canvas.getObjects().filter(object => !object.excludeFromExport);
         const usedObjectIds = new Set();
         canvasObjects.forEach(object => this._ensureObjectId(object, usedObjectIds));
@@ -3417,6 +3424,7 @@ const OS = {
                 claimedIds.add(object._openShopObjectId);
             }
         });
+        this._enforceLayerInvariants({ render:false });
 
         this._docName = this._safeText(state.document?.name || 'Untitled', 100);
         this._restoreGuidesState(state.guides);
@@ -3427,7 +3435,9 @@ const OS = {
         this._animIdx = Math.max(0, Math.min(Number(state.animation?.activeFrameIndex || 0), Math.max(0, this._animFrames.length - 1)));
         this._renderFrames();
 
-        const activeObjects = (state.active?.objectIds || []).map(id => objectsById.get(id)).filter(Boolean);
+        const activeObjects = (state.active?.objectIds || [])
+            .map(id => objectsById.get(id))
+            .filter(object => object && this._isObjectEditable(object));
         this.canvas.discardActiveObject();
         if (activeObjects.length === 1) this.canvas.setActiveObject(activeObjects[0]);
         else if (activeObjects.length > 1 && fabric.ActiveSelection) this.canvas.setActiveObject(new fabric.ActiveSelection(activeObjects, { canvas:this.canvas }));
@@ -3564,6 +3574,7 @@ const OS = {
         }; r.readAsDataURL(file);
     },
     saveFile(fmt) {
+        this._enforceLayerInvariants({ render:false });
         if (fmt === 'svg') { this._exportSVG(); return; }
         const vpt = this.canvas.viewportTransform.slice();
         this.canvas.viewportTransform = [1,0,0,1,0,0];
@@ -3611,6 +3622,7 @@ const OS = {
         return new XMLSerializer().serializeToString(doc);
     },
     _exportSVG() {
+        this._enforceLayerInvariants({ render:false });
         const vpt = this.canvas.viewportTransform.slice();
         this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
         let svg = this.canvas.toSVG({ viewBox: { x:0, y:0, width:this.canvasW, height:this.canvasH }, width:this.canvasW, height:this.canvasH });
@@ -4219,10 +4231,175 @@ self.onmessage = function(event) {
     },
 
     // ====================== LAYERS ======================
+    _layerOwnership: null,
+    _drawingLayerTools: new Set(['brush','pencil','eraser','spray']),
+    _activeLayerWriteTools: new Set(['brush','pencil','eraser','spray','text','gradient','pattern','line','rect','circle','triangle','arrow','polygon','star','pen']),
+    _rebuildLayerOwnership() {
+        if (!Array.isArray(this.layers) || !this.layers.length) {
+            this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
+        }
+        this.activeLayerIdx = Math.max(0, Math.min(Number(this.activeLayerIdx) || 0, this.layers.length - 1));
+        const canvasObjects = this.canvas?.getObjects?.() || [];
+        const canvasSet = new Set(canvasObjects);
+        const claimed = new Set();
+        const ownership = new WeakMap();
+        this.layers.forEach((layer, layerIndex) => {
+            if (!Array.isArray(layer.objects)) layer.objects = [];
+            layer.objects = layer.objects.filter(object => {
+                if (!object || !canvasSet.has(object) || claimed.has(object)) return false;
+                claimed.add(object);
+                ownership.set(object, layerIndex);
+                return true;
+            });
+        });
+        const fallback = this.layers[this.activeLayerIdx];
+        canvasObjects.forEach(object => {
+            if (claimed.has(object) || object.excludeFromExport || object._wandOverlay) return;
+            fallback.objects.push(object);
+            claimed.add(object);
+            ownership.set(object, this.activeLayerIdx);
+        });
+        this._layerOwnership = ownership;
+        return ownership;
+    },
+    _getObjectLayerIndex(object) {
+        if (!object) return -1;
+        if (!this._layerOwnership?.has(object)) this._rebuildLayerOwnership();
+        const mapped = this._layerOwnership?.get(object);
+        if (Number.isInteger(mapped)) return mapped;
+        return this.layers.findIndex(layer => layer.objects?.includes(object));
+    },
+    _isLayerEditable(layerOrIndex = this.activeLayerIdx) {
+        const layer = typeof layerOrIndex === 'number' ? this.layers[layerOrIndex] : layerOrIndex;
+        return Boolean(layer && layer.visible !== false && !layer.locked);
+    },
+    _isObjectEditable(object) {
+        if (object?.type === 'activeSelection' && object.forEachObject) {
+            const objects = object.getObjects?.() || object._objects || [];
+            return objects.length > 0 && objects.every(child => this._isObjectEditable(child));
+        }
+        const index = this._getObjectLayerIndex(object);
+        return index >= 0 && this._isLayerEditable(index);
+    },
+    _guardActiveLayerEdit() {
+        const layer = this.layers[this.activeLayerIdx];
+        if (this._isLayerEditable(layer)) return true;
+        this.toast(layer?.locked ? 'Unlock the active layer to edit it' : 'Show the active layer to edit it', 'error');
+        return false;
+    },
+    _guardObjectEdit(object) {
+        if (this._isObjectEditable(object)) return true;
+        const index = this._getObjectLayerIndex(object);
+        const layer = index >= 0 ? this.layers[index] : null;
+        this.toast(layer?.locked ? 'Unlock this layer to edit it' : 'Show this layer to edit it', 'error');
+        return false;
+    },
+    _syncCanvasStackFromLayers({ render = true } = {}) {
+        if (!this.canvas?.getObjects) return;
+        this._rebuildLayerOwnership();
+        const canvasObjects = this.canvas.getObjects();
+        const canvasSet = new Set(canvasObjects);
+        const desired = [];
+        const included = new Set();
+        this.layers.forEach(layer => {
+            layer.objects.forEach(object => {
+                if (canvasSet.has(object) && !included.has(object)) {
+                    desired.push(object);
+                    included.add(object);
+                }
+            });
+        });
+        canvasObjects.forEach(object => {
+            if (!included.has(object)) desired.push(object);
+        });
+        const currentOrder = canvasObjects.slice();
+        desired.forEach((object, index) => {
+            if (currentOrder[index] === object) return;
+            if (typeof this.canvas.moveObjectTo === 'function') this.canvas.moveObjectTo(object, index);
+            else if (Array.isArray(this.canvas.objects)) {
+                const current = this.canvas.objects.indexOf(object);
+                if (current >= 0 && current !== index) {
+                    this.canvas.objects.splice(current, 1);
+                    this.canvas.objects.splice(index, 0, object);
+                }
+            }
+            const current = currentOrder.indexOf(object);
+            if (current >= 0) {
+                currentOrder.splice(current, 1);
+                currentOrder.splice(index, 0, object);
+            }
+        });
+        if (render) this.canvas.renderAll();
+    },
+    _applyLayerInteractionState({ render = true } = {}) {
+        if (!this.canvas?.getObjects) return;
+        this._rebuildLayerOwnership();
+        const tool = this.state.tool;
+        const selectMode = tool === 'select';
+        const fillMode = tool === 'fill';
+        const readTargetMode = tool === 'eyedropper';
+        this.canvas.selection = selectMode;
+        this.canvas.getObjects().forEach(object => {
+            if (object.name === '__boundary__' || object.excludeFromExport || object._wandOverlay) {
+                object.selectable = false;
+                object.evented = false;
+                return;
+            }
+            const index = this._getObjectLayerIndex(object);
+            const layer = index >= 0 ? this.layers[index] : null;
+            const visible = layer?.visible !== false;
+            const editable = visible && !layer?.locked;
+            object.visible = visible;
+            object.selectable = selectMode && editable;
+            object.evented = (selectMode && editable) || (fillMode && editable) || (readTargetMode && visible);
+        });
+        if (this._drawingLayerTools.has(tool)) this.canvas.isDrawingMode = this._isLayerEditable();
+        const activeObjects = this.canvas.getActiveObjects?.() || [this.canvas.getActiveObject?.()].filter(Boolean);
+        if (activeObjects.some(object => !this._isObjectEditable(object))) this.canvas.discardActiveObject();
+        if (render) this.canvas.renderAll();
+    },
+    _enforceLayerInvariants({ render = true } = {}) {
+        this._syncCanvasStackFromLayers({ render:false });
+        this._applyLayerInteractionState({ render:false });
+        if (render) this.canvas.renderAll();
+    },
+    _moveLayer(fromIndex, toIndex, { recordHistory = true } = {}) {
+        const from = Math.round(Number(fromIndex));
+        const to = Math.round(Number(toIndex));
+        if (!Number.isInteger(from) || !Number.isInteger(to) || !this.layers[from] || !this.layers[to] || from === to) return false;
+        const activeLayer = this.layers[this.activeLayerIdx];
+        const [moved] = this.layers.splice(from, 1);
+        this.layers.splice(to, 0, moved);
+        this.activeLayerIdx = Math.max(0, this.layers.indexOf(activeLayer));
+        this._enforceLayerInvariants();
+        this.updateLayersPanel();
+        if (recordHistory) this.saveHistory('Reorder Layers');
+        return true;
+    },
+    _moveObjectWithinLayer(object, destination) {
+        if (!this._guardObjectEdit(object)) return false;
+        const layerIndex = this._getObjectLayerIndex(object);
+        const objects = this.layers[layerIndex].objects;
+        const from = objects.indexOf(object);
+        if (from < 0 || objects.length < 2) return false;
+        let to = from;
+        if (destination === 'front') to = objects.length - 1;
+        else if (destination === 'forward') to = Math.min(objects.length - 1, from + 1);
+        else if (destination === 'backward') to = Math.max(0, from - 1);
+        else if (destination === 'back') to = 0;
+        if (to === from) return false;
+        objects.splice(from, 1);
+        objects.splice(to, 0, object);
+        this._enforceLayerInvariants();
+        this.updateLayersPanel();
+        const labels = { front:'Bring Front', forward:'Bring Forward', backward:'Send Backward', back:'Send Back' };
+        this.saveHistory(labels[destination]);
+        return true;
+    },
     addLayer() {
         const idx = this.layers.length;
         this.layers.push({ id:this._newDocumentId('layer'), name:`Layer ${idx}`, visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
-        this.activeLayerIdx = idx; this.updateLayersPanel(); this.saveHistory('New Layer');
+        this.activeLayerIdx = idx; this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('New Layer');
     },
     deleteLayer() {
         if (this.layers.length === 0) return;
@@ -4236,7 +4413,7 @@ self.onmessage = function(event) {
         } else {
             this.activeLayerIdx = Math.min(this.activeLayerIdx, this.layers.length-1);
         }
-        this.canvas.renderAll(); this.updateLayersPanel(); this.saveHistory('Delete Layer');
+        this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('Delete Layer');
     },
     duplicateLayer() {
         const src = this.layers[this.activeLayerIdx];
@@ -4244,7 +4421,7 @@ self.onmessage = function(event) {
         const toClone = src.objects.filter(o => o.name !== '__boundary__');
         if (toClone.length === 0) {
             this.layers.splice(this.activeLayerIdx+1, 0, nl); this.activeLayerIdx++;
-            this.canvas.renderAll(); this.updateLayersPanel(); this.saveHistory('Duplicate Layer');
+            this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('Duplicate Layer');
             return;
         }
         let done = 0;
@@ -4253,7 +4430,7 @@ self.onmessage = function(event) {
                 c.set({left:o.left+10,top:o.top+10}); this.canvas.add(c); nl.objects.push(c);
                 done++;
                 if (done === toClone.length) {
-                    this.canvas.renderAll(); this.updateLayersPanel(); this.saveHistory('Duplicate Layer');
+                    this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('Duplicate Layer');
                 }
             });
         });
@@ -4262,27 +4439,68 @@ self.onmessage = function(event) {
     mergeDown() {
         if (this.activeLayerIdx === 0) { this.toast(this._t('Already at the bottom layer'),'info'); return; }
         const upper = this.layers[this.activeLayerIdx], lower = this.layers[this.activeLayerIdx-1];
+        if (!this._isLayerEditable(upper) || !this._isLayerEditable(lower)) {
+            this.toast('Show and unlock both layers before merging', 'error');
+            return;
+        }
         upper.objects.forEach(o => lower.objects.push(o));
         this.layers.splice(this.activeLayerIdx, 1); this.activeLayerIdx--;
-        this.canvas.renderAll(); this.updateLayersPanel(); this.saveHistory('Merge Down');
+        this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('Merge Down');
     },
-    selectLayer(idx) { this.activeLayerIdx = idx; this.canvas.discardActiveObject(); this.canvas.renderAll(); this.updateLayersPanel(); },
+    selectLayer(idx) {
+        if (!this.layers[idx]) return;
+        this.activeLayerIdx = idx;
+        this.canvas.discardActiveObject();
+        this._applyLayerInteractionState();
+        this.updateLayersPanel();
+    },
     toggleLayerVisibility(idx) {
-        const l = this.layers[idx]; l.visible = !l.visible;
-        l.objects.forEach(o => o.visible = l.visible);
-        this.canvas.renderAll(); this.updateLayersPanel();
+        const l = this.layers[idx];
+        if (!l) return;
+        l.visible = !l.visible;
+        this._enforceLayerInvariants();
+        this.updateLayersPanel();
+        this.saveHistory(l.visible ? 'Show Layer' : 'Hide Layer');
     },
-    setLayerOpacity(val) {
-        const l = this.layers[this.activeLayerIdx]; l.opacity = +val;
-        l.objects.forEach(o => { if (o.name !== '__boundary__') o.opacity = val/100; });
-        document.getElementById('layer-opacity-val').textContent = val; this.canvas.renderAll();
+    setLayerOpacity(val, recordHistory = true) {
+        const l = this.layers[this.activeLayerIdx];
+        if (!l) return false;
+        const opacity = Math.max(0, Math.min(100, Number(val)));
+        if (!Number.isFinite(opacity) || opacity === l.opacity) return false;
+        l.opacity = opacity;
+        l.objects.forEach(o => { if (o.name !== '__boundary__') o.opacity = opacity/100; });
+        document.getElementById('layer-opacity-val').textContent = opacity;
+        this.canvas.renderAll();
+        if (recordHistory) this.saveHistory('Layer Opacity');
+        else this._layerOpacityPending = true;
+        return true;
+    },
+    commitLayerOpacity() {
+        if (!this._layerOpacityPending) return false;
+        this._layerOpacityPending = false;
+        this.saveHistory('Layer Opacity');
+        return true;
     },
     setLayerBlend(mode) {
-        const l = this.layers[this.activeLayerIdx]; l.blend = mode;
+        const l = this.layers[this.activeLayerIdx];
+        if (!l || l.blend === mode) return;
+        l.blend = mode;
         l.objects.forEach(o => { if (o.name !== '__boundary__') o.globalCompositeOperation = mode; });
         this.canvas.renderAll(); this.saveHistory('Blend: '+mode);
     },
-    renameLayer(idx, newName) { this.layers[idx].name = newName; this.updateLayersPanel(); },
+    renameLayer(idx, newName) {
+        const layer = this.layers[idx];
+        if (!layer) return false;
+        const name = this._safeText(newName, 120) || layer.name;
+        if (name === layer.name) {
+            this.updateLayersPanel();
+            return false;
+        }
+        layer.name = name;
+        this.updateLayersPanel();
+        this.saveHistory('Rename Layer');
+        return true;
+    },
     flattenImage() {
         const vpt = this.canvas.viewportTransform.slice();
         this.canvas.viewportTransform = [1,0,0,1,0,0];
@@ -4301,6 +4519,7 @@ self.onmessage = function(event) {
         });
     },
     updateLayersPanel() {
+        this._enforceLayerInvariants({ render:false });
         const list = document.getElementById('layers-list'); list.innerHTML = '';
         for (let i = this.layers.length-1; i >= 0; i--) {
             const l = this.layers[i], d = document.createElement('div');
@@ -4336,13 +4555,12 @@ self.onmessage = function(event) {
         this._renderAccessibilityTree();
     },
     toggleLayerLock(idx) {
-        this.layers[idx].locked = !this.layers[idx].locked;
         const l = this.layers[idx];
-        l.objects.forEach(o => {
-            if (o.name === '__boundary__') return;
-            o.selectable = !l.locked; o.evented = !l.locked;
-        });
-        this.canvas.renderAll(); this.updateLayersPanel();
+        if (!l) return;
+        l.locked = !l.locked;
+        this._applyLayerInteractionState();
+        this.updateLayersPanel();
+        this.saveHistory(l.locked ? 'Lock Layer' : 'Unlock Layer');
         this.toast(l.locked ? 'Layer locked' : 'Layer unlocked', 'info');
     },
     startRenameLayer(el, idx) {
@@ -4356,7 +4574,7 @@ self.onmessage = function(event) {
     rebuildLayersFromCanvas() {
         this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
         this.canvas.getObjects().forEach(o => this.layers[0].objects.push(o));
-        this.activeLayerIdx = 0; this.updateLayersPanel();
+        this.activeLayerIdx = 0; this._enforceLayerInvariants(); this.updateLayersPanel();
     },
 
     // ====================== TOOLS ======================
@@ -4403,7 +4621,7 @@ self.onmessage = function(event) {
             face.removeAttribute('onclick');
         });
         document.addEventListener('mousedown', e => {
-            if (!e.target.closest('.tool-flyout') && !e.target.closest('.tool-group > .tool-btn')) {
+            if (!e.target?.closest?.('.tool-flyout') && !e.target?.closest?.('.tool-group > .tool-btn')) {
                 this._closeAllFlyouts();
             }
         });
@@ -4515,6 +4733,7 @@ self.onmessage = function(event) {
             case 'note': c.defaultCursor='crosshair'; c.hoverCursor='crosshair'; break;
             case 'crop': document.getElementById('opt-crop').style.display='flex'; this._initCrop(); break;
         }
+        this._applyLayerInteractionState({ render:false });
         const toolNames = {'marquee-rect':'Rect Marquee','marquee-ellipse':'Ellipse Marquee','magic-wand':'Magic Wand','ai-segment':'AI Segment'};
         document.getElementById('tool-display').textContent = toolNames[tool] || tool.charAt(0).toUpperCase()+tool.replace(/-/g,' ').slice(1);
         this._renderAccessibilityTree();
@@ -4566,6 +4785,7 @@ self.onmessage = function(event) {
         const ptr = this.canvas.getPointer(opt.e), tool = this.state.tool;
         if (tool==='pan' || this._tempPanning) { this.state.isPanning=true; this.state.panStart={x:opt.e.clientX,y:opt.e.clientY}; this.canvas.defaultCursor='grabbing'; return; }
         if (tool==='zoom') { opt.e.altKey?this.zoomOut():this.zoomIn(); return; }
+        if (this._activeLayerWriteTools.has(tool) && !this._guardActiveLayerEdit()) return;
         if (tool==='marquee-rect'||tool==='marquee-ellipse') {
             // Clear any previous selection (wand overlay, old bounds)
             this.canvas.getObjects().filter(o=>o._wandOverlay).forEach(o=>this.canvas.remove(o));
@@ -4600,9 +4820,12 @@ self.onmessage = function(event) {
         }
         if (tool==='fill') {
             const t=opt.target;
+            if(t&&t.name!=='__boundary__'&&!this._guardObjectEdit(t)) return;
             if(t&&t.type==='image') { this._floodFillImage(t,ptr); }
             else if(t&&t.name!=='__boundary__') { t.set('fill',this.state.fgColor); this.canvas.renderAll(); this.saveHistory('Fill'); }
-            else { const rect=new fabric.Rect({left:0,top:0,width:this.canvasW,height:this.canvasH,fill:this.state.fgColor,selectable:true,name:'Fill'});
+            else {
+                if (!this._guardActiveLayerEdit()) return;
+                const rect=new fabric.Rect({left:0,top:0,width:this.canvasW,height:this.canvasH,fill:this.state.fgColor,selectable:true,name:'Fill'});
                 this.canvas.add(rect);this.layers[this.activeLayerIdx].objects.push(rect);this.saveHistory('Fill Canvas');this.updateLayersPanel(); }
             return;
         }
@@ -4692,6 +4915,15 @@ self.onmessage = function(event) {
                 this.toast('Selection: '+Math.round(sw/vpt[0])+' x '+Math.round(sh/vpt[3])+' px','info');
             } else { el.style.display='none'; this._selectionBounds=null; }
             this._marqueeStart=null;this.state.isDrawing=false; return;
+        }
+        if (this.state.isDrawing && this._activeLayerWriteTools.has(this.state.tool) && !this._isLayerEditable()) {
+            if (this._tempShape) this.canvas.remove(this._tempShape);
+            this._tempShape = null;
+            this._shapeStart = null;
+            this.state.isDrawing = false;
+            this.canvas.renderAll();
+            this.toast('Show and unlock the active layer before drawing', 'error');
+            return;
         }
         if(this.state.isDrawing&&this.state.tool==='gradient'&&this._shapeStart) {
             const ptr=this.canvas.getPointer(opt.e); this.drawGradient(this._shapeStart,ptr); this._shapeStart=null; this.state.isDrawing=false; return;
@@ -4800,6 +5032,7 @@ self.onmessage = function(event) {
             target = objs.length ? objs[objs.length - 1] : null;
         }
         if (!target || target.type !== 'image') { this.toast('Click on an image to clone', 'info'); return; }
+        if (!this._guardObjectEdit(target)) return;
         const el = target.getElement();
         const oc = document.createElement('canvas');
         oc.width = el.naturalWidth || el.width; oc.height = el.naturalHeight || el.height;
@@ -5428,6 +5661,7 @@ self.onmessage = function(event) {
 
     // ====================== GRADIENT ======================
     drawGradient(from, to) {
+        if (!this._guardActiveLayerEdit()) return false;
         const w=Math.abs(to.x-from.x)||100, h=Math.abs(to.y-from.y)||100;
         const left=Math.min(from.x,to.x), top=Math.min(from.y,to.y);
         let grad;
@@ -5439,10 +5673,12 @@ self.onmessage = function(event) {
         const rect = new fabric.Rect({left,top,width:w,height:h,fill:grad,selectable:true,stroke:'transparent',strokeWidth:0});
         this.canvas.add(rect); this.layers[this.activeLayerIdx].objects.push(rect);
         this.saveHistory('Gradient'); this.updateLayersPanel();
+        return true;
     },
 
     // ====================== PATTERN FILL ======================
     drawPattern(from, to) {
+        if (!this._guardActiveLayerEdit()) return false;
         const w=Math.abs(to.x-from.x)||100, h=Math.abs(to.y-from.y)||100;
         const left=Math.min(from.x,to.x), top=Math.min(from.y,to.y);
         const pc=document.createElement('canvas'), s=this.state.patternScale;
@@ -5467,6 +5703,7 @@ self.onmessage = function(event) {
         const rect = new fabric.Rect({ left, top, width:w, height:h, fill:pattern, selectable:true, stroke:'transparent', strokeWidth:0 });
         this.canvas.add(rect); this.layers[this.activeLayerIdx].objects.push(rect);
         this.saveHistory('Pattern Fill'); this.updateLayersPanel();
+        return true;
     },
 
     // ====================== CROP ======================
@@ -5918,6 +6155,7 @@ self.onmessage = function(event) {
     _layerViaCut() {
         const active = this.canvas.getActiveObject();
         if (!active) { this.toast('Select an object first', 'info'); return; }
+        if (!this._guardObjectEdit(active)) return;
         active.clone(c => {
             // Remove from current layer
             const curLayer = this.layers[this.activeLayerIdx];
@@ -5949,11 +6187,12 @@ self.onmessage = function(event) {
     deleteSelected() { this._deleteSelected(); },
     duplicateSelected() {
         const active=this.canvas.getActiveObject(); if(!active) return;
+        if (!this._guardObjectEdit(active) || !this._guardActiveLayerEdit()) return;
         active.clone(c=>{ c.set({left:active.left+15,top:active.top+15}); this.canvas.add(c); this.layers[this.activeLayerIdx].objects.push(c); this.canvas.setActiveObject(c); this.canvas.renderAll(); this.saveHistory('Duplicate'); this.updateLayersPanel(); });
     },
-    flipH() { const a=this.canvas.getActiveObject(); if(a){a.set('flipX',!a.flipX);this.canvas.renderAll();this.saveHistory('Flip H');} else{this.toast(this._t('Select an object first'),'info');} },
-    flipV() { const a=this.canvas.getActiveObject(); if(a){a.set('flipY',!a.flipY);this.canvas.renderAll();this.saveHistory('Flip V');} else{this.toast(this._t('Select an object first'),'info');} },
-    rotateObj(deg) { const a=this.canvas.getActiveObject(); if(a){a.rotate((a.angle||0)+deg);this.canvas.renderAll();this.saveHistory('Rotate '+deg);} else{this.toast(this._t('Select an object first'),'info');} },
+    flipH() { const a=this.canvas.getActiveObject(); if(a&&this._guardObjectEdit(a)){a.set('flipX',!a.flipX);this.canvas.renderAll();this.saveHistory('Flip H');} else if(!a){this.toast(this._t('Select an object first'),'info');} },
+    flipV() { const a=this.canvas.getActiveObject(); if(a&&this._guardObjectEdit(a)){a.set('flipY',!a.flipY);this.canvas.renderAll();this.saveHistory('Flip V');} else if(!a){this.toast(this._t('Select an object first'),'info');} },
+    rotateObj(deg) { const a=this.canvas.getActiveObject(); if(a&&this._guardObjectEdit(a)){a.rotate((a.angle||0)+deg);this.canvas.renderAll();this.saveHistory('Rotate '+deg);} else if(!a){this.toast(this._t('Select an object first'),'info');} },
     showResize() {
         const o=document.createElement('div'); o.className='modal-overlay';
         o.innerHTML=`<div class="modal"><h3>Resize Canvas</h3><div class="modal-row"><label>Width</label><input id="rs-w" type="number" value="${this.canvasW}" min="1" max="8000"></div><div class="modal-row"><label>Height</label><input id="rs-h" type="number" value="${this.canvasH}" min="1" max="8000"></div><div class="modal-btns"><button class="btn" data-modal-close>Cancel</button><button class="btn btn-primary" data-modal-action>Apply</button></div></div>`;
@@ -6011,6 +6250,7 @@ self.onmessage = function(event) {
     // ====================== PDF EXPORT ======================
     exportPDF() {
         if (typeof jspdf === 'undefined' && typeof window.jspdf === 'undefined') { this.toast('jsPDF not loaded', 'error'); return; }
+        this._enforceLayerInvariants({ render:false });
         const { jsPDF } = window.jspdf;
         const landscape = this.canvasW > this.canvasH;
         const pdf = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'px', format: [this.canvasW, this.canvasH] });
@@ -6025,6 +6265,7 @@ self.onmessage = function(event) {
     exportPSD() {
         const lib = window.agPsd || (typeof agPsd !== 'undefined' ? agPsd : null);
         if (!lib || !lib.writePsd) { this.toast('PSD library not loaded or does not support writing', 'error'); return; }
+        this._enforceLayerInvariants({ render:false });
         this.toast('Generating PSD...', 'info');
         const vpt = this.canvas.viewportTransform.slice();
         this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
@@ -6681,6 +6922,7 @@ self.onmessage = async function(e) {
             target = objs.length ? objs[objs.length - 1] : null;
         }
         if (!target || target.type !== 'image') { this.toast('Click on an image to heal', 'info'); return; }
+        if (!this._guardObjectEdit(target)) return;
         const el = target.getElement();
         const oc = document.createElement('canvas');
         oc.width = el.naturalWidth || el.width; oc.height = el.naturalHeight || el.height;
@@ -7101,15 +7343,22 @@ self.onmessage = async function(e) {
         this.toast('Auto enhance applied', 'success');
     },
     _replaceActiveImage(active, dataUrl, histName) {
+        if (!this._guardObjectEdit(active)) return false;
         fabric.Image.fromURL(dataUrl, newImg => {
+            if (!this._isObjectEditable(active)) {
+                this.toast('The target layer changed before the edit completed', 'error');
+                return;
+            }
             newImg.set({ left: active.left, top: active.top, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle, flipX: active.flipX, flipY: active.flipY, originX: active.originX, originY: active.originY, selectable: true, name: histName });
             const li = this.layers.findIndex(l => l.objects.includes(active));
             if (li >= 0) { const idx = this.layers[li].objects.indexOf(active); this.layers[li].objects[idx] = newImg; }
             this.canvas.remove(active); this.canvas.add(newImg); this.canvas.setActiveObject(newImg);
             this.canvas.renderAll(); this.saveHistory(histName); this.updateLayersPanel();
         });
+        return true;
     },
     _floodFillImage(target,ptr){
+        if (!this._guardObjectEdit(target)) return;
         const el=target.getElement();
         const oc=document.createElement('canvas');
         oc.width=el.naturalWidth||el.width;oc.height=el.naturalHeight||el.height;
@@ -7338,6 +7587,12 @@ self.onmessage = async function(e) {
     },
     _penFinish() {
         if (this._penPoints.length < 2) { this._penPoints = []; return; }
+        if (!this._guardActiveLayerEdit()) {
+            this._penPoints = [];
+            const preview = document.querySelector('#pen-overlay svg path');
+            if (preview) preview.setAttribute('d', '');
+            return;
+        }
         const pts = this._penPoints.map(p => `${p.x} ${p.y}`).join(', ');
         const pathStr = 'M ' + this._penPoints.map(p => `${p.x} ${p.y}`).join(' L ');
         const closed = this.state.penFilled ? pathStr + ' Z' : pathStr;
@@ -7668,14 +7923,14 @@ self.onmessage = async function(e) {
             layerEl.classList.remove('drop-above', 'drop-below');
             const fromIdx = +e.dataTransfer.getData('text/plain');
             const toIdx = idx;
-            if (fromIdx === toIdx) return;
-            const [moved] = this.layers.splice(fromIdx, 1);
-            this.layers.splice(toIdx, 0, moved);
-            if (this.activeLayerIdx === fromIdx) this.activeLayerIdx = toIdx;
-            else if (fromIdx < this.activeLayerIdx && toIdx >= this.activeLayerIdx) this.activeLayerIdx--;
-            else if (fromIdx > this.activeLayerIdx && toIdx <= this.activeLayerIdx) this.activeLayerIdx++;
-            this.updateLayersPanel(); this.saveHistory('Reorder Layers');
-            this.toast('Layer moved', 'info');
+            if (fromIdx === toIdx || !this.layers[fromIdx] || !this.layers[toIdx]) return;
+            const rect = layerEl.getBoundingClientRect();
+            const placeAbove = e.clientY < rect.top + rect.height / 2;
+            const targetLayer = this.layers[toIdx];
+            const remaining = this.layers.filter((_, index) => index !== fromIdx);
+            const targetPosition = remaining.indexOf(targetLayer);
+            const destination = targetPosition + (placeAbove ? 1 : 0);
+            if (this._moveLayer(fromIdx, destination)) this.toast('Layer moved', 'info');
         });
     },
 
@@ -8255,6 +8510,7 @@ self.onmessage = async function(e) {
         if (el) el.textContent = `${w}x${h} — Est. ~${est > 1024 ? (est/1024).toFixed(1)+'MB' : est+'KB'}`;
     },
     _doExportSettings(overlay) {
+        this._enforceLayerInvariants({ render:false });
         const fmt = document.querySelector('.export-format-row .btn.active')?.textContent?.toLowerCase() || 'png';
         const quality = (+document.getElementById('es-quality').value || 92) / 100;
         const scale = +document.getElementById('es-scale').value || 1;
@@ -8607,10 +8863,10 @@ self.onmessage = async function(e) {
                     {label:'Rotate 90\u00b0 CCW',fn:()=>this.rotateObj(-90)},
                 ]});
                 items.push({label:'Arrange',children:[
-                    {label:'Bring to Front',fn:()=>{active.bringToFront();this.canvas.renderAll();this.saveHistory('Bring Front');}},
-                    {label:'Bring Forward',fn:()=>{active.bringForward();this.canvas.renderAll();this.saveHistory('Bring Forward');}},
-                    {label:'Send Backward',fn:()=>{active.sendBackwards();this.canvas.renderAll();this.saveHistory('Send Backward');}},
-                    {label:'Send to Back',fn:()=>{active.sendToBack();this.canvas.renderAll();this.saveHistory('Send Back');}},
+                    {label:'Bring to Front',fn:()=>this._moveObjectWithinLayer(active,'front')},
+                    {label:'Bring Forward',fn:()=>this._moveObjectWithinLayer(active,'forward')},
+                    {label:'Send Backward',fn:()=>this._moveObjectWithinLayer(active,'backward')},
+                    {label:'Send to Back',fn:()=>this._moveObjectWithinLayer(active,'back')},
                 ]});
                 items.push({sep:true});
                 items.push({label:'Layer Via Copy',fn:()=>this._layerViaCopy()});
@@ -8718,9 +8974,11 @@ self.onmessage = async function(e) {
 
         // Viewport-aware submenu positioning: flip left when submenu would overflow right edge, shift up if below viewport
         document.addEventListener('mouseenter', (e) => {
+            const target = e.target?.closest ? e.target : null;
+            if (!target) return;
             // Handle top-level menu dropdowns near right edge
-            const menuItem = e.target.closest('.menu-item');
-            if (menuItem && e.target === menuItem) {
+            const menuItem = target.closest('.menu-item');
+            if (menuItem && target === menuItem) {
                 const dd = menuItem.querySelector(':scope > .menu-dropdown');
                 if (dd) {
                     dd.style.left = ''; dd.style.right = '';
@@ -8733,7 +8991,7 @@ self.onmessage = async function(e) {
                 }
             }
             // Handle submenus
-            const sub = e.target.closest('.dd-sub, .ctx-sub');
+            const sub = target.closest('.dd-sub, .ctx-sub');
             if (!sub) return;
             const child = sub.querySelector('.menu-dropdown, .ctx-submenu');
             if (!child) return;
@@ -8773,7 +9031,7 @@ self.onmessage = async function(e) {
             e.preventDefault(); dragCounter = 0;
             document.getElementById('dropzone-overlay').classList.remove('visible');
             // Canvas area drop is handled by existing handler, but this handles full-window drops
-            if (e.target.closest('#canvas-area')) return; // already handled
+            if (e.target?.closest?.('#canvas-area')) return; // already handled
             const file = e.dataTransfer.files[0];
             if (file) {
                 try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }
@@ -9190,6 +9448,7 @@ self.onmessage = async function(e) {
     },
     _pasteSelection() {
         if (!this._clipboard) { this.toast('Nothing to paste', 'info'); return; }
+        if (!this._guardActiveLayerEdit()) return;
         this._clipboard.clone(cloned => {
             this.canvas.discardActiveObject();
             cloned.set({ left: cloned.left + 20, top: cloned.top + 20, evented: true });
@@ -9211,6 +9470,7 @@ self.onmessage = async function(e) {
     _duplicateSelection() {
         const active = this.canvas.getActiveObject();
         if (!active) return;
+        if (!this._guardObjectEdit(active) || !this._guardActiveLayerEdit()) return;
         active.clone(cloned => {
             cloned.set({ left: cloned.left + 20, top: cloned.top + 20, evented: true });
             if (cloned.type === 'activeSelection') {
@@ -9229,6 +9489,13 @@ self.onmessage = async function(e) {
     _deleteSelected() {
         const active = this.canvas.getActiveObject();
         if (!active) return;
+        const selected = active.type === 'activeSelection' && active.forEachObject
+            ? (active.getObjects?.() || active._objects || [])
+            : [active];
+        if (selected.some(object => !this._isObjectEditable(object))) {
+            this.toast('Unlock and show every selected layer before deleting', 'error');
+            return;
+        }
         if (active.type === 'activeSelection') {
             active.forEachObject(obj => {
                 this.canvas.remove(obj);
@@ -9396,6 +9663,7 @@ self.onmessage = async function(e) {
             target = objs.length ? objs[objs.length-1] : null;
         }
         if (!target || target.type !== 'image') { this.toast('Select an image to retouch', 'info'); return; }
+        if (!this._guardObjectEdit(target)) return;
         const el = target.getElement();
         const oc = document.createElement('canvas');
         oc.width = el.naturalWidth || el.width; oc.height = el.naturalHeight || el.height;
@@ -10874,7 +11142,7 @@ self.onmessage = async function(e) {
 };
 
 document.addEventListener('click', e => {
-    const c = e.target.closest('[data-modal-close]');
+    const c = e.target?.closest?.('[data-modal-close]');
     if (c) { const o = c.closest('.modal-overlay'); if (o) o.remove(); }
 });
 document.addEventListener('keydown', e => {

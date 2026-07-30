@@ -71,6 +71,73 @@ describe('OpenShop core object', () => {
     expect(OS.saveHistory).toHaveBeenCalledWith('Delete Layer');
   });
 
+  it('keeps layer ownership, canvas stacking, and edit eligibility canonical', () => {
+    const OS = loadOpenShop();
+    const bottom = { name: 'Bottom', visible: true, selectable: true, evented: true };
+    const middle = { name: 'Middle', visible: true, selectable: true, evented: true };
+    const top = { name: 'Top', visible: true, selectable: true, evented: true };
+    OS.canvas = createCanvasMock([top, bottom, middle]);
+    quietUiMethods(OS);
+    OS.layers = [
+      { id: 'layer-bottom', name: 'Bottom', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [bottom] },
+      { id: 'layer-middle', name: 'Middle', visible: true, locked: true, opacity: 100, blend: 'source-over', objects: [middle] },
+      { id: 'layer-top', name: 'Top', visible: false, locked: false, opacity: 100, blend: 'source-over', objects: [top] }
+    ];
+    OS.activeLayerIdx = 1;
+    OS.state.tool = 'select';
+
+    OS._enforceLayerInvariants();
+
+    expect(OS.canvas.getObjects()).toEqual([bottom, middle, top]);
+    expect(OS._getObjectLayerIndex(bottom)).toBe(0);
+    expect(OS._getObjectLayerIndex(middle)).toBe(1);
+    expect(OS._getObjectLayerIndex(top)).toBe(2);
+    expect(bottom).toMatchObject({ visible: true, selectable: true, evented: true });
+    expect(middle).toMatchObject({ visible: true, selectable: false, evented: false });
+    expect(top).toMatchObject({ visible: false, selectable: false, evented: false });
+
+    OS.setTool('brush');
+    expect(OS.canvas.isDrawingMode).toBe(false);
+    OS.layers[1].locked = false;
+    OS._applyLayerInteractionState();
+    expect(OS.canvas.isDrawingMode).toBe(true);
+  });
+
+  it('records layer properties and reorders the canvas with the layer model', () => {
+    const OS = loadOpenShop();
+    const lower = { name: 'Lower', visible: true };
+    const upper = { name: 'Upper', visible: true };
+    OS.canvas = createCanvasMock([lower, upper]);
+    quietUiMethods(OS);
+    OS.saveHistory = vi.fn();
+    OS.layers = [
+      { id: 'layer-lower', name: 'Lower', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [lower] },
+      { id: 'layer-upper', name: 'Upper', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [upper] }
+    ];
+    OS.activeLayerIdx = 1;
+
+    OS.toggleLayerVisibility(1);
+    OS.toggleLayerVisibility(1);
+    OS.toggleLayerLock(1);
+    OS.toggleLayerLock(1);
+    OS.setLayerOpacity(55);
+    OS.renameLayer(1, 'Renamed');
+    expect(OS._moveLayer(1, 0)).toBe(true);
+
+    expect(OS.layers.map((layer) => layer.name)).toEqual(['Renamed', 'Lower']);
+    expect(OS.canvas.getObjects()).toEqual([upper, lower]);
+    expect(upper.opacity).toBe(0.55);
+    expect(OS.saveHistory.mock.calls.map(([action]) => action)).toEqual([
+      'Hide Layer',
+      'Show Layer',
+      'Lock Layer',
+      'Unlock Layer',
+      'Layer Opacity',
+      'Rename Layer',
+      'Reorder Layers'
+    ]);
+  });
+
   it('restores prior snapshots through undo and redo', async () => {
     const OS = loadOpenShop();
     const canvas = createCanvasMock();

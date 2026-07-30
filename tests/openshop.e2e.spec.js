@@ -10,6 +10,10 @@ test('loads the editor shell and supports core UI interactions', async ({ page }
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    document.dispatchEvent(new MouseEvent('mouseenter'));
+    document.dispatchEvent(new MouseEvent('click'));
+  });
   await expect(page.locator('#editor-canvas')).toBeVisible();
   await page.getByRole('button', { name: 'Enter Studio' }).click();
   await expect(page.locator('#welcome-overlay')).toHaveClass(/hidden/);
@@ -701,6 +705,150 @@ test('round-trips one document state through save, open, recovery, undo, and red
     selection: { bounds: null, selected: 0 },
     guides: [['horizontal', 123], ['vertical', 91]]
   }));
+});
+
+test('keeps layer stacking, locks, visibility, and history in one canonical model', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(240, 180);
+    const lower = new fabric.Rect({
+      left: 20,
+      top: 20,
+      width: 120,
+      height: 100,
+      fill: '#cc3344',
+      name: 'Lower object'
+    });
+    OS.canvas.add(lower);
+    OS.layers[1].name = 'Lower';
+    OS.layers[1].objects.push(lower);
+
+    OS.layers.push({
+      id: OS._newDocumentId('layer'),
+      name: 'Upper',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blend: 'source-over',
+      objects: []
+    });
+    OS.activeLayerIdx = 2;
+    const upper = new fabric.Rect({
+      left: 45,
+      top: 35,
+      width: 120,
+      height: 100,
+      fill: '#3366dd',
+      name: 'Upper object'
+    });
+    OS.canvas.add(upper);
+    OS.layers[2].objects.push(upper);
+    OS._enforceLayerInvariants();
+    OS.updateLayersPanel();
+    OS.history = [];
+    OS.historyIdx = -1;
+    OS.saveHistory('Layer Baseline', { markDirty: false });
+
+    OS.renameLayer(2, 'Foreground');
+    OS.setLayerOpacity(60);
+    OS.setLayerBlend('multiply');
+    OS.canvas.setActiveObject(upper);
+    OS.toggleLayerLock(2);
+    const discardedOnLock = !OS.canvas.getActiveObject();
+    OS.setTool('select');
+    const lockedInteraction = {
+      selectable: upper.selectable,
+      evented: upper.evented
+    };
+    OS.setTool('brush');
+    const drawingWhileLocked = OS.canvas.isDrawingMode;
+    OS.toggleLayerVisibility(2);
+    const hiddenInteraction = {
+      visible: upper.visible,
+      selectable: upper.selectable,
+      evented: upper.evented
+    };
+    OS.toggleLayerVisibility(2);
+    OS._moveLayer(2, 1);
+
+    const summarize = () => ({
+      layerNames: OS.layers.map((layer) => layer.name),
+      panelNames: [...document.querySelectorAll('#layers-list .layer-name')].map((node) => node.textContent),
+      canvasOrder: OS.canvas.getObjects().map((object) => object.name),
+      foreground: (() => {
+        const layer = OS.layers.find((candidate) => candidate.name === 'Foreground');
+        if (!layer) return null;
+        return {
+          visible: layer.visible,
+          locked: layer.locked,
+          opacity: layer.opacity,
+          blend: layer.blend,
+          objects: layer.objects.map((object) => object.name)
+        };
+      })()
+    });
+    const final = summarize();
+    const project = OS._captureDocumentState();
+
+    for (let index = 0; index < 7; index++) await OS.undo();
+    const undone = summarize();
+    for (let index = 0; index < 7; index++) await OS.redo();
+    const redone = summarize();
+
+    await OS._loadDocumentState(project);
+    const reopened = summarize();
+    const restoredUpper = OS.layers.find((layer) => layer.name === 'Foreground').objects[0];
+    OS.setTool('select');
+
+    return {
+      discardedOnLock,
+      lockedInteraction,
+      drawingWhileLocked,
+      hiddenInteraction,
+      historyActions: OS.history.map((entry) => entry.action),
+      final,
+      undone,
+      redone,
+      reopened,
+      reopenedInteraction: {
+        selectable: restoredUpper.selectable,
+        evented: restoredUpper.evented
+      }
+    };
+  });
+
+  expect(result.discardedOnLock).toBe(true);
+  expect(result.lockedInteraction).toEqual({ selectable: false, evented: false });
+  expect(result.drawingWhileLocked).toBe(false);
+  expect(result.hiddenInteraction).toEqual({ visible: false, selectable: false, evented: false });
+  expect(result.historyActions).toEqual([
+    'Layer Baseline',
+    'Rename Layer',
+    'Layer Opacity',
+    'Blend: multiply',
+    'Lock Layer',
+    'Hide Layer',
+    'Show Layer',
+    'Reorder Layers'
+  ]);
+  expect(result.undone.layerNames).toEqual(['Background', 'Lower', 'Upper']);
+  expect(result.final).toEqual({
+    layerNames: ['Background', 'Foreground', 'Lower'],
+    panelNames: ['Lower', 'Foreground', 'Background'],
+    canvasOrder: ['__boundary__', 'Upper object', 'Lower object'],
+    foreground: {
+      visible: true,
+      locked: true,
+      opacity: 60,
+      blend: 'multiply',
+      objects: ['Upper object']
+    }
+  });
+  expect(result.redone).toEqual(result.final);
+  expect(result.reopened).toEqual(result.final);
+  expect(result.reopenedInteraction).toEqual({ selectable: false, evented: false });
 });
 
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
