@@ -2,7 +2,7 @@
 
 All notable changes to Openshop will be documented in this file.
 
-## [Unreleased]
+## [v0.22.0] - 2026-07-30
 
 ### Performance
 - Run Solarize, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Curves, Channel Mixer, Auto Levels, Auto Contrast, and Auto Enhance in the filter worker instead of blocking the main thread, so they can be cancelled mid-run and the interface stays responsive on large images
@@ -13,6 +13,10 @@ All notable changes to Openshop will be documented in this file.
 - Automated WCAG 2.2 gates for text contrast in all three themes, 24x24 minimum pointer targets, and the non-drag paths above
 - Cross-engine test gate: the core open, edit, filter, save, recover, export, keyboard, and dialog flows now run automatically on Firefox and WebKit as well as Chromium (`npm run test:cross-browser`)
 - A single assertion that keeps the version in `package.json`, `package-lock.json`, the README badge, the changelog, the page title, the in-app labels, and the offline shell revision aligned
+
+### Security
+- Add `base-uri 'none'` and `form-action 'none'` to the content security policy, neither of which falls back to `default-src`, closing a `<base href>` injection that could have redirected every relative URL including the service worker
+- Widen the inline-handler check in the security gate from four specific attributes to any `on*=` handler, so an `onerror=` or `onload=` can no longer pass a gate that claims to cover them
 
 ### Fixed
 - Store pixel selections in document space instead of screen space: zooming or panning between selecting and deleting no longer erases a different part of the image, and deleting below 100% zoom no longer leaves a sparse grid of surviving pixels

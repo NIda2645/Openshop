@@ -559,8 +559,10 @@ describe('OpenShop core object', () => {
     const pending = OS._runFilterJob({ backend: 'worker', op: 'posterize' }, source, 1, 1, { levels: 4 });
     const rejected = pending.catch(error => error);
 
+    // The progress dialog reveals itself only after a short delay so fast
+    // filters do not flash it, but the job is cancellable straight away.
     expect(OS._activeProgressJobId).toBeTruthy();
-    expect(document.getElementById('compute-actions').hidden).toBe(false);
+    expect(document.getElementById('ai-progress').classList.contains('visible')).toBe(false);
     expect(OS.cancelActiveCompute()).toBe(true);
 
     const error = await rejected;
