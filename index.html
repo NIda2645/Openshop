@@ -1451,37 +1451,19 @@ body{
 
 /* === MOBILE RESPONSIVE === */
 @media(max-width:767px){
-  :root{--panel-width:0px;--toolbar-w:0px;--topbar-h:36px;--tool-size:32px;--statusbar-h:0px}
-  #panels{position:fixed;right:-260px;top:var(--topbar-h);bottom:48px;width:260px;z-index:200;transition:right .25s var(--ease-out);display:flex}
-  #panels.mobile-open{right:0}
-  .mobile-panel-toggle{display:flex !important}
+  :root{--panel-width:0px;--toolbar-w:0px;--topbar-h:44px;--tool-size:34px;--statusbar-h:0px}
   #statusbar{display:none}
-  #toolbar{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:48px;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:4px 6px;gap:4px;border-right:none;border-top:1px solid var(--border);z-index:100}
-  .tool-sep{width:1px;height:20px;margin:0 2px}
   .tool-btn[data-tip]::after{display:none}
   .tool-group .tool-flyout{bottom:calc(100% + 4px);left:50%;right:auto;top:auto;transform:translateX(-50%)}
-  #tool-options{left:0;right:0;top:var(--topbar-h);height:32px;padding:0 8px;gap:8px;font-size:10px}
   #tool-options label{font-size:10px}
-  #canvas-area{left:0;top:calc(var(--topbar-h) + 32px);right:0;bottom:48px}
   body.rulers-on .ruler-h{left:0;right:0}
   body.rulers-on .ruler-v{display:none}
-  body.rulers-on #tool-options{top:calc(var(--topbar-h) + 20px)}
-  body.rulers-on #canvas-area{top:calc(var(--topbar-h) + 52px)}
-  #topbar{padding:0 6px}
-  .menu-item{font-size:11px;padding:4px 6px}
-  .logo{display:none}
-  .modal{min-width:auto;max-width:calc(100vw - 32px);padding:16px;border-radius:10px}
   .modal h3{font-size:14px;margin-bottom:12px}
   .modal-row label{width:auto;min-width:50px}
   .cr-dialog{min-width:auto;flex-wrap:wrap}
   .cr-left,.cr-right{min-width:auto;width:100%}
-  #timeline-panel{left:0;right:0;bottom:48px}
-}
-@media(min-width:768px) and (max-width:1023px){
-  :root{--panel-width:200px}
-}
-@media(max-width:767px){
-  :root{--panel-width:0px;--toolbar-w:0px;--topbar-h:44px;--tool-size:34px;--statusbar-h:0px}
+  /* Clears the floating toolbar (46px tall, inset 6px), not the old flush 48px bar. */
+  #timeline-panel{left:6px;right:6px;bottom:58px}
   #topbar{
     gap:1px;
     padding:0 6px;
@@ -1516,6 +1498,9 @@ body{
     box-shadow:-9px 0 14px var(--bg-depth-1);
   }
   #panels{
+    position:fixed;
+    display:flex;
+    z-index:200;
     right:-320px;
     top:calc(var(--topbar-h) + 48px);
     bottom:58px;
@@ -1535,6 +1520,12 @@ body{
   #panels .panel-tab-group{flex-shrink:0}
   #panels .panel-tab-group.ptg-flex{flex:0 0 250px}
   #toolbar{
+    position:fixed;
+    top:auto;
+    z-index:100;
+    flex-direction:row;
+    overflow-x:auto;
+    overflow-y:hidden;
     left:6px;
     right:6px;
     bottom:6px;
@@ -1555,6 +1546,7 @@ body{
     height:36px;
     padding:0 9px;
     gap:9px;
+    font-size:10px;
     border-radius:8px;
   }
   #canvas-area{
@@ -1610,6 +1602,7 @@ body{
   .modal{
     max-height:100%;
     padding:16px;
+    border-radius:10px;
     scrollbar-gutter:stable;
   }
   .modal .btn{min-height:44px}

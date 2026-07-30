@@ -3480,3 +3480,93 @@ test('previews Levels and Color Balance without a full-resolution PNG per tick',
   expect(result.appliedElementWidth).toBe(1600);
   expect(result.lutWorstError).toBe(0);
 });
+
+test('resolves one mobile layout rather than two blocks that fight each other', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const layout = await page.evaluate(() => {
+    // The timeline is display:none until opened, so a hidden element would
+    // measure as zeros.
+    document.getElementById('timeline-panel').classList.add('visible');
+    const root = getComputedStyle(document.documentElement);
+    const box = id => {
+      const el = document.getElementById(id);
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return {
+        position: style.position,
+        zIndex: style.zIndex,
+        left: Math.round(rect.left),
+        right: Math.round(window.innerWidth - rect.right),
+        bottom: Math.round(window.innerHeight - rect.bottom),
+        height: Math.round(rect.height),
+        overflowX: style.overflowX,
+        flexDirection: style.flexDirection,
+        fontSize: style.fontSize
+      };
+    };
+    return {
+      topbarH: root.getPropertyValue('--topbar-h').trim(),
+      toolSize: root.getPropertyValue('--tool-size').trim(),
+      toolbar: box('toolbar'),
+      toolOptions: box('tool-options'),
+      panels: box('panels'),
+      timeline: box('timeline-panel'),
+      statusbarDisplay: getComputedStyle(document.getElementById('statusbar')).display,
+      // The dead block set these to values that would have produced a
+      // completely different layout had the stylesheet ever been reordered.
+      mediaBlocks: [...document.styleSheets]
+        .flatMap(sheet => { try { return [...sheet.cssRules]; } catch (e) { return []; } })
+        .filter(rule => rule.conditionText && rule.conditionText.replace(/\s+/g, '') === '(max-width:767px)')
+        .length
+    };
+  });
+
+  // Exactly one plain max-width:767px block; the landscape variant has its own
+  // condition text and is counted separately.
+  expect(layout.mediaBlocks).toBe(1);
+
+  // The winning values are the ones that survive.
+  expect(layout.topbarH).toBe('44px');
+  expect(layout.toolSize).toBe('34px');
+
+  // Structural declarations that only the dead block carried are still applied.
+  expect(layout.toolbar.position).toBe('fixed');
+  expect(layout.toolbar.zIndex).toBe('100');
+  expect(layout.toolbar.flexDirection).toBe('row');
+  expect(layout.toolbar.overflowX).toBe('auto');
+  expect(layout.panels.position).toBe('fixed');
+  expect(layout.panels.zIndex).toBe('200');
+  expect(layout.toolOptions.fontSize).toBe('10px');
+  expect(layout.statusbarDisplay).toBe('none');
+
+  // The floating toolbar geometry wins over the old flush-bottom bar.
+  expect(layout.toolbar.left).toBe(6);
+  expect(layout.toolbar.right).toBe(6);
+  expect(layout.toolbar.bottom).toBe(6);
+  expect(layout.toolbar.height).toBe(46);
+
+  // The timeline clears the floating toolbar instead of sitting under it.
+  expect(layout.timeline.bottom).toBe(58);
+  expect(layout.timeline.left).toBe(6);
+});
+
+test('keeps one tablet block with the winning panel width', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+
+  const tablet = await page.evaluate(() => ({
+    panelWidth: getComputedStyle(document.documentElement).getPropertyValue('--panel-width').trim(),
+    toolbarWidth: getComputedStyle(document.documentElement).getPropertyValue('--toolbar-w').trim(),
+    blocks: [...document.styleSheets]
+      .flatMap(sheet => { try { return [...sheet.cssRules]; } catch (e) { return []; } })
+      .filter(rule => rule.conditionText && rule.conditionText.includes('768px') && rule.conditionText.includes('1023px'))
+      .length
+  }));
+
+  expect(tablet.blocks).toBe(1);
+  expect(tablet.panelWidth).toBe('248px');
+  expect(tablet.toolbarWidth).toBe('58px');
+});
