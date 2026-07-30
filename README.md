@@ -61,13 +61,12 @@ Batch export to multiple formats in one click. Export Settings previews real PNG
 | **Depth Map** | Depth-Anything monocular depth estimation |
 | **Object Detection** | DETR-based object detection with bounding boxes |
 | **Segment Select** | Click-to-segment pixel selections via pinned DETR panoptic segmentation |
-| **Smart Upscale** | 2x / 4x AI super-resolution |
 
-All AI models download once and run entirely in-browser via WebGPU/WASM. No API keys, no server calls. Model revisions are pinned to immutable commit SHAs for supply-chain security. Segment Select uses `Xenova/detr-resnet-50-panoptic`; SAM-style mask-generation is not available in current Transformers.js browser pipelines. Model loading, inference, and CPU post-processing expose one cancel action; late results are discarded if the document revision or target layer changes.
+All AI models download once and run entirely in-browser. OpenShop probes for a usable WebGPU adapter at load time and falls back to WASM when there is none; the chosen backend is reported alongside the download progress. No API keys, no server calls. Model revisions are pinned to immutable commit SHAs for supply-chain security. Segment Select uses `Xenova/detr-resnet-50-panoptic`; SAM-style mask-generation is not available in current Transformers.js browser pipelines. Model loading, inference, and CPU post-processing expose one cancel action; late results are discarded if the document revision or target layer changes.
 
 ### Adjustments & Filters
 
-Levels, Curves (per-channel), Brightness/Contrast, Hue/Saturation, Color Balance, Auto Levels, Auto Enhance, Grayscale, Sepia, Invert, Black & White, Sharpen, Blur, Noise, Vignette, Posterize, Threshold, Emboss, Edge Detect, Pixelate, Oil Paint, Halftone, Duotone, Tilt Shift, Chromatic Aberration, Gradient Map, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Selective Color, Replace Color, Lens Correction, and 8 built-in photo presets with custom preset import/export.
+Enlarge 2x/4x (stepped high-quality resampling with a sharpening pass — not a super-resolution model), Levels, Curves (per-channel), Brightness/Contrast, Hue/Saturation, Color Balance, Auto Levels, Auto Enhance, Grayscale, Sepia, Invert, Black & White, Sharpen, Blur, Noise, Vignette, Posterize, Threshold, Emboss, Edge Detect, Pixelate, Oil Paint, Halftone, Duotone, Tilt Shift, Chromatic Aberration, Gradient Map, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Selective Color, Replace Color, Lens Correction, and 8 built-in photo presets with custom preset import/export.
 
 Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignette, Edge Detect, Duotone, Chromatic Aberration) run in a Web Worker so the UI stays responsive on large images. Photon WASM is loaded on demand as an optional accelerator for supported pixel filters, with automatic fallback to the JavaScript worker. Cancel terminates the active filter worker, rejects its pending job, and leaves the source layer and history unchanged.
 

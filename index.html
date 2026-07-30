@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-07iToB6PfW+7e+9K8Ufi83sO66KfkNDX9MP+xiPBJmA=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Et2mzaL2SGctPcc98BYTkNgad5Jm+IV7sWy0cBzNmpI=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -1765,6 +1765,8 @@ body{
     <div class="menu-item" role="menuitem" aria-haspopup="true">Image
         <div class="menu-dropdown">
             <div class="dd-item" data-os-click="click-039">Resize Canvas</div>
+            <div class="dd-item" data-os-click="click-099">Enlarge 2x (resample)</div>
+            <div class="dd-item" data-os-click="click-100">Enlarge 4x (resample)</div>
             <div class="dd-sep"></div>
             <div class="dd-sub dd-item">Image Rotation
                 <div class="menu-dropdown">
@@ -1888,9 +1890,6 @@ body{
             <div class="dd-item" data-os-click="click-096">Depth Map</div>
             <div class="dd-item" data-os-click="click-097">Detect Objects</div>
             <div class="dd-item" data-os-click="click-098">Segment Select</div>
-            <div class="dd-sep"></div>
-            <div class="dd-item" data-os-click="click-099">Smart Upscale 2x</div>
-            <div class="dd-item" data-os-click="click-100">Smart Upscale 4x</div>
             <div class="dd-sep"></div>
             <div class="dd-note" role="note" aria-hidden="true">Models download on first use — no API keys needed</div>
         </div>
@@ -3139,8 +3138,8 @@ const OS = {
         "Similar": "选取相似",
         "Size": "大小",
         "Skew...": "斜切...",
-        "Smart Upscale 2x": "智能放大 2x",
-        "Smart Upscale 4x": "智能放大 4x",
+        "Enlarge 2x (resample)": "放大 2 倍（重采样）",
+        "Enlarge 4x (resample)": "放大 4 倍（重采样）",
         "Smooth": "平滑",
         "Solarize": "曝光过度",
         "Strength": "强度",
@@ -12809,8 +12808,8 @@ self.onmessage = async function(e) {
             {label:'AI Depth Map',cat:'AI',fn:()=>this.aiDepthMap()},
             {label:'AI Object Detection',cat:'AI',fn:()=>this.aiObjectDetect()},
             {label:'AI Segment Select',cat:'AI',fn:()=>this.activateSegmentSelect()},
-            {label:'AI Smart Upscale 2x',cat:'AI',fn:()=>this.aiUpscale(2)},
-            {label:'AI Smart Upscale 4x',cat:'AI',fn:()=>this.aiUpscale(4)},
+            {label:'Enlarge 2x (resample)',cat:'Image',fn:()=>this.aiUpscale(2)},
+            {label:'Enlarge 4x (resample)',cat:'Image',fn:()=>this.aiUpscale(4)},
             {label:'Curved Text',cat:'Edit',fn:()=>this.showCurvedText()},
             {label:'Animation Timeline',cat:'View',fn:()=>this.toggleTimeline()},
             {label:'Actions / Macros',cat:'View',fn:()=>this.toggleMacroPanel()},
@@ -14985,6 +14984,34 @@ self.onmessage = async function(e) {
     // operation cancels the first, and a mutex held by a cancelled job would
     // otherwise still be set when the replacement checked it, killing both.
     _aiLoadingJobId: null,
+    _aiDevice: null,
+    _aiDevicePromise: null,
+    // WebGPU is selected only when an adapter actually resolves; anything else
+    // falls back to WASM. The answer is cached because adapter requests are
+    // not free and the result cannot change within a session.
+    async _selectAIDevice() {
+        if (this._aiDevice) return this._aiDevice;
+        if (!this._aiDevicePromise) {
+            this._aiDevicePromise = (async () => {
+                try {
+                    if (typeof navigator === 'undefined' || !navigator.gpu?.requestAdapter) return 'wasm';
+                    const adapter = await navigator.gpu.requestAdapter();
+                    return adapter ? 'webgpu' : 'wasm';
+                } catch (error) {
+                    console.warn('WebGPU probe failed, using WASM:', error.message);
+                    return 'wasm';
+                }
+            })().then(device => { this._aiDevice = device; return device; });
+        }
+        return this._aiDevicePromise;
+    },
+    aiBackendReport() {
+        return {
+            device: this._aiDevice || 'not yet selected',
+            cachedModels: Object.keys(this._aiPipelines || {}),
+            pinnedRevisions: { ...this._modelRevisions }
+        };
+    },
     _aiModelLoadBusy() {
         return Boolean(this._aiLoadingJobId && this._computeJobs.has(this._aiLoadingJobId));
     },
@@ -15095,11 +15122,12 @@ self.onmessage = async function(e) {
         this._aiLoadingJobId = operation.id;
         try {
             const lib = await this._loadTransformers(operation);
-            this._showAIProgress('Downloading ' + label + ' Model', 'First-time download, will be cached for future use', operation);
+            const device = await this._raceComputeJob(this._selectAIDevice(), operation);
+            this._showAIProgress('Downloading ' + label + ' Model', `First-time download, will be cached for future use (${device})`, operation);
             let lastPct = 0;
             const loading = lib.pipeline(task, model, {
                 dtype: 'q8',
-                device: 'wasm',
+                device,
                 revision: this._modelRevisions[model] || 'main',
                 progress_callback: (p) => {
                     if (p.status === 'progress' && p.progress) {
@@ -15432,7 +15460,8 @@ self.onmessage = async function(e) {
         this._aiLoadingJobId = operation.id;
         try {
             const lib = await this._loadTransformers(operation);
-            this._showAIProgress('Downloading Background Removal Model', 'First-time download, cached for future use', operation);
+            const device = await this._raceComputeJob(this._selectAIDevice(), operation);
+            this._showAIProgress('Downloading Background Removal Model', `First-time download, cached for future use (${device})`, operation);
             let lastPct = 0;
             const progressCb = (p) => {
                 if (p.status === 'progress' && p.progress) {
@@ -15446,7 +15475,7 @@ self.onmessage = async function(e) {
             };
             lib.env.allowLocalModels = false;
             const modelLoading = lib.AutoModel.from_pretrained('Xenova/modnet', {
-                device: 'wasm',
+                device,
                 dtype: 'fp32',
                 revision: this._modelRevisions['Xenova/modnet'] || 'main',
                 progress_callback: progressCb
@@ -15708,8 +15737,8 @@ self.onmessage = async function(e) {
             this.toast('Result would be ' + dstW + 'x' + dstH + ' (' + Math.round(dstW*dstH/1e6) + 'MP) — too large for browser', 'error');
             return;
         }
-        const job = this._startComputeJob(`Smart Upscale ${factor}x`, { group:'image-processing', target });
-        this._showAIProgress('Smart Upscale ' + factor + 'x', 'Resizing ' + srcW + 'x' + srcH + ' to ' + dstW + 'x' + dstH, job);
+        const job = this._startComputeJob(`Enlarge ${factor}x`, { group:'image-processing', target });
+        this._showAIProgress('Enlarge ' + factor + 'x', 'Resampling ' + srcW + 'x' + srcH + ' to ' + dstW + 'x' + dstH, job);
         try {
             await this._yieldComputeJob(job);
             // Step 1: High-quality multi-pass upscale

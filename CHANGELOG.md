@@ -12,6 +12,8 @@ All notable changes to Openshop will be documented in this file.
 - A pseudo-locale that accents and brackets every translated string, so any interface text that never went through the localisation machinery is obvious at a glance; the Chinese map is now gated at parity with English apart from format names and single-letter typographic controls
 
 ### Fixed
+- Probe for a usable WebGPU adapter and fall back to WASM, instead of pinning both model pipelines to WASM while the README promised WebGPU; the chosen backend is shown with the download progress
+- Rename Smart Upscale to Enlarge (resample) and move it out of the AI menu into Image, because it is stepped canvas resampling with a sharpening pass and no model is involved
 - Set the document's language and direction when the locale changes, which assistive technology, hyphenation, and bidirectional text all depend on and which the locale switch never touched
 - Give canvas text an explicit direction and mirror the menu chrome with logical properties, so a right-to-left locale no longer strands shortcuts and submenu arrows on the wrong edge or reorders Arabic mixed with Latin and numerals
 - Collapse the two competing mobile stylesheets into one. The first block was almost entirely overridden — it set a 36px topbar against 44px, a flush-bottom toolbar against the floating one, and a 200px tablet panel against 248px — so edits to it did nothing and any reordering would have flipped the mobile layout wholesale. The animation timeline also now clears the floating toolbar instead of sitting under it

@@ -3726,3 +3726,106 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
   ]);
   expect(result.missingInChinese.filter(key => !sameEverywhere.has(key))).toEqual([]);
 });
+
+test('selects WebGPU only when an adapter resolves and falls back to WASM', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const original = navigator.gpu;
+    const withGpu = async (gpu) => {
+      Object.defineProperty(navigator, 'gpu', { configurable: true, value: gpu });
+      OS._aiDevice = null;
+      OS._aiDevicePromise = null;
+      return OS._selectAIDevice();
+    };
+
+    const out = {};
+    out.noGpu = await withGpu(undefined);
+    out.nullAdapter = await withGpu({ requestAdapter: async () => null });
+    out.throws = await withGpu({ requestAdapter: async () => { throw new Error('no device'); } });
+    out.webgpu = await withGpu({ requestAdapter: async () => ({ name: 'fake' }) });
+
+    // The probe runs once and the answer is reused.
+    let calls = 0;
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: { requestAdapter: async () => { calls++; return { name: 'fake' }; } }
+    });
+    OS._aiDevice = null;
+    OS._aiDevicePromise = null;
+    await Promise.all([OS._selectAIDevice(), OS._selectAIDevice(), OS._selectAIDevice()]);
+    out.adapterRequests = calls;
+    out.report = OS.aiBackendReport();
+
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: original });
+    return out;
+  });
+
+  expect(result.noGpu).toBe('wasm');
+  expect(result.nullAdapter).toBe('wasm');
+  expect(result.throws).toBe('wasm');
+  expect(result.webgpu).toBe('webgpu');
+  expect(result.adapterRequests).toBe(1);
+  expect(result.report.device).toBe('webgpu');
+  // Model revisions stay pinned to immutable commits, and the report says so.
+  expect(Object.keys(result.report.pinnedRevisions).length).toBeGreaterThan(0);
+});
+
+test('passes the selected device through to the model pipeline', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const options = await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: { requestAdapter: async () => ({ name: 'fake' }) }
+    });
+    OS._aiDevice = null;
+    OS._aiDevicePromise = null;
+    OS._aiPipelines = {};
+
+    let captured = null;
+    OS._loadTransformers = async () => ({
+      pipeline: async (task, model, opts) => { captured = { task, model, opts }; return { tag: 'pipe' }; }
+    });
+    await OS._loadPipeline('image-segmentation', 'test/model', 'Test');
+    return captured;
+  });
+
+  // The README promised WebGPU with a WASM fallback while this was pinned to
+  // 'wasm' in both pipelines.
+  expect(options.opts.device).toBe('webgpu');
+  expect(options.opts.revision).toBeTruthy();
+});
+
+test('describes the enlarge command as the resample it is, outside the AI menu', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const placement = await page.evaluate(() => {
+    const menuOf = (action) => {
+      const row = document.querySelector(`[data-os-click="${action}"]`);
+      return row?.closest('.menu-bar > .menu-item')?.getAttribute('aria-label') || null;
+    };
+    const labels = [...document.querySelectorAll('.dd-item')].map(el => el.textContent.trim());
+    return {
+      enlarge2Menu: menuOf('click-099'),
+      enlarge4Menu: menuOf('click-100'),
+      backgroundRemoveMenu: menuOf('click-096'),
+      claimsSmartUpscale: labels.some(text => /smart upscale/i.test(text)),
+      commandLabels: OS._getCommands().filter(c => /enlarge|upscale/i.test(c.label)).map(c => `${c.cat}:${c.label}`)
+    };
+  });
+
+  // Stepped canvas resampling plus a sharpen pass is not super-resolution.
+  expect(placement.claimsSmartUpscale).toBe(false);
+  expect(placement.enlarge2Menu).toBe('Image');
+  expect(placement.enlarge4Menu).toBe('Image');
+  // The genuinely model-backed commands stay in the AI menu.
+  expect(placement.backgroundRemoveMenu).toBe('AI');
+  expect(placement.commandLabels).toEqual([
+    'Image:Enlarge 2x (resample)',
+    'Image:Enlarge 4x (resample)'
+  ]);
+});
