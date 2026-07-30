@@ -1,0 +1,8 @@
+# Keep text files LF in the repository so editors on any platform produce
+# reviewable diffs instead of whole-file line-ending churn.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
