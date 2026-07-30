@@ -23,6 +23,9 @@ All notable changes to Openshop will be documented in this file.
 - Upgrade Fabric.js from 5.3.1 to 7.4.0 with legacy project adapters and browser regressions for stored-SVG injection through object IDs and gradient colors
 - Refresh the contributor lock to PostCSS 8.5.25 and Nano ID 3.3.16, synchronize its root version, and add a release test command that fails on high or critical npm advisories
 - Enforce a 256 MB aggregate PSD decoded-pixel budget in addition to existing file, canvas, layer-count, nesting, and per-layer bounds
+- Replace 380 executable HTML event attributes with opaque actions backed by a frozen 288-entry listener registry
+- Remove `unsafe-inline` and unrestricted `unsafe-eval` from script policy, hash both reviewed inline scripts, and add a release check that rejects stale hashes or handler regressions
+- SHA-384 verify every lazy PSD, Photon, GIF, Transformers.js, and ONNX runtime payload before executing it; poisoned responses fail closed and are not retained
 
 ## [v0.19.1] - 2026-07-01
 

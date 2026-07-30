@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-UR1LdDnfhkPuRoY34LjD8ucVLYe94XW5NHKZw1+VmHY=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -1670,143 +1670,143 @@ body{
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
         <div class="menu-dropdown">
-            <div class="dd-item" onclick="OS.newImage()">New</div>
-            <div class="dd-item" onclick="OS.openFile()">Open Image</div>
-            <div class="dd-item" onclick="OS.openPSD()">Open PSD</div>
+            <div class="dd-item" data-os-click="click-001">New</div>
+            <div class="dd-item" data-os-click="click-002">Open Image</div>
+            <div class="dd-item" data-os-click="click-003">Open PSD</div>
             <div class="dd-sep"></div>
             <div class="dd-sub dd-item">Export As
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.saveFile('png')">PNG</div>
-                    <div class="dd-item" onclick="OS.saveFile('jpeg')">JPEG</div>
-                    <div class="dd-item" onclick="OS.saveFile('webp')">WebP</div>
-                    <div class="dd-item" onclick="OS.saveFile('svg')">SVG</div>
-                    <div class="dd-item" onclick="OS.exportPDF()">PDF</div>
-                    <div class="dd-item" onclick="OS.exportPSD()">PSD (Photoshop)</div>
+                    <div class="dd-item" data-os-click="click-004">PNG</div>
+                    <div class="dd-item" data-os-click="click-005">JPEG</div>
+                    <div class="dd-item" data-os-click="click-006">WebP</div>
+                    <div class="dd-item" data-os-click="click-007">SVG</div>
+                    <div class="dd-item" data-os-click="click-008">PDF</div>
+                    <div class="dd-item" data-os-click="click-009">PSD (Photoshop)</div>
                 </div>
             </div>
-            <div class="dd-item" onclick="OS.batchExport()">Batch Export...</div>
-            <div class="dd-item" onclick="OS.showExportSettings()">Export Settings...</div>
+            <div class="dd-item" data-os-click="click-010">Batch Export...</div>
+            <div class="dd-item" data-os-click="click-011">Export Settings...</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.showTemplates()">Templates...</div>
+            <div class="dd-item" data-os-click="click-012">Templates...</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.saveProject()">Save Project (JSON)</div>
-            <div class="dd-item" onclick="OS.openProject()">Open Project</div>
+            <div class="dd-item" data-os-click="click-013">Save Project (.openshop)</div>
+            <div class="dd-item" data-os-click="click-014">Open Project</div>
         </div>
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">Edit
         <div class="menu-dropdown">
-            <div class="dd-item" onclick="OS.undo()">Undo</div>
-            <div class="dd-item" onclick="OS.redo()">Redo</div>
+            <div class="dd-item" data-os-click="click-015">Undo</div>
+            <div class="dd-item" data-os-click="click-016">Redo</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.copyObj()">Copy</div>
-            <div class="dd-item" onclick="OS.pasteObj()">Paste</div>
-            <div class="dd-item" onclick="OS.duplicateSelected()">Duplicate</div>
+            <div class="dd-item" data-os-click="click-017">Copy</div>
+            <div class="dd-item" data-os-click="click-018">Paste</div>
+            <div class="dd-item" data-os-click="click-019">Duplicate</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.deleteSelected()">Delete</div>
+            <div class="dd-item" data-os-click="click-020">Delete</div>
             <div class="dd-sep"></div>
             <div class="dd-sub dd-item">Transform
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.showFreeTransform()">Free Transform...</div>
-                    <div class="dd-item" onclick="OS.skewObject()">Skew...</div>
-                    <div class="dd-item" onclick="OS.showPerspective()">Perspective...</div>
-                    <div class="dd-item" onclick="OS.showLiquify()">Liquify...</div>
-                    <div class="dd-item" onclick="OS.showCurvedText()">Curved Text...</div>
+                    <div class="dd-item" data-os-click="click-021">Free Transform...</div>
+                    <div class="dd-item" data-os-click="click-022">Skew...</div>
+                    <div class="dd-item" data-os-click="click-023">Perspective...</div>
+                    <div class="dd-item" data-os-click="click-024">Liquify...</div>
+                    <div class="dd-item" data-os-click="click-025">Curved Text...</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.showPreferences()">Preferences...</div>
+            <div class="dd-item" data-os-click="click-026">Preferences...</div>
         </div>
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">Select
         <div class="menu-dropdown">
-            <div class="dd-item" onclick="OS.selectAll()">All<span class="dd-shortcut">Ctrl+A</span></div>
-            <div class="dd-item" onclick="OS.deselectAll()">Deselect<span class="dd-shortcut">Ctrl+D</span></div>
-            <div class="dd-item" onclick="OS.reselectSelection()">Reselect<span class="dd-shortcut">Ctrl+Shift+D</span></div>
-            <div class="dd-item" onclick="OS.invertSelection()">Inverse<span class="dd-shortcut">Ctrl+Shift+I</span></div>
+            <div class="dd-item" data-os-click="click-027">All<span class="dd-shortcut">Ctrl+A</span></div>
+            <div class="dd-item" data-os-click="click-028">Deselect<span class="dd-shortcut">Ctrl+D</span></div>
+            <div class="dd-item" data-os-click="click-029">Reselect<span class="dd-shortcut">Ctrl+Shift+D</span></div>
+            <div class="dd-item" data-os-click="click-030">Inverse<span class="dd-shortcut">Ctrl+Shift+I</span></div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.showColorRange()">Color Range...</div>
+            <div class="dd-item" data-os-click="click-031">Color Range...</div>
             <div class="dd-sep"></div>
             <div class="dd-sub dd-item">Modify
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.modifySelection('expand')">Expand...</div>
-                    <div class="dd-item" onclick="OS.modifySelection('contract')">Contract...</div>
-                    <div class="dd-item" onclick="OS.modifySelection('feather')">Feather...</div>
-                    <div class="dd-item" onclick="OS.modifySelection('border')">Border...</div>
-                    <div class="dd-item" onclick="OS.modifySelection('smooth')">Smooth</div>
+                    <div class="dd-item" data-os-click="click-032">Expand...</div>
+                    <div class="dd-item" data-os-click="click-033">Contract...</div>
+                    <div class="dd-item" data-os-click="click-034">Feather...</div>
+                    <div class="dd-item" data-os-click="click-035">Border...</div>
+                    <div class="dd-item" data-os-click="click-036">Smooth</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.growSelection()">Grow</div>
-            <div class="dd-item" onclick="OS.similarSelection()">Similar</div>
+            <div class="dd-item" data-os-click="click-037">Grow</div>
+            <div class="dd-item" data-os-click="click-038">Similar</div>
         </div>
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">Image
         <div class="menu-dropdown">
-            <div class="dd-item" onclick="OS.showResize()">Resize Canvas</div>
+            <div class="dd-item" data-os-click="click-039">Resize Canvas</div>
             <div class="dd-sep"></div>
             <div class="dd-sub dd-item">Image Rotation
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.flipH()">Flip Horizontal</div>
-                    <div class="dd-item" onclick="OS.flipV()">Flip Vertical</div>
+                    <div class="dd-item" data-os-click="click-040">Flip Horizontal</div>
+                    <div class="dd-item" data-os-click="click-041">Flip Vertical</div>
                     <div class="dd-sep"></div>
-                    <div class="dd-item" onclick="OS.rotateObj(90)">Rotate 90&deg; CW</div>
-                    <div class="dd-item" onclick="OS.rotateObj(-90)">Rotate 90&deg; CCW</div>
+                    <div class="dd-item" data-os-click="click-042">Rotate 90&deg; CW</div>
+                    <div class="dd-item" data-os-click="click-043">Rotate 90&deg; CCW</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Canvas Rotation
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.canvasRotate(90)">Rotate 90&deg; CW</div>
-                    <div class="dd-item" onclick="OS.canvasRotate(-90)">Rotate 90&deg; CCW</div>
+                    <div class="dd-item" data-os-click="click-044">Rotate 90&deg; CW</div>
+                    <div class="dd-item" data-os-click="click-045">Rotate 90&deg; CCW</div>
                     <div class="dd-sep"></div>
-                    <div class="dd-item" onclick="OS.canvasFlip('h')">Flip Horizontal</div>
-                    <div class="dd-item" onclick="OS.canvasFlip('v')">Flip Vertical</div>
+                    <div class="dd-item" data-os-click="click-046">Flip Horizontal</div>
+                    <div class="dd-item" data-os-click="click-047">Flip Vertical</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.flattenImage()">Flatten Image</div>
+            <div class="dd-item" data-os-click="click-048">Flatten Image</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.addWatermark()">Add Watermark...</div>
-            <div class="dd-item" onclick="OS.autoEnhance()">Auto Enhance</div>
-            <div class="dd-item" onclick="OS.showImageInfo()">Image Info...</div>
-            <div class="dd-item" onclick="OS.showBeforeAfter()">Before / After Compare</div>
+            <div class="dd-item" data-os-click="click-049">Add Watermark...</div>
+            <div class="dd-item" data-os-click="click-050">Auto Enhance</div>
+            <div class="dd-item" data-os-click="click-051">Image Info...</div>
+            <div class="dd-item" data-os-click="click-052">Before / After Compare</div>
         </div>
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">Filter
         <div class="menu-dropdown">
             <div class="dd-sub dd-item">Blur
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.showFilterDialog('Blur')">Blur...</div>
-                    <div class="dd-item" onclick="OS.applyFilterDirect('Sharpen')">Sharpen</div>
-                    <div class="dd-item" onclick="OS.filterUnsharpMask()">Unsharp Mask...</div>
-                    <div class="dd-item" onclick="OS.filterTiltShift()">Tilt Shift...</div>
+                    <div class="dd-item" data-os-click="click-053">Blur...</div>
+                    <div class="dd-item" data-os-click="click-054">Sharpen</div>
+                    <div class="dd-item" data-os-click="click-055">Unsharp Mask...</div>
+                    <div class="dd-item" data-os-click="click-056">Tilt Shift...</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Distort
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.showFilterDialog('Pixelate')">Pixelate...</div>
-                    <div class="dd-item" onclick="OS.filterChromaticAberration()">Chromatic Aberration...</div>
-                    <div class="dd-item" onclick="OS.adjLensCorrection()">Lens Correction...</div>
+                    <div class="dd-item" data-os-click="click-057">Pixelate...</div>
+                    <div class="dd-item" data-os-click="click-058">Chromatic Aberration...</div>
+                    <div class="dd-item" data-os-click="click-059">Lens Correction...</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Noise
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.showFilterDialog('Noise')">Add Noise...</div>
-                    <div class="dd-item" onclick="OS.filterNoiseGen()">Generate Noise...</div>
+                    <div class="dd-item" data-os-click="click-060">Add Noise...</div>
+                    <div class="dd-item" data-os-click="click-061">Generate Noise...</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Stylize
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.applyFilterDirect('Emboss')">Emboss</div>
-                    <div class="dd-item" onclick="OS.filterEdgeDetect()">Edge Detect</div>
-                    <div class="dd-item" onclick="OS.filterSolarize()">Solarize</div>
+                    <div class="dd-item" data-os-click="click-062">Emboss</div>
+                    <div class="dd-item" data-os-click="click-063">Edge Detect</div>
+                    <div class="dd-item" data-os-click="click-064">Solarize</div>
                     <div class="dd-sep"></div>
-                    <div class="dd-item" onclick="OS.filterOilPaint()">Oil Paint...</div>
-                    <div class="dd-item" onclick="OS.filterHalftone()">Halftone...</div>
-                    <div class="dd-item" onclick="OS.filterDuotone()">Duotone...</div>
-                    <div class="dd-item" onclick="OS.filterVignette()">Vignette...</div>
+                    <div class="dd-item" data-os-click="click-065">Oil Paint...</div>
+                    <div class="dd-item" data-os-click="click-066">Halftone...</div>
+                    <div class="dd-item" data-os-click="click-067">Duotone...</div>
+                    <div class="dd-item" data-os-click="click-068">Vignette...</div>
                     <div class="dd-sep"></div>
-                    <div class="dd-item" onclick="OS.filterPosterize()">Posterize...</div>
-                    <div class="dd-item" onclick="OS.filterThreshold()">Threshold...</div>
+                    <div class="dd-item" data-os-click="click-069">Posterize...</div>
+                    <div class="dd-item" data-os-click="click-070">Threshold...</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
@@ -1814,61 +1814,61 @@ body{
                 <div class="menu-dropdown">
                     <div class="dd-sub dd-item">Tone
                         <div class="menu-dropdown">
-                            <div class="dd-item" onclick="OS.showFilterDialog('Brightness')">Brightness...</div>
-                            <div class="dd-item" onclick="OS.showFilterDialog('Contrast')">Contrast...</div>
-                            <div class="dd-item" onclick="OS.showFilterDialog('Gamma')">Gamma...</div>
+                            <div class="dd-item" data-os-click="click-071">Brightness...</div>
+                            <div class="dd-item" data-os-click="click-072">Contrast...</div>
+                            <div class="dd-item" data-os-click="click-073">Gamma...</div>
                             <div class="dd-sep"></div>
-                            <div class="dd-item" onclick="OS.adjExposure()">Exposure...</div>
-                            <div class="dd-item" onclick="OS.adjShadowsHighlights()">Shadows / Highlights...</div>
+                            <div class="dd-item" data-os-click="click-074">Exposure...</div>
+                            <div class="dd-item" data-os-click="click-075">Shadows / Highlights...</div>
                             <div class="dd-sep"></div>
-                            <div class="dd-item" onclick="OS.showCurvesDialog()">Curves...</div>
-                            <div class="dd-item" onclick="OS.showLevelsDialog()">Levels...</div>
+                            <div class="dd-item" data-os-click="click-076">Curves...</div>
+                            <div class="dd-item" data-os-click="click-077">Levels...</div>
                         </div>
                     </div>
                     <div class="dd-sub dd-item">Color
                         <div class="menu-dropdown">
-                            <div class="dd-item" onclick="OS.showFilterDialog('Saturation')">Saturation...</div>
-                            <div class="dd-item" onclick="OS.showFilterDialog('HueRotation')">Hue Rotation...</div>
-                            <div class="dd-item" onclick="OS.adjVibrance()">Vibrance...</div>
+                            <div class="dd-item" data-os-click="click-078">Saturation...</div>
+                            <div class="dd-item" data-os-click="click-079">Hue Rotation...</div>
+                            <div class="dd-item" data-os-click="click-080">Vibrance...</div>
                             <div class="dd-sep"></div>
-                            <div class="dd-item" onclick="OS.showColorBalanceDialog()">Color Balance...</div>
-                            <div class="dd-item" onclick="OS.showChannelMixer()">Channel Mixer...</div>
-                            <div class="dd-item" onclick="OS.showGradientMap()">Gradient Map...</div>
+                            <div class="dd-item" data-os-click="click-081">Color Balance...</div>
+                            <div class="dd-item" data-os-click="click-082">Channel Mixer...</div>
+                            <div class="dd-item" data-os-click="click-083">Gradient Map...</div>
                             <div class="dd-sep"></div>
-                            <div class="dd-item" onclick="OS.adjPhotoFilter()">Photo Filter...</div>
-                            <div class="dd-item" onclick="OS.adjSelectiveColor()">Selective Color...</div>
-                            <div class="dd-item" onclick="OS.adjReplaceColor()">Replace Color...</div>
+                            <div class="dd-item" data-os-click="click-084">Photo Filter...</div>
+                            <div class="dd-item" data-os-click="click-085">Selective Color...</div>
+                            <div class="dd-item" data-os-click="click-086">Replace Color...</div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Color Mode
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.applyFilterDirect('Grayscale')">Grayscale</div>
-                    <div class="dd-item" onclick="OS.applyFilterDirect('Invert')">Invert</div>
-                    <div class="dd-item" onclick="OS.applyFilterDirect('Sepia')">Sepia</div>
-                    <div class="dd-item" onclick="OS.applyFilterDirect('BlackWhite')">Black & White</div>
+                    <div class="dd-item" data-os-click="click-087">Grayscale</div>
+                    <div class="dd-item" data-os-click="click-088">Invert</div>
+                    <div class="dd-item" data-os-click="click-089">Sepia</div>
+                    <div class="dd-item" data-os-click="click-090">Black & White</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.autoLevels()">Auto Levels</div>
-            <div class="dd-item" onclick="OS.autoContrast()">Auto Contrast</div>
-            <div class="dd-item" onclick="OS.showPresets()">Photo Presets...</div>
+            <div class="dd-item" data-os-click="click-091">Auto Levels</div>
+            <div class="dd-item" data-os-click="click-092">Auto Contrast</div>
+            <div class="dd-item" data-os-click="click-093">Photo Presets...</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.aiRemoveBackground()">Remove Background (AI)</div>
+            <div class="dd-item" data-os-click="click-094">Remove Background (AI)</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.clearFilters()">Clear All Filters</div>
+            <div class="dd-item" data-os-click="click-095">Clear All Filters</div>
         </div>
     </div>
     <div class="menu-item" role="menuitem" aria-haspopup="true">AI
         <div class="menu-dropdown">
-            <div class="dd-item" onclick="OS.aiRemoveBackground()">Background Remove</div>
-            <div class="dd-item" onclick="OS.aiDepthMap()">Depth Map</div>
-            <div class="dd-item" onclick="OS.aiObjectDetect()">Detect Objects</div>
-            <div class="dd-item" onclick="OS.activateSegmentSelect()">Segment Select</div>
+            <div class="dd-item" data-os-click="click-094">Background Remove</div>
+            <div class="dd-item" data-os-click="click-096">Depth Map</div>
+            <div class="dd-item" data-os-click="click-097">Detect Objects</div>
+            <div class="dd-item" data-os-click="click-098">Segment Select</div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.aiUpscale(2)">Smart Upscale 2x</div>
-            <div class="dd-item" onclick="OS.aiUpscale(4)">Smart Upscale 4x</div>
+            <div class="dd-item" data-os-click="click-099">Smart Upscale 2x</div>
+            <div class="dd-item" data-os-click="click-100">Smart Upscale 4x</div>
             <div class="dd-sep"></div>
             <div class="dd-note" role="note" aria-hidden="true">Models download on first use — no API keys needed</div>
         </div>
@@ -1877,142 +1877,142 @@ body{
         <div class="menu-dropdown">
             <div class="dd-sub dd-item">Zoom
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.zoomIn()">Zoom In</div>
-                    <div class="dd-item" onclick="OS.zoomOut()">Zoom Out</div>
-                    <div class="dd-item" onclick="OS.zoomFit()">Fit to Screen</div>
-                    <div class="dd-item" onclick="OS.zoomReset()">100%</div>
+                    <div class="dd-item" data-os-click="click-101">Zoom In</div>
+                    <div class="dd-item" data-os-click="click-102">Zoom Out</div>
+                    <div class="dd-item" data-os-click="click-103">Fit to Screen</div>
+                    <div class="dd-item" data-os-click="click-104">100%</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Show
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.toggleGrid()">Toggle Grid</div>
-                    <div class="dd-item" onclick="OS.toggleRulers()">Toggle Rulers</div>
-                    <div class="dd-item" onclick="OS.toggleSnap()">Toggle Snap to Grid</div>
+                    <div class="dd-item" data-os-click="click-105">Toggle Grid</div>
+                    <div class="dd-item" data-os-click="click-106">Toggle Rulers</div>
+                    <div class="dd-item" data-os-click="click-107">Toggle Snap to Grid</div>
                     <div class="dd-sub dd-item">Symmetry
                         <div class="menu-dropdown">
-                            <div class="dd-item" onclick="OS.setSymmetryMode('off')">Off</div>
-                            <div class="dd-item" onclick="OS.setSymmetryMode('horizontal')">Horizontal</div>
-                            <div class="dd-item" onclick="OS.setSymmetryMode('vertical')">Vertical</div>
-                            <div class="dd-item" onclick="OS.setSymmetryMode('both')">Both Axes</div>
-                            <div class="dd-item" onclick="OS.setSymmetryMode('radial')">Radial (6-fold)</div>
+                            <div class="dd-item" data-os-click="click-108">Off</div>
+                            <div class="dd-item" data-os-click="click-109">Horizontal</div>
+                            <div class="dd-item" data-os-click="click-110">Vertical</div>
+                            <div class="dd-item" data-os-click="click-111">Both Axes</div>
+                            <div class="dd-item" data-os-click="click-112">Radial (6-fold)</div>
                         </div>
                     </div>
-                    <div class="dd-item" onclick="OS.togglePixelGrid()">Pixel Grid</div>
+                    <div class="dd-item" data-os-click="click-113">Pixel Grid</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Guides
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.addGuide('horizontal')">Add Horizontal Guide</div>
-                    <div class="dd-item" onclick="OS.addGuide('vertical')">Add Vertical Guide</div>
+                    <div class="dd-item" data-os-click="click-114">Add Horizontal Guide</div>
+                    <div class="dd-item" data-os-click="click-115">Add Vertical Guide</div>
                     <div class="dd-sep"></div>
-                    <div class="dd-item" onclick="OS.clearGuides()">Clear All Guides</div>
+                    <div class="dd-item" data-os-click="click-116">Clear All Guides</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
             <div class="dd-sub dd-item">Panels
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.toggleTimeline()">Animation Timeline</div>
-                    <div class="dd-item" onclick="OS.toggleMacroPanel()">Actions / Macros</div>
+                    <div class="dd-item" data-os-click="click-117">Animation Timeline</div>
+                    <div class="dd-item" data-os-click="click-118">Actions / Macros</div>
                 </div>
             </div>
             <div class="dd-sub dd-item">Theme
                 <div class="menu-dropdown">
-                    <div class="dd-item" onclick="OS.setTheme('default')">Dark (Default)</div>
-                    <div class="dd-item" onclick="OS.setTheme('midnight')">Midnight</div>
-                    <div class="dd-item" onclick="OS.setTheme('oled')">OLED Black</div>
+                    <div class="dd-item" data-os-click="click-119">Dark (Default)</div>
+                    <div class="dd-item" data-os-click="click-120">Midnight</div>
+                    <div class="dd-item" data-os-click="click-121">OLED Black</div>
                 </div>
             </div>
             <div class="dd-sep"></div>
-            <div class="dd-item" onclick="OS.toggleFullscreen()">Fullscreen Mode</div>
-            <div class="dd-item" onclick="OS.showShortcuts()">Keyboard Shortcuts...</div>
+            <div class="dd-item" data-os-click="click-122">Fullscreen Mode</div>
+            <div class="dd-item" data-os-click="click-123">Keyboard Shortcuts...</div>
         </div>
     </div>
     <div class="local-badge" title="Your files and edits stay on this device" aria-label="Local-only editing">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l7 3v5c0 4.7-2.8 8-7 10-4.2-2-7-5.3-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
         <span>Local only</span>
     </div>
-    <button class="mobile-panel-toggle" onclick="document.getElementById('panels').classList.toggle('mobile-open')" aria-label="Toggle panels" style="display:none">&#9776;</button>
+    <button class="mobile-panel-toggle" data-os-click="click-124" aria-label="Toggle panels" style="display:none">&#9776;</button>
 </div>
 
 <!-- ===== LEFT TOOLBAR ===== -->
 <div id="toolbar" role="toolbar" aria-label="Drawing tools">
-    <button class="tool-btn active" data-tool="select" data-tip="Move / Select (V)" onclick="OS.setTool('select')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg></button>
+    <button class="tool-btn active" data-tool="select" data-tip="Move / Select (V)" data-os-click="click-125"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg></button>
     <div class="tool-sep"></div>
     <div class="tool-group" data-group="selection">
-        <button class="tool-btn" data-tool="marquee-rect" data-tip="Rect Marquee (M)" onclick="OS.setTool('marquee-rect')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
+        <button class="tool-btn" data-tool="marquee-rect" data-tip="Rect Marquee (M)" data-os-click="click-126"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="marquee-rect" data-tip="Rect Marquee" onclick="OS.flyoutSelect(this,'selection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
-            <button class="tool-btn" data-tool="marquee-ellipse" data-tip="Ellipse Marquee" onclick="OS.flyoutSelect(this,'selection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><ellipse cx="12" cy="12" rx="10" ry="7"/></svg></button>
-            <button class="tool-btn" data-tool="lasso" data-tip="Lasso" onclick="OS.flyoutSelect(this,'selection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12c0 4.97 4.03 9 9 9s9-4.03 9-9-4.03-9-9-9c-3.04 0-5.73 1.51-7.36 3.82"/><circle cx="7" cy="20" r="2" fill="currentColor"/></svg></button>
-            <button class="tool-btn" data-tool="magic-wand" data-tip="Magic Wand (W)" onclick="OS.flyoutSelect(this,'selection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4V2m0 14v-2M8 9H6m14 0h-2m-2.8-3.8L14 4m-4.2 9.8L8.6 15m9.8-1.2L19.6 15M9.8 5.2L8.6 4"/><path d="M2 22l10-10"/><circle cx="15" cy="9" r="1" fill="currentColor"/></svg></button>
-            <button class="tool-btn" data-tool="ai-segment" data-tip="AI Segment Select" onclick="OS.flyoutSelect(this,'selection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7" stroke-dasharray="3 2"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/><path d="M8.5 13.5c2.2 1.7 5.8 1.2 7-1.5" stroke-linecap="round"/></svg></button>
+            <button class="tool-btn" data-tool="marquee-rect" data-tip="Rect Marquee" data-os-click="click-127"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
+            <button class="tool-btn" data-tool="marquee-ellipse" data-tip="Ellipse Marquee" data-os-click="click-127"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><ellipse cx="12" cy="12" rx="10" ry="7"/></svg></button>
+            <button class="tool-btn" data-tool="lasso" data-tip="Lasso" data-os-click="click-127"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12c0 4.97 4.03 9 9 9s9-4.03 9-9-4.03-9-9-9c-3.04 0-5.73 1.51-7.36 3.82"/><circle cx="7" cy="20" r="2" fill="currentColor"/></svg></button>
+            <button class="tool-btn" data-tool="magic-wand" data-tip="Magic Wand (W)" data-os-click="click-127"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4V2m0 14v-2M8 9H6m14 0h-2m-2.8-3.8L14 4m-4.2 9.8L8.6 15m9.8-1.2L19.6 15M9.8 5.2L8.6 4"/><path d="M2 22l10-10"/><circle cx="15" cy="9" r="1" fill="currentColor"/></svg></button>
+            <button class="tool-btn" data-tool="ai-segment" data-tip="AI Segment Select" data-os-click="click-127"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7" stroke-dasharray="3 2"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/><path d="M8.5 13.5c2.2 1.7 5.8 1.2 7-1.5" stroke-linecap="round"/></svg></button>
         </div>
     </div>
     <div class="tool-group" data-group="crop">
-        <button class="tool-btn" data-tool="crop" data-tip="Crop (C)" onclick="OS.setTool('crop')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg></button>
+        <button class="tool-btn" data-tool="crop" data-tip="Crop (C)" data-os-click="click-128"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="crop" data-tip="Crop" onclick="OS.flyoutSelect(this,'crop')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg></button>
-            <button class="tool-btn" data-tool="measure" data-tip="Measure" onclick="OS.flyoutSelect(this,'crop')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20L20 2"/><path d="M6 16l2-2"/><path d="M10 12l2-2"/><path d="M14 8l2-2"/><circle cx="2" cy="20" r="1.5" fill="currentColor"/><circle cx="20" cy="2" r="1.5" fill="currentColor"/></svg></button>
+            <button class="tool-btn" data-tool="crop" data-tip="Crop" data-os-click="click-129"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg></button>
+            <button class="tool-btn" data-tool="measure" data-tip="Measure" data-os-click="click-129"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20L20 2"/><path d="M6 16l2-2"/><path d="M10 12l2-2"/><path d="M14 8l2-2"/><circle cx="2" cy="20" r="1.5" fill="currentColor"/><circle cx="20" cy="2" r="1.5" fill="currentColor"/></svg></button>
         </div>
     </div>
     <div class="tool-sep"></div>
     <div class="tool-group" data-group="brush">
-        <button class="tool-btn" data-tool="brush" data-tip="Brush (B)" onclick="OS.setTool('brush')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>
+        <button class="tool-btn" data-tool="brush" data-tip="Brush (B)" data-os-click="click-130"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="brush" data-tip="Brush" onclick="OS.flyoutSelect(this,'brush')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>
-            <button class="tool-btn" data-tool="pencil" data-tip="Pencil" onclick="OS.flyoutSelect(this,'brush')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
-            <button class="tool-btn" data-tool="spray" data-tip="Spray / Airbrush" onclick="OS.flyoutSelect(this,'brush')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="12" width="10" height="10" rx="2"/><path d="M11 12V8"/><circle cx="7" cy="4" r="1" fill="currentColor"/><circle cx="11" cy="3" r="1" fill="currentColor"/><circle cx="15" cy="4" r="1" fill="currentColor"/></svg></button>
+            <button class="tool-btn" data-tool="brush" data-tip="Brush" data-os-click="click-131"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>
+            <button class="tool-btn" data-tool="pencil" data-tip="Pencil" data-os-click="click-131"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+            <button class="tool-btn" data-tool="spray" data-tip="Spray / Airbrush" data-os-click="click-131"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="12" width="10" height="10" rx="2"/><path d="M11 12V8"/><circle cx="7" cy="4" r="1" fill="currentColor"/><circle cx="11" cy="3" r="1" fill="currentColor"/><circle cx="15" cy="4" r="1" fill="currentColor"/></svg></button>
         </div>
     </div>
-    <button class="tool-btn" data-tool="eraser" data-tip="Eraser (E)" onclick="OS.setTool('eraser')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l9-9 8 8-4 4z"/><path d="M6 11l8 8"/></svg></button>
+    <button class="tool-btn" data-tool="eraser" data-tip="Eraser (E)" data-os-click="click-132"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l9-9 8 8-4 4z"/><path d="M6 11l8 8"/></svg></button>
     <div class="tool-group" data-group="stamp">
-        <button class="tool-btn" data-tool="clone" data-tip="Clone Stamp (S)" onclick="OS.setTool('clone')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/></svg></button>
+        <button class="tool-btn" data-tool="clone" data-tip="Clone Stamp (S)" data-os-click="click-133"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="clone" data-tip="Clone Stamp" onclick="OS.flyoutSelect(this,'stamp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/></svg></button>
-            <button class="tool-btn" data-tool="healing" data-tip="Healing Brush" onclick="OS.flyoutSelect(this,'stamp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2l4 4-12 12H6v-4L18 2z"/><path d="M14 6l4 4"/><line x1="2" y1="22" x2="22" y2="22"/></svg></button>
+            <button class="tool-btn" data-tool="clone" data-tip="Clone Stamp" data-os-click="click-134"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-10-10h4m12 0h4"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/></svg></button>
+            <button class="tool-btn" data-tool="healing" data-tip="Healing Brush" data-os-click="click-134"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2l4 4-12 12H6v-4L18 2z"/><path d="M14 6l4 4"/><line x1="2" y1="22" x2="22" y2="22"/></svg></button>
         </div>
     </div>
     <div class="tool-group" data-group="retouch">
-        <button class="tool-btn" data-tool="dodge" data-tip="Dodge" onclick="OS.setTool('dodge')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3 12h9" fill="currentColor" stroke="none" opacity=".3"/></svg></button>
+        <button class="tool-btn" data-tool="dodge" data-tip="Dodge" data-os-click="click-135"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3 12h9" fill="currentColor" stroke="none" opacity=".3"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="dodge" data-tip="Dodge (Lighten)" onclick="OS.flyoutSelect(this,'retouch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3 12h9" fill="currentColor" stroke="none" opacity=".3"/></svg></button>
-            <button class="tool-btn" data-tool="burn" data-tip="Burn (Darken)" onclick="OS.flyoutSelect(this,'retouch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 12h9" fill="currentColor" stroke="none" opacity=".5"/></svg></button>
-            <button class="tool-btn" data-tool="sponge" data-tip="Sponge" onclick="OS.flyoutSelect(this,'retouch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
-            <button class="tool-btn" data-tool="smudge" data-tip="Smudge" onclick="OS.flyoutSelect(this,'retouch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 4l-4 4c-2 2-5 2-8 5s-1 6 2 7 5-1 7-4 3-6 5-8l4-4z"/></svg></button>
+            <button class="tool-btn" data-tool="dodge" data-tip="Dodge (Lighten)" data-os-click="click-136"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3 12h9" fill="currentColor" stroke="none" opacity=".3"/></svg></button>
+            <button class="tool-btn" data-tool="burn" data-tip="Burn (Darken)" data-os-click="click-136"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 12h9" fill="currentColor" stroke="none" opacity=".5"/></svg></button>
+            <button class="tool-btn" data-tool="sponge" data-tip="Sponge" data-os-click="click-136"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+            <button class="tool-btn" data-tool="smudge" data-tip="Smudge" data-os-click="click-136"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 4l-4 4c-2 2-5 2-8 5s-1 6 2 7 5-1 7-4 3-6 5-8l4-4z"/></svg></button>
         </div>
     </div>
     <div class="tool-sep"></div>
     <div class="tool-group" data-group="shape">
-        <button class="tool-btn" data-tool="rect" data-tip="Rectangle (R)" onclick="OS.setTool('rect')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></button>
+        <button class="tool-btn" data-tool="rect" data-tip="Rectangle (R)" data-os-click="click-137"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="rect" data-tip="Rectangle" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></button>
-            <button class="tool-btn" data-tool="circle" data-tip="Ellipse" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg></button>
-            <button class="tool-btn" data-tool="triangle" data-tip="Triangle" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3L2 21h20L12 3z"/></svg></button>
-            <button class="tool-btn" data-tool="line" data-tip="Line (L)" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/></svg></button>
-            <button class="tool-btn" data-tool="arrow" data-tip="Arrow" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/></svg></button>
-            <button class="tool-btn" data-tool="polygon" data-tip="Polygon" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8.5 6.2-3.2 10H6.7L3.5 8.2z"/></svg></button>
-            <button class="tool-btn" data-tool="star" data-tip="Star" onclick="OS.flyoutSelect(this,'shape')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg></button>
+            <button class="tool-btn" data-tool="rect" data-tip="Rectangle" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></button>
+            <button class="tool-btn" data-tool="circle" data-tip="Ellipse" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg></button>
+            <button class="tool-btn" data-tool="triangle" data-tip="Triangle" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3L2 21h20L12 3z"/></svg></button>
+            <button class="tool-btn" data-tool="line" data-tip="Line (L)" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/></svg></button>
+            <button class="tool-btn" data-tool="arrow" data-tip="Arrow" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/></svg></button>
+            <button class="tool-btn" data-tool="polygon" data-tip="Polygon" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8.5 6.2-3.2 10H6.7L3.5 8.2z"/></svg></button>
+            <button class="tool-btn" data-tool="star" data-tip="Star" data-os-click="click-138"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg></button>
         </div>
     </div>
-    <button class="tool-btn" data-tool="pen" data-tip="Pen (P)" onclick="OS.setTool('pen')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg></button>
-    <button class="tool-btn" data-tool="text" data-tip="Text (T)" onclick="OS.setTool('text')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9.5" y1="20" x2="14.5" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+    <button class="tool-btn" data-tool="pen" data-tip="Pen (P)" data-os-click="click-139"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg></button>
+    <button class="tool-btn" data-tool="text" data-tip="Text (T)" data-os-click="click-140"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9.5" y1="20" x2="14.5" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
     <div class="tool-sep"></div>
     <div class="tool-group" data-group="fillgrp">
-        <button class="tool-btn" data-tool="gradient" data-tip="Gradient (G)" onclick="OS.setTool('gradient')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="21" x2="21" y2="3" stroke-width="1" opacity=".4"/></svg></button>
+        <button class="tool-btn" data-tool="gradient" data-tip="Gradient (G)" data-os-click="click-141"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="21" x2="21" y2="3" stroke-width="1" opacity=".4"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="gradient" data-tip="Gradient" onclick="OS.flyoutSelect(this,'fillgrp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="21" x2="21" y2="3" stroke-width="1" opacity=".4"/></svg></button>
-            <button class="tool-btn" data-tool="fill" data-tip="Fill Bucket" onclick="OS.flyoutSelect(this,'fillgrp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-3l9-9 3 3-9 9H3z"/><path d="M14 6l3-3 3 3"/><path d="M20 12.5a1.5 1.5 0 0 0 3 0c0-1.5-3-4-3-4s-3 2.5-3 4a1.5 1.5 0 0 0 3 0z"/></svg></button>
-            <button class="tool-btn" data-tool="pattern" data-tip="Pattern Fill" onclick="OS.flyoutSelect(this,'fillgrp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+            <button class="tool-btn" data-tool="gradient" data-tip="Gradient" data-os-click="click-142"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="21" x2="21" y2="3" stroke-width="1" opacity=".4"/></svg></button>
+            <button class="tool-btn" data-tool="fill" data-tip="Fill Bucket" data-os-click="click-142"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-3l9-9 3 3-9 9H3z"/><path d="M14 6l3-3 3 3"/><path d="M20 12.5a1.5 1.5 0 0 0 3 0c0-1.5-3-4-3-4s-3 2.5-3 4a1.5 1.5 0 0 0 3 0z"/></svg></button>
+            <button class="tool-btn" data-tool="pattern" data-tip="Pattern Fill" data-os-click="click-142"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
         </div>
     </div>
-    <button class="tool-btn" data-tool="eyedropper" data-tip="Eyedropper (I)" onclick="OS.setTool('eyedropper')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-3l9-9 3 3-9 9H3z"/><path d="M14.5 6.5l3-3a2.12 2.12 0 0 1 3 3l-3 3"/></svg></button>
-    <button class="tool-btn" data-tool="note" data-tip="Sticky Note" onclick="OS.setTool('note')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3z"/><polyline points="14 3 14 8 21 8"/></svg></button>
+    <button class="tool-btn" data-tool="eyedropper" data-tip="Eyedropper (I)" data-os-click="click-143"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-3l9-9 3 3-9 9H3z"/><path d="M14.5 6.5l3-3a2.12 2.12 0 0 1 3 3l-3 3"/></svg></button>
+    <button class="tool-btn" data-tool="note" data-tip="Sticky Note" data-os-click="click-144"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3z"/><polyline points="14 3 14 8 21 8"/></svg></button>
     <div class="tool-sep"></div>
     <div class="tool-group" data-group="nav">
-        <button class="tool-btn" data-tool="pan" data-tip="Pan (H)" onclick="OS.setTool('pan')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
+        <button class="tool-btn" data-tool="pan" data-tip="Pan (H)" data-os-click="click-145"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
         <div class="tool-flyout">
-            <button class="tool-btn" data-tool="pan" data-tip="Pan" onclick="OS.flyoutSelect(this,'nav')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
-            <button class="tool-btn" data-tool="zoom" data-tip="Zoom (Z)" onclick="OS.flyoutSelect(this,'nav')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
+            <button class="tool-btn" data-tool="pan" data-tip="Pan" data-os-click="click-146"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
+            <button class="tool-btn" data-tool="zoom" data-tip="Zoom (Z)" data-os-click="click-146"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
         </div>
     </div>
 </div>
@@ -2021,73 +2021,73 @@ body{
 <div id="tool-options" role="region" aria-label="Tool options">
     <div class="opt-group" id="opt-brush" style="display:none">
         <label>Preset</label>
-        <select id="brush-preset" onchange="OS.setBrushPreset(this.value)">
+        <select id="brush-preset" data-os-change="change-001">
             <option value="round">Round</option><option value="soft">Soft Round</option><option value="flat">Flat/Calligraphy</option>
             <option value="scatter">Scatter</option><option value="pixel">Pixel</option>
         </select>
         <label>Size</label>
-        <input type="range" id="brush-size" min="1" max="150" value="8" oninput="OS.setBrushSize(this.value)">
+        <input type="range" id="brush-size" min="1" max="150" value="8" data-os-input="input-001">
         <span class="opt-val" id="brush-size-val">8</span>
         <label>Opacity</label>
-        <input type="range" id="brush-opacity" min="1" max="100" value="100" oninput="OS.setBrushOpacity(this.value)">
+        <input type="range" id="brush-opacity" min="1" max="100" value="100" data-os-input="input-002">
         <span class="opt-val" id="brush-opacity-val">100</span>
     </div>
     <div class="opt-group" id="opt-spray" style="display:none">
         <label>Density</label>
-        <input type="range" id="spray-density" min="5" max="100" value="30" oninput="OS.state.sprayDensity=+this.value">
+        <input type="range" id="spray-density" min="5" max="100" value="30" data-os-input="input-003">
         <label>Width</label>
-        <input type="range" id="spray-width" min="5" max="150" value="30" oninput="OS.state.sprayWidth=+this.value">
+        <input type="range" id="spray-width" min="5" max="150" value="30" data-os-input="input-004">
     </div>
     <div class="opt-group" id="opt-shape" style="display:none">
-        <label>Fill</label><input type="color" id="shape-fill" value="#6c8cff" onchange="OS.state.shapeFill=this.value">
-        <label>Stroke</label><input type="color" id="shape-stroke" value="#ffffff" onchange="OS.state.shapeStroke=this.value">
-        <label>Width</label><input type="number" id="shape-stroke-w" value="2" min="0" max="50" onchange="OS.state.shapeStrokeWidth=+this.value">
-        <label><input type="checkbox" id="shape-filled" checked onchange="OS.state.shapeFilled=this.checked"> Filled</label>
-        <label>Dash</label><select id="shape-dash" onchange="OS.state.shapeDash=this.value" style="font-size:11px">
+        <label>Fill</label><input type="color" id="shape-fill" value="#6c8cff" data-os-change="change-002">
+        <label>Stroke</label><input type="color" id="shape-stroke" value="#ffffff" data-os-change="change-003">
+        <label>Width</label><input type="number" id="shape-stroke-w" value="2" min="0" max="50" data-os-change="change-004">
+        <label><input type="checkbox" id="shape-filled" checked data-os-change="change-005"> Filled</label>
+        <label>Dash</label><select id="shape-dash" data-os-change="change-006" style="font-size:11px">
             <option value="">Solid</option><option value="8,4">Dashed</option><option value="2,4">Dotted</option><option value="12,4,2,4">Dash-Dot</option><option value="16,8">Long Dash</option>
         </select>
     </div>
     <div class="opt-group" id="opt-text" style="display:none">
         <label>Font</label>
-        <select id="text-font" onchange="OS.state.textFont=this.value">
+        <select id="text-font" data-os-change="change-007">
             <option>DM Sans</option><option>Arial</option><option>Georgia</option><option>Courier New</option>
             <option>Verdana</option><option>Times New Roman</option><option>JetBrains Mono</option><option>Impact</option>
         </select>
-        <label>Size</label><input type="number" id="text-size" value="24" min="8" max="200" onchange="OS.state.textSize=+this.value">
-        <label>Color</label><input type="color" id="text-color" value="#ffffff" onchange="OS.state.textColor=this.value">
-        <label><input type="checkbox" id="text-bold" onchange="OS.state.textBold=this.checked"> B</label>
-        <label><input type="checkbox" id="text-italic" onchange="OS.state.textItalic=this.checked"> I</label>
+        <label>Size</label><input type="number" id="text-size" value="24" min="8" max="200" data-os-change="change-008">
+        <label>Color</label><input type="color" id="text-color" value="#ffffff" data-os-change="change-009">
+        <label><input type="checkbox" id="text-bold" data-os-change="change-010"> B</label>
+        <label><input type="checkbox" id="text-italic" data-os-change="change-011"> I</label>
     </div>
     <div class="opt-group" id="opt-gradient" style="display:none">
-        <label>From</label><input type="color" id="grad-from" value="#6c8cff" onchange="OS.state.gradFrom=this.value">
-        <label>To</label><input type="color" id="grad-to" value="#000000" onchange="OS.state.gradTo=this.value">
+        <label>From</label><input type="color" id="grad-from" value="#6c8cff" data-os-change="change-012">
+        <label>To</label><input type="color" id="grad-to" value="#000000" data-os-change="change-013">
         <label>Type</label>
-        <select id="grad-type" onchange="OS.state.gradType=this.value"><option value="linear">Linear</option><option value="radial">Radial</option></select>
+        <select id="grad-type" data-os-change="change-014"><option value="linear">Linear</option><option value="radial">Radial</option></select>
     </div>
     <div class="opt-group" id="opt-pattern" style="display:none">
         <label>Pattern</label>
-        <select id="pattern-type" onchange="OS.state.patternType=this.value">
+        <select id="pattern-type" data-os-change="change-015">
             <option value="checkerboard">Checkerboard</option><option value="stripes">Stripes</option><option value="dots">Dots</option>
             <option value="grid">Grid</option><option value="diagonal">Diagonal</option><option value="crosshatch">Crosshatch</option>
         </select>
-        <label>Scale</label><input type="range" id="pattern-scale" min="5" max="80" value="20" oninput="OS.state.patternScale=+this.value">
-        <label>Color</label><input type="color" id="pattern-color" value="#6c8cff" onchange="OS.state.patternColor=this.value">
+        <label>Scale</label><input type="range" id="pattern-scale" min="5" max="80" value="20" data-os-input="input-005">
+        <label>Color</label><input type="color" id="pattern-color" value="#6c8cff" data-os-change="change-016">
     </div>
     <div class="opt-group" id="opt-clone" style="display:none">
         <label>Size</label>
-        <input type="range" id="clone-size" min="5" max="100" value="20" oninput="OS.state.cloneSize=+this.value;document.getElementById('clone-size-val').textContent=this.value">
+        <input type="range" id="clone-size" min="5" max="100" value="20" data-os-input="input-006">
         <span class="opt-val" id="clone-size-val">20</span>
         <span style="color:var(--text-muted);font-size:11px;margin-left:8px">Alt+Click source</span>
     </div>
     <div class="opt-group" id="opt-wand" style="display:none">
         <label>Tolerance</label>
-        <input type="range" id="wand-tolerance" min="0" max="100" value="32" oninput="OS.state.wandTolerance=+this.value;document.getElementById('wand-tol-val').textContent=this.value">
+        <input type="range" id="wand-tolerance" min="0" max="100" value="32" data-os-input="input-007">
         <span class="opt-val" id="wand-tol-val">32</span>
-        <label><input type="checkbox" id="wand-contiguous" checked onchange="OS.state.wandContiguous=this.checked"> Contiguous</label>
+        <label><input type="checkbox" id="wand-contiguous" checked data-os-change="change-017"> Contiguous</label>
     </div>
     <div class="opt-group" id="opt-crop" style="display:none">
         <label>Ratio</label>
-        <select id="crop-ratio" onchange="OS.setCropRatio(this.value)" style="font-size:11px">
+        <select id="crop-ratio" data-os-change="change-018" style="font-size:11px">
             <option value="free">Freeform</option>
             <option value="original">Original Ratio</option>
             <option value="1:1">1:1 (Square)</option>
@@ -2099,59 +2099,59 @@ body{
             <option value="2:3">2:3</option>
             <option value="custom">Custom...</option>
         </select>
-        <label>W</label><input id="crop-w" type="number" style="width:52px;height:22px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:3px;color:var(--text-primary);font-size:11px;text-align:center" onchange="OS.setCropSize()">
+        <label>W</label><input id="crop-w" type="number" style="width:52px;height:22px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:3px;color:var(--text-primary);font-size:11px;text-align:center" data-os-change="change-019">
         <label>x</label>
-        <label>H</label><input id="crop-h" type="number" style="width:52px;height:22px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:3px;color:var(--text-primary);font-size:11px;text-align:center" onchange="OS.setCropSize()">
-        <button class="btn" style="padding:3px 8px;font-size:11px" onclick="OS.swapCropRatio()" title="Swap W/H">&#8646;</button>
+        <label>H</label><input id="crop-h" type="number" style="width:52px;height:22px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:3px;color:var(--text-primary);font-size:11px;text-align:center" data-os-change="change-019">
+        <button class="btn" style="padding:3px 8px;font-size:11px" data-os-click="click-147" title="Swap W/H">&#8646;</button>
         <span style="flex:1"></span>
-        <button class="btn btn-primary" style="padding:3px 14px;font-size:11px" onclick="OS.applyCrop()">Apply</button>
-        <button class="btn" style="padding:3px 10px;font-size:11px" onclick="OS.cancelCrop()">Cancel</button>
+        <button class="btn btn-primary" style="padding:3px 14px;font-size:11px" data-os-click="click-148">Apply</button>
+        <button class="btn" style="padding:3px 10px;font-size:11px" data-os-click="click-149">Cancel</button>
     </div>
     <div class="opt-group" id="opt-marquee" style="display:none"><span style="color:var(--text-muted);font-size:11px">Drag to create selection.</span></div>
     <div class="opt-group" id="opt-lasso" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click to add points. Double-click to close selection.</span></div>
     <div class="opt-group" id="opt-ai-segment" style="display:none"><span style="color:var(--text-muted);font-size:11px">Segment Select</span><span style="color:var(--accent);font-size:11px;margin-left:8px">Panoptic model loads on demand</span></div>
     <div class="opt-group" id="opt-pen" style="display:none">
         <span style="color:var(--text-muted);font-size:11px">Click to add anchor points. Double-click to finish path.</span>
-        <label>Stroke</label><input type="color" id="pen-stroke" value="#ffffff" onchange="OS.state.penStroke=this.value">
-        <label>Width</label><input type="number" id="pen-width" value="2" min="1" max="20" style="width:45px" onchange="OS.state.penWidth=+this.value">
-        <label><input type="checkbox" id="pen-filled" onchange="OS.state.penFilled=this.checked"> Fill</label>
+        <label>Stroke</label><input type="color" id="pen-stroke" value="#ffffff" data-os-change="change-020">
+        <label>Width</label><input type="number" id="pen-width" value="2" min="1" max="20" style="width:45px" data-os-change="change-021">
+        <label><input type="checkbox" id="pen-filled" data-os-change="change-022"> Fill</label>
     </div>
     <div class="opt-group" id="opt-polygon" style="display:none">
-        <label>Sides</label><input type="number" id="poly-sides" value="5" min="3" max="20" style="width:45px" onchange="OS.state.polySides=+this.value">
-        <label>Fill</label><input type="color" id="poly-fill" value="#6c8cff" onchange="OS.state.shapeFill=this.value">
-        <label>Stroke</label><input type="color" id="poly-stroke" value="#ffffff" onchange="OS.state.shapeStroke=this.value">
-        <label><input type="checkbox" id="poly-filled" checked onchange="OS.state.shapeFilled=this.checked"> Filled</label>
+        <label>Sides</label><input type="number" id="poly-sides" value="5" min="3" max="20" style="width:45px" data-os-change="change-023">
+        <label>Fill</label><input type="color" id="poly-fill" value="#6c8cff" data-os-change="change-002">
+        <label>Stroke</label><input type="color" id="poly-stroke" value="#ffffff" data-os-change="change-003">
+        <label><input type="checkbox" id="poly-filled" checked data-os-change="change-005"> Filled</label>
     </div>
     <div class="opt-group" id="opt-star" style="display:none">
-        <label>Points</label><input type="number" id="star-points" value="5" min="3" max="20" style="width:45px" onchange="OS.state.starPoints=+this.value">
-        <label>Inner R</label><input type="range" id="star-inner" min="10" max="90" value="40" oninput="OS.state.starInner=+this.value">
-        <label>Fill</label><input type="color" id="star-fill" value="#6c8cff" onchange="OS.state.shapeFill=this.value">
-        <label><input type="checkbox" id="star-filled" checked onchange="OS.state.shapeFilled=this.checked"> Filled</label>
+        <label>Points</label><input type="number" id="star-points" value="5" min="3" max="20" style="width:45px" data-os-change="change-024">
+        <label>Inner R</label><input type="range" id="star-inner" min="10" max="90" value="40" data-os-input="input-008">
+        <label>Fill</label><input type="color" id="star-fill" value="#6c8cff" data-os-change="change-002">
+        <label><input type="checkbox" id="star-filled" checked data-os-change="change-005"> Filled</label>
     </div>
     <div class="opt-group" id="opt-healing" style="display:none">
         <label>Size</label>
-        <input type="range" id="healing-size" min="5" max="80" value="15" oninput="OS.state.healingSize=+this.value;document.getElementById('heal-size-val').textContent=this.value">
+        <input type="range" id="healing-size" min="5" max="80" value="15" data-os-input="input-009">
         <span class="opt-val" id="heal-size-val">15</span>
         <span style="color:var(--text-muted);font-size:11px;margin-left:8px">Click to heal blemish</span>
     </div>
     <div class="opt-group" id="opt-dodge" style="display:none">
-        <label>Size</label><input type="range" id="dodge-size" min="5" max="100" value="20" oninput="OS.state.dodgeSize=+this.value">
-        <label>Exposure</label><input type="range" id="dodge-exp" min="5" max="100" value="30" oninput="OS.state.dodgeExposure=+this.value">
-        <label>Range</label><select id="dodge-range" onchange="OS.state.dodgeRange=this.value" style="font-size:11px"><option value="midtones">Midtones</option><option value="shadows">Shadows</option><option value="highlights">Highlights</option></select>
+        <label>Size</label><input type="range" id="dodge-size" min="5" max="100" value="20" data-os-input="input-010">
+        <label>Exposure</label><input type="range" id="dodge-exp" min="5" max="100" value="30" data-os-input="input-011">
+        <label>Range</label><select id="dodge-range" data-os-change="change-025" style="font-size:11px"><option value="midtones">Midtones</option><option value="shadows">Shadows</option><option value="highlights">Highlights</option></select>
     </div>
     <div class="opt-group" id="opt-burn" style="display:none">
-        <label>Size</label><input type="range" id="burn-size" min="5" max="100" value="20" oninput="OS.state.burnSize=+this.value">
-        <label>Exposure</label><input type="range" id="burn-exp" min="5" max="100" value="30" oninput="OS.state.burnExposure=+this.value">
-        <label>Range</label><select id="burn-range" onchange="OS.state.burnRange=this.value" style="font-size:11px"><option value="midtones">Midtones</option><option value="shadows">Shadows</option><option value="highlights">Highlights</option></select>
+        <label>Size</label><input type="range" id="burn-size" min="5" max="100" value="20" data-os-input="input-012">
+        <label>Exposure</label><input type="range" id="burn-exp" min="5" max="100" value="30" data-os-input="input-013">
+        <label>Range</label><select id="burn-range" data-os-change="change-026" style="font-size:11px"><option value="midtones">Midtones</option><option value="shadows">Shadows</option><option value="highlights">Highlights</option></select>
     </div>
     <div class="opt-group" id="opt-sponge" style="display:none">
-        <label>Size</label><input type="range" id="sponge-size" min="5" max="100" value="20" oninput="OS.state.spongeSize=+this.value">
-        <label>Flow</label><input type="range" id="sponge-flow" min="5" max="100" value="50" oninput="OS.state.spongeFlow=+this.value">
-        <label>Mode</label><select id="sponge-mode" onchange="OS.state.spongeMode=this.value" style="font-size:11px"><option value="saturate">Saturate</option><option value="desaturate">Desaturate</option></select>
+        <label>Size</label><input type="range" id="sponge-size" min="5" max="100" value="20" data-os-input="input-014">
+        <label>Flow</label><input type="range" id="sponge-flow" min="5" max="100" value="50" data-os-input="input-015">
+        <label>Mode</label><select id="sponge-mode" data-os-change="change-027" style="font-size:11px"><option value="saturate">Saturate</option><option value="desaturate">Desaturate</option></select>
     </div>
     <div class="opt-group" id="opt-smudge" style="display:none">
-        <label>Size</label><input type="range" id="smudge-size" min="3" max="80" value="15" oninput="OS.state.smudgeSize=+this.value">
-        <label>Strength</label><input type="range" id="smudge-str" min="10" max="100" value="60" oninput="OS.state.smudgeStrength=+this.value">
+        <label>Size</label><input type="range" id="smudge-size" min="3" max="80" value="15" data-os-input="input-016">
+        <label>Strength</label><input type="range" id="smudge-str" min="10" max="100" value="60" data-os-input="input-017">
     </div>
     <div class="opt-group" id="opt-measure" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click two points to measure distance.</span><span id="measure-result" style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></div>
     <div class="opt-group" id="opt-select" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click to select. Drag to move. Handles to resize/rotate.</span></div>
@@ -2207,10 +2207,10 @@ body{
                 <span class="launch-shortcut">Ctrl + K</span>
             </div>
             <div class="welcome-actions">
-                <button class="btn btn-primary" onclick="OS.dismissWelcome();OS.newImage()"><span class="action-icon">+</span><span>New Canvas<small>Start from a blank document</small></span></button>
-                <button class="btn" onclick="OS.dismissWelcome();OS.openFile()"><span class="action-icon">&#8593;</span><span>Open Image<small>PNG, JPEG, WebP, SVG</small></span></button>
-                <button class="btn" onclick="OS.dismissWelcome();OS.openPSD()"><span class="action-icon">Ps</span><span>Open PSD<small>Preserve editable layers</small></span></button>
-                <button class="btn welcome-skip" aria-label="Enter Studio" onclick="OS.dismissWelcome()"><span class="action-icon">&#8594;</span><span>Enter Studio<small>Use the current canvas</small></span></button>
+                <button class="btn btn-primary" data-os-click="click-150"><span class="action-icon">+</span><span>New Canvas<small>Start from a blank document</small></span></button>
+                <button class="btn" data-os-click="click-151"><span class="action-icon">&#8593;</span><span>Open Image<small>PNG, JPEG, WebP, SVG</small></span></button>
+                <button class="btn" data-os-click="click-152"><span class="action-icon">Ps</span><span>Open PSD<small>Preserve editable layers</small></span></button>
+                <button class="btn welcome-skip" aria-label="Enter Studio" data-os-click="click-153"><span class="action-icon">&#8594;</span><span>Enter Studio<small>Use the current canvas</small></span></button>
             </div>
             <div class="template-section">
                 <div class="section-heading"><h3>Start from Template</h3><span>Choose a preset canvas</span></div>
@@ -2226,22 +2226,22 @@ body{
     <!-- ===== TAB GROUP 1: Layers / Properties / Align ===== -->
     <div class="panel-tab-group ptg-flex">
         <div class="panel-tabs">
-            <button class="panel-tab active" onclick="OS.switchTab(this,'ptg1','ptg1-layers')">Layers</button>
-            <button class="panel-tab" onclick="OS.switchTab(this,'ptg1','ptg1-props')">Properties</button>
-            <button class="panel-tab" onclick="OS.switchTab(this,'ptg1','ptg1-align')">Align</button>
+            <button class="panel-tab active" data-os-click="click-154">Layers</button>
+            <button class="panel-tab" data-os-click="click-155">Properties</button>
+            <button class="panel-tab" data-os-click="click-156">Align</button>
         </div>
         <!-- Layers Tab -->
         <div class="panel-tab-content active" id="ptg1-layers" data-group="ptg1">
             <div class="ptc-inner">
                 <div class="panel-actions" style="display:flex;gap:2px;margin-bottom:6px;justify-content:flex-end">
-                    <button class="panel-action" title="New Layer" onclick="OS.addLayer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
-                    <button class="panel-action" title="Duplicate" onclick="OS.duplicateLayer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-                    <button class="panel-action" title="Merge Down" onclick="OS.mergeDown()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 18L12 22L16 18"/><path d="M12 2V22"/></svg></button>
-                    <button class="panel-action" title="Delete" onclick="OS.deleteLayer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-                    <button class="panel-action" title="Mask" onclick="OS.canvas.getActiveObject()&&OS.canvas.getActiveObject()._hasMask?OS.removeLayerMask():OS.addLayerMask()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="5"/></svg></button>
+                    <button class="panel-action" title="New Layer" data-os-click="click-157"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+                    <button class="panel-action" title="Duplicate" data-os-click="click-158"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                    <button class="panel-action" title="Merge Down" data-os-click="click-159"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 18L12 22L16 18"/><path d="M12 2V22"/></svg></button>
+                    <button class="panel-action" title="Delete" data-os-click="click-160"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button class="panel-action" title="Mask" data-os-click="click-161"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="5"/></svg></button>
                 </div>
                 <div class="blend-row">
-                    <select id="layer-blend" onchange="OS.setLayerBlend(this.value)">
+                    <select id="layer-blend" data-os-change="change-028">
                         <option value="source-over">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option>
                         <option value="overlay">Overlay</option><option value="darken">Darken</option><option value="lighten">Lighten</option>
                         <option value="color-dodge">Color Dodge</option><option value="color-burn">Color Burn</option>
@@ -2253,7 +2253,7 @@ body{
                 </div>
                 <div class="opt-group" style="margin-bottom:6px">
                     <label>Opacity</label>
-                    <input type="range" id="layer-opacity" min="0" max="100" value="100" oninput="OS.setLayerOpacity(this.value,false)" onchange="OS.commitLayerOpacity()">
+                    <input type="range" id="layer-opacity" min="0" max="100" value="100" data-os-input="input-018" data-os-change="change-029">
                     <span class="opt-val" id="layer-opacity-val">100</span>
                 </div>
                 <div id="layers-list" role="listbox" aria-label="Layers"></div>
@@ -2264,49 +2264,49 @@ body{
         <div class="panel-tab-content" id="ptg1-props" data-group="ptg1">
             <div class="ptc-inner">
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Adjustments</div>
-                <div class="adj-row"><label>Brightness</label><input type="range" id="adj-bright" min="-100" max="100" value="0" oninput="OS.liveAdjust()"><span class="adj-val" id="adj-bright-val">0</span></div>
-                <div class="adj-row"><label>Contrast</label><input type="range" id="adj-contrast" min="-100" max="100" value="0" oninput="OS.liveAdjust()"><span class="adj-val" id="adj-contrast-val">0</span></div>
-                <div class="adj-row"><label>Saturation</label><input type="range" id="adj-sat" min="-100" max="100" value="0" oninput="OS.liveAdjust()"><span class="adj-val" id="adj-sat-val">0</span></div>
-                <div class="adj-row"><label>Hue</label><input type="range" id="adj-hue" min="-180" max="180" value="0" oninput="OS.liveAdjust()"><span class="adj-val" id="adj-hue-val">0</span></div>
-                <div class="adj-row"><label>Blur</label><input type="range" id="adj-blur" min="0" max="100" value="0" oninput="OS.liveAdjust()"><span class="adj-val" id="adj-blur-val">0</span></div>
+                <div class="adj-row"><label>Brightness</label><input type="range" id="adj-bright" min="-100" max="100" value="0" data-os-input="input-019"><span class="adj-val" id="adj-bright-val">0</span></div>
+                <div class="adj-row"><label>Contrast</label><input type="range" id="adj-contrast" min="-100" max="100" value="0" data-os-input="input-019"><span class="adj-val" id="adj-contrast-val">0</span></div>
+                <div class="adj-row"><label>Saturation</label><input type="range" id="adj-sat" min="-100" max="100" value="0" data-os-input="input-019"><span class="adj-val" id="adj-sat-val">0</span></div>
+                <div class="adj-row"><label>Hue</label><input type="range" id="adj-hue" min="-180" max="180" value="0" data-os-input="input-019"><span class="adj-val" id="adj-hue-val">0</span></div>
+                <div class="adj-row"><label>Blur</label><input type="range" id="adj-blur" min="0" max="100" value="0" data-os-input="input-019"><span class="adj-val" id="adj-blur-val">0</span></div>
                 <div class="adj-btns">
-                    <button class="btn btn-primary" onclick="OS.applyAdjustments()">Apply</button>
-                    <button class="btn" onclick="OS.resetAdjustments()">Reset</button>
+                    <button class="btn btn-primary" data-os-click="click-162">Apply</button>
+                    <button class="btn" data-os-click="click-163">Reset</button>
                 </div>
                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Text Effects</div>
-                <div class="text-fx-row"><label>Shadow X</label><input type="range" id="tfx-sx" min="-20" max="20" value="2" oninput="OS.applyTextFx()"></div>
-                <div class="text-fx-row"><label>Shadow Y</label><input type="range" id="tfx-sy" min="-20" max="20" value="2" oninput="OS.applyTextFx()"></div>
-                <div class="text-fx-row"><label>Blur</label><input type="range" id="tfx-blur" min="0" max="30" value="4" oninput="OS.applyTextFx()"></div>
-                <div class="text-fx-row"><label>Color</label><input type="color" id="tfx-color" value="#000000" onchange="OS.applyTextFx()"></div>
-                <div class="text-fx-row"><label>Outline W</label><input type="range" id="tfx-stroke" min="0" max="10" value="0" oninput="OS.applyTextFx()"></div>
-                <div class="text-fx-row"><label>Outline C</label><input type="color" id="tfx-stroke-color" value="#000000" onchange="OS.applyTextFx()"></div>
+                <div class="text-fx-row"><label>Shadow X</label><input type="range" id="tfx-sx" min="-20" max="20" value="2" data-os-input="input-020"></div>
+                <div class="text-fx-row"><label>Shadow Y</label><input type="range" id="tfx-sy" min="-20" max="20" value="2" data-os-input="input-020"></div>
+                <div class="text-fx-row"><label>Blur</label><input type="range" id="tfx-blur" min="0" max="30" value="4" data-os-input="input-020"></div>
+                <div class="text-fx-row"><label>Color</label><input type="color" id="tfx-color" value="#000000" data-os-change="change-030"></div>
+                <div class="text-fx-row"><label>Outline W</label><input type="range" id="tfx-stroke" min="0" max="10" value="0" data-os-input="input-020"></div>
+                <div class="text-fx-row"><label>Outline C</label><input type="color" id="tfx-stroke-color" value="#000000" data-os-change="change-030"></div>
                 <div class="adj-btns">
-                    <button class="btn btn-primary" onclick="OS.applyTextFx()" style="padding:3px 10px;font-size:11px">Apply</button>
-                    <button class="btn" onclick="OS.clearTextFx()" style="padding:3px 10px;font-size:11px">Clear</button>
+                    <button class="btn btn-primary" data-os-click="click-164" style="padding:3px 10px;font-size:11px">Apply</button>
+                    <button class="btn" data-os-click="click-165" style="padding:3px 10px;font-size:11px">Clear</button>
                 </div>
                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Layer Styles</div>
                 <details class="style-section" open>
                     <summary>Drop Shadow</summary>
-                    <div class="layer-style-row"><label>Offset X</label><input type="range" id="ls-ds-x" min="-30" max="30" value="3" oninput="OS.previewLayerStyle()"></div>
-                    <div class="layer-style-row"><label>Offset Y</label><input type="range" id="ls-ds-y" min="-30" max="30" value="3" oninput="OS.previewLayerStyle()"></div>
-                    <div class="layer-style-row"><label>Blur</label><input type="range" id="ls-ds-blur" min="0" max="40" value="6" oninput="OS.previewLayerStyle()"></div>
-                    <div class="layer-style-row"><label>Color</label><input type="color" id="ls-ds-color" value="#000000" onchange="OS.previewLayerStyle()"></div>
+                    <div class="layer-style-row"><label>Offset X</label><input type="range" id="ls-ds-x" min="-30" max="30" value="3" data-os-input="input-021"></div>
+                    <div class="layer-style-row"><label>Offset Y</label><input type="range" id="ls-ds-y" min="-30" max="30" value="3" data-os-input="input-021"></div>
+                    <div class="layer-style-row"><label>Blur</label><input type="range" id="ls-ds-blur" min="0" max="40" value="6" data-os-input="input-021"></div>
+                    <div class="layer-style-row"><label>Color</label><input type="color" id="ls-ds-color" value="#000000" data-os-change="change-031"></div>
                 </details>
                 <details class="style-section">
                     <summary>Outer Glow</summary>
-                    <div class="layer-style-row"><label>Size</label><input type="range" id="ls-og-size" min="0" max="40" value="0" oninput="OS.previewLayerStyle()"></div>
-                    <div class="layer-style-row"><label>Color</label><input type="color" id="ls-og-color" value="#6c8cff" onchange="OS.previewLayerStyle()"></div>
+                    <div class="layer-style-row"><label>Size</label><input type="range" id="ls-og-size" min="0" max="40" value="0" data-os-input="input-021"></div>
+                    <div class="layer-style-row"><label>Color</label><input type="color" id="ls-og-color" value="#6c8cff" data-os-change="change-031"></div>
                 </details>
                 <details class="style-section">
                     <summary>Stroke</summary>
-                    <div class="layer-style-row"><label>Width</label><input type="range" id="ls-st-w" min="0" max="20" value="0" oninput="OS.previewLayerStyle()"></div>
-                    <div class="layer-style-row"><label>Color</label><input type="color" id="ls-st-color" value="#ffffff" onchange="OS.previewLayerStyle()"></div>
+                    <div class="layer-style-row"><label>Width</label><input type="range" id="ls-st-w" min="0" max="20" value="0" data-os-input="input-021"></div>
+                    <div class="layer-style-row"><label>Color</label><input type="color" id="ls-st-color" value="#ffffff" data-os-change="change-031"></div>
                 </details>
                 <div class="adj-btns">
-                    <button class="btn btn-primary" onclick="OS.applyLayerStyle()" style="padding:3px 10px;font-size:11px">Apply</button>
-                    <button class="btn" onclick="OS.clearLayerStyle()" style="padding:3px 10px;font-size:11px">Clear</button>
+                    <button class="btn btn-primary" data-os-click="click-166" style="padding:3px 10px;font-size:11px">Apply</button>
+                    <button class="btn" data-os-click="click-167" style="padding:3px 10px;font-size:11px">Clear</button>
                 </div>
             </div>
         </div>
@@ -2314,16 +2314,16 @@ body{
         <div class="panel-tab-content" id="ptg1-align" data-group="ptg1">
             <div class="ptc-inner">
                 <div class="align-grid">
-                    <button onclick="OS.alignObjects('left')" title="Align Left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="2" x2="4" y2="22"/><rect x="8" y="4" width="12" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg></button>
-                    <button onclick="OS.alignObjects('centerH')" title="Align Center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><rect x="4" y="4" width="16" height="6" rx="1"/><rect x="6" y="14" width="12" height="6" rx="1"/></svg></button>
-                    <button onclick="OS.alignObjects('right')" title="Align Right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="20" y1="2" x2="20" y2="22"/><rect x="4" y="4" width="12" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg></button>
-                    <button onclick="OS.alignObjects('top')" title="Align Top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="4" x2="22" y2="4"/><rect x="4" y="8" width="6" height="12" rx="1"/><rect x="14" y="8" width="6" height="8" rx="1"/></svg></button>
-                    <button onclick="OS.alignObjects('centerV')" title="Align Middle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12"/><rect x="4" y="4" width="6" height="16" rx="1"/><rect x="14" y="6" width="6" height="12" rx="1"/></svg></button>
-                    <button onclick="OS.alignObjects('bottom')" title="Align Bottom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="20" x2="22" y2="20"/><rect x="4" y="4" width="6" height="12" rx="1"/><rect x="14" y="8" width="6" height="8" rx="1"/></svg></button>
+                    <button data-os-click="click-168" title="Align Left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="2" x2="4" y2="22"/><rect x="8" y="4" width="12" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg></button>
+                    <button data-os-click="click-169" title="Align Center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><rect x="4" y="4" width="16" height="6" rx="1"/><rect x="6" y="14" width="12" height="6" rx="1"/></svg></button>
+                    <button data-os-click="click-170" title="Align Right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="20" y1="2" x2="20" y2="22"/><rect x="4" y="4" width="12" height="6" rx="1"/><rect x="8" y="14" width="8" height="6" rx="1"/></svg></button>
+                    <button data-os-click="click-171" title="Align Top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="4" x2="22" y2="4"/><rect x="4" y="8" width="6" height="12" rx="1"/><rect x="14" y="8" width="6" height="8" rx="1"/></svg></button>
+                    <button data-os-click="click-172" title="Align Middle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12"/><rect x="4" y="4" width="6" height="16" rx="1"/><rect x="14" y="6" width="6" height="12" rx="1"/></svg></button>
+                    <button data-os-click="click-173" title="Align Bottom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="20" x2="22" y2="20"/><rect x="4" y="4" width="6" height="12" rx="1"/><rect x="14" y="8" width="6" height="8" rx="1"/></svg></button>
                 </div>
                 <div class="distribute-row">
-                    <button onclick="OS.distributeObjects('horizontal')">Distribute H</button>
-                    <button onclick="OS.distributeObjects('vertical')">Distribute V</button>
+                    <button data-os-click="click-174">Distribute H</button>
+                    <button data-os-click="click-175">Distribute V</button>
                 </div>
             </div>
         </div>
@@ -2332,8 +2332,8 @@ body{
     <!-- ===== TAB GROUP 2: Color / Palettes ===== -->
     <div class="panel-tab-group">
         <div class="panel-tabs">
-            <button class="panel-tab active" onclick="OS.switchTab(this,'ptg2','ptg2-color')">Color</button>
-            <button class="panel-tab" onclick="OS.switchTab(this,'ptg2','ptg2-palettes')">Swatches</button>
+            <button class="panel-tab active" data-os-click="click-176">Color</button>
+            <button class="panel-tab" data-os-click="click-177">Swatches</button>
         </div>
         <div class="panel-tab-content active" id="ptg2-color" data-group="ptg2">
             <div class="ptc-inner" style="display:flex;flex-direction:column;gap:8px">
@@ -2342,17 +2342,17 @@ body{
                     <div class="color-wheel-cursor" id="cw-cursor" style="left:60px;top:60px"></div>
                 </div>
                 <div class="hsb-sliders">
-                    <div class="hsb-row"><label>H</label><input type="range" id="hsb-h" min="0" max="360" value="0" oninput="OS._hsbToFg()"><span class="hsb-val" id="hsb-h-val">0</span></div>
-                    <div class="hsb-row"><label>S</label><input type="range" id="hsb-s" min="0" max="100" value="0" oninput="OS._hsbToFg()"><span class="hsb-val" id="hsb-s-val">0</span></div>
-                    <div class="hsb-row"><label>B</label><input type="range" id="hsb-b" min="0" max="100" value="100" oninput="OS._hsbToFg()"><span class="hsb-val" id="hsb-b-val">100</span></div>
+                    <div class="hsb-row"><label>H</label><input type="range" id="hsb-h" min="0" max="360" value="0" data-os-input="input-022"><span class="hsb-val" id="hsb-h-val">0</span></div>
+                    <div class="hsb-row"><label>S</label><input type="range" id="hsb-s" min="0" max="100" value="0" data-os-input="input-022"><span class="hsb-val" id="hsb-s-val">0</span></div>
+                    <div class="hsb-row"><label>B</label><input type="range" id="hsb-b" min="0" max="100" value="100" data-os-input="input-022"><span class="hsb-val" id="hsb-b-val">100</span></div>
                 </div>
                 <div class="fg-bg-container">
                     <div class="fg-bg-box">
-                        <div class="color-box fg" id="fg-color" style="background:#fff" onclick="document.getElementById('fg-picker').click()"></div>
-                        <div class="color-box bg" id="bg-color" style="background:#000" onclick="document.getElementById('bg-picker').click()"></div>
-                        <button class="color-swap" onclick="OS.swapColors()">&#8644;</button>
-                        <input type="color" id="fg-picker" value="#ffffff" style="display:none" onchange="OS.setFgColor(this.value)">
-                        <input type="color" id="bg-picker" value="#000000" style="display:none" onchange="OS.setBgColor(this.value)">
+                        <div class="color-box fg" id="fg-color" style="background:#fff" data-os-click="click-178"></div>
+                        <div class="color-box bg" id="bg-color" style="background:#000" data-os-click="click-179"></div>
+                        <button class="color-swap" data-os-click="click-180">&#8644;</button>
+                        <input type="color" id="fg-picker" value="#ffffff" style="display:none" data-os-change="change-032">
+                        <input type="color" id="bg-picker" value="#000000" style="display:none" data-os-change="change-033">
                     </div>
                     <div style="flex:1">
                         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">FG / BG</div>
@@ -2370,10 +2370,10 @@ body{
                 <div class="palette-name">Saved</div>
                 <div class="palette-row" id="palette-saved"></div>
                 <div class="palette-actions">
-                    <button class="btn" onclick="OS.savePaletteColor()" style="padding:2px 8px;font-size:10px">+ Add FG</button>
-                    <button class="btn" onclick="OS.clearPalette()" style="padding:2px 8px;font-size:10px">Clear</button>
-                    <button class="btn" onclick="OS.exportPalette()" style="padding:2px 8px;font-size:10px">Export</button>
-                    <button class="btn" onclick="OS.importPalette()" style="padding:2px 8px;font-size:10px">Import</button>
+                    <button class="btn" data-os-click="click-181" style="padding:2px 8px;font-size:10px">+ Add FG</button>
+                    <button class="btn" data-os-click="click-182" style="padding:2px 8px;font-size:10px">Clear</button>
+                    <button class="btn" data-os-click="click-183" style="padding:2px 8px;font-size:10px">Export</button>
+                    <button class="btn" data-os-click="click-184" style="padding:2px 8px;font-size:10px">Import</button>
                 </div>
             </div>
         </div>
@@ -2382,9 +2382,9 @@ body{
     <!-- ===== TAB GROUP 3: History / Navigator / Info ===== -->
     <div class="panel-tab-group">
         <div class="panel-tabs">
-            <button class="panel-tab active" onclick="OS.switchTab(this,'ptg3','ptg3-history')">History</button>
-            <button class="panel-tab" onclick="OS.switchTab(this,'ptg3','ptg3-nav')">Navigator</button>
-            <button class="panel-tab" onclick="OS.switchTab(this,'ptg3','ptg3-info')">Info</button>
+            <button class="panel-tab active" data-os-click="click-185">History</button>
+            <button class="panel-tab" data-os-click="click-186">Navigator</button>
+            <button class="panel-tab" data-os-click="click-187">Info</button>
         </div>
         <div class="panel-tab-content active" id="ptg3-history" data-group="ptg3">
             <div class="ptc-inner">
@@ -2393,17 +2393,17 @@ body{
         </div>
         <div class="panel-tab-content" id="ptg3-nav" data-group="ptg3">
             <div class="ptc-inner">
-                <div class="minimap-wrap" id="minimap-wrap" onclick="OS._minimapClick(event)">
+                <div class="minimap-wrap" id="minimap-wrap" data-os-click="click-188">
                     <canvas id="minimap-canvas"></canvas>
                     <div class="minimap-viewport" id="minimap-vp"></div>
                 </div>
                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Histogram</div>
                 <div class="histogram-channel-btns">
-                    <button class="active" onclick="OS._histChannel='luminance';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">L</button>
-                    <button onclick="OS._histChannel='red';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">R</button>
-                    <button onclick="OS._histChannel='green';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">G</button>
-                    <button onclick="OS._histChannel='blue';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">B</button>
+                    <button class="active" data-os-click="click-189">L</button>
+                    <button data-os-click="click-190">R</button>
+                    <button data-os-click="click-191">G</button>
+                    <button data-os-click="click-192">B</button>
                 </div>
                 <canvas class="histogram-canvas" id="histogram-canvas" width="240" height="80"></canvas>
                 <div class="histogram-stats"><span id="hist-min">Min: 0</span><span id="hist-mean">Mean: 128</span><span id="hist-max">Max: 255</span></div>
@@ -2427,10 +2427,10 @@ body{
 <!-- ===== STATUS BAR ===== -->
 <div id="statusbar" role="status" aria-label="Status bar" aria-live="polite">
     <span id="canvas-dims">1920 x 1080</span><span class="sep"></span>
-    <span id="zoom-display" onclick="OS.zoomFit()">100%</span><span class="sep"></span>
+    <span id="zoom-display" data-os-click="click-103">100%</span><span class="sep"></span>
     <span id="cursor-pos">X: 0 Y: 0</span><span class="sep"></span>
     <span id="tool-display">Select</span><span style="flex:1"></span>
-    <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" onclick="OS.showOfflineManager()"><i></i><span id="offline-state-label">Network-first</span></button><span class="sep"></span>
+    <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" data-os-click="click-193"><i></i><span id="offline-state-label">Network-first</span></button><span class="sep"></span>
     <span id="object-count">0 objects</span><span class="sep"></span>
     <span class="ready-state" id="persistence-state" data-state="clean"><i></i><span id="persistence-state-label">Clean</span></span>
 </div>
@@ -2444,9 +2444,9 @@ body{
 </div>
 <div id="toast-container" role="alert" aria-live="assertive" aria-atomic="true"></div>
 <!-- ===== COMMAND PALETTE ===== -->
-<div id="cmd-palette" role="dialog" aria-label="Command palette" onclick="if(event.target===this)OS.closeCmdPalette()">
+<div id="cmd-palette" role="dialog" aria-label="Command palette" data-os-click="click-194">
     <div id="cmd-box">
-        <input id="cmd-input" type="text" placeholder="Type a command... (Ctrl+K)" aria-label="Search commands" oninput="OS.filterCommands(this.value)" onkeydown="OS.cmdKeyDown(event)">
+        <input id="cmd-input" type="text" placeholder="Type a command... (Ctrl+K)" aria-label="Search commands" data-os-input="input-023" data-os-keydown="keydown-001">
         <div id="cmd-results"></div>
     </div>
 </div>
@@ -2469,9 +2469,9 @@ body{
         <label>Pressure</label><input type="range" id="liq-pressure" min="10" max="100" value="50">
         <label>Density</label><input type="range" id="liq-density" min="10" max="100" value="50">
         <span style="flex:1"></span>
-        <button class="btn" onclick="OS._liquifyReset()">Reset</button>
-        <button class="btn" onclick="OS.closeLiquify()">Cancel</button>
-        <button class="btn btn-primary" onclick="OS._liquifyApply()">Apply</button>
+        <button class="btn" data-os-click="click-195">Reset</button>
+        <button class="btn" data-os-click="click-196">Cancel</button>
+        <button class="btn btn-primary" data-os-click="click-197">Apply</button>
     </div>
     <div id="liquify-canvas-wrap"><canvas id="liquify-canvas"></canvas></div>
 </div>
@@ -2481,16 +2481,16 @@ body{
         <span>Animation</span>
         <span style="flex:1"></span>
         <div class="timeline-transport">
-            <button onclick="OS.prevFrame()" title="Previous"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg></button>
-            <button id="tl-play" onclick="OS.togglePlay()" title="Play/Pause"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
-            <button onclick="OS.nextFrame()" title="Next"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+            <button data-os-click="click-198" title="Previous"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg></button>
+            <button id="tl-play" data-os-click="click-199" title="Play/Pause"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+            <button data-os-click="click-200" title="Next"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
         </div>
-        <button class="btn" onclick="OS.addFrame()">+ Frame</button>
-        <button class="btn" onclick="OS.dupFrame()">Dup</button>
+        <button class="btn" data-os-click="click-201">+ Frame</button>
+        <button class="btn" data-os-click="click-202">Dup</button>
         <label style="font-size:10px;color:var(--text-muted)">FPS</label>
         <input type="number" id="tl-fps" value="12" min="1" max="60" style="width:40px;height:22px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:3px;color:var(--text-primary);font-size:11px;text-align:center">
-        <button class="btn btn-primary" onclick="OS.exportGIF()">Export GIF</button>
-        <button class="btn" onclick="OS.toggleTimeline()" style="padding:2px 6px">X</button>
+        <button class="btn btn-primary" data-os-click="click-203">Export GIF</button>
+        <button class="btn" data-os-click="click-117" style="padding:2px 6px">X</button>
     </div>
     <div id="timeline-frames"></div>
 </div>
@@ -2502,18 +2502,18 @@ body{
     </div>
     <div class="macro-list" id="macro-list"></div>
     <div class="macro-controls">
-        <button class="btn" id="macro-rec-btn" onclick="OS.toggleMacroRec()">Record</button>
-        <button class="btn" onclick="OS.playMacro()">Play</button>
-        <button class="btn" onclick="OS.clearMacro()">Clear</button>
-        <button class="btn" onclick="OS.saveMacro()">Save</button>
-        <button class="btn" onclick="OS.loadMacro()">Load</button>
+        <button class="btn" id="macro-rec-btn" data-os-click="click-204">Record</button>
+        <button class="btn" data-os-click="click-205">Play</button>
+        <button class="btn" data-os-click="click-206">Clear</button>
+        <button class="btn" data-os-click="click-207">Save</button>
+        <button class="btn" data-os-click="click-208">Load</button>
     </div>
 </div>
 <!-- ===== BEFORE/AFTER COMPARE ===== -->
 <div id="ba-overlay">
     <div id="ba-topbar">
         <span>Before / After Compare</span>
-        <button class="btn" onclick="OS.closeBeforeAfter()">Close</button>
+        <button class="btn" data-os-click="click-209">Close</button>
     </div>
     <div id="ba-container">
         <canvas id="ba-before"></canvas>
@@ -2523,16 +2523,445 @@ body{
         <div class="ba-label after">After</div>
     </div>
 </div>
-<input type="file" id="file-input" accept="image/*" style="display:none" onchange="OS.handleFileOpen(event)">
-<input type="file" id="psd-input" accept=".psd" style="display:none" onchange="OS.handlePSDOpen(event)">
-<input type="file" id="project-input" accept=".openshop,.json,application/vnd.openshop+json,application/json" style="display:none" onchange="OS.handleProjectOpen(event)">
+<input type="file" id="file-input" accept="image/*" style="display:none" data-os-change="change-034">
+<input type="file" id="psd-input" accept=".psd" style="display:none" data-os-change="change-035">
+<input type="file" id="project-input" accept=".openshop,.json,application/vnd.openshop+json,application/json" style="display:none" data-os-change="change-036">
 
 <script>
 // ================================================================
 //  OpenShop v0.20.0 — Core Engine (Phase 10: Pro Toolbar)
 // ================================================================
+// Static controls declare opaque action IDs; executable behavior lives only in this reviewed registry.
+const OS_EVENT_HANDLERS = Object.freeze({
+    click: Object.freeze({
+        "click-001": function(event) { OS.newImage() },
+        "click-002": function(event) { OS.openFile() },
+        "click-003": function(event) { OS.openPSD() },
+        "click-004": function(event) { OS.saveFile('png') },
+        "click-005": function(event) { OS.saveFile('jpeg') },
+        "click-006": function(event) { OS.saveFile('webp') },
+        "click-007": function(event) { OS.saveFile('svg') },
+        "click-008": function(event) { OS.exportPDF() },
+        "click-009": function(event) { OS.exportPSD() },
+        "click-010": function(event) { OS.batchExport() },
+        "click-011": function(event) { OS.showExportSettings() },
+        "click-012": function(event) { OS.showTemplates() },
+        "click-013": function(event) { OS.saveProject() },
+        "click-014": function(event) { OS.openProject() },
+        "click-015": function(event) { OS.undo() },
+        "click-016": function(event) { OS.redo() },
+        "click-017": function(event) { OS.copyObj() },
+        "click-018": function(event) { OS.pasteObj() },
+        "click-019": function(event) { OS.duplicateSelected() },
+        "click-020": function(event) { OS.deleteSelected() },
+        "click-021": function(event) { OS.showFreeTransform() },
+        "click-022": function(event) { OS.skewObject() },
+        "click-023": function(event) { OS.showPerspective() },
+        "click-024": function(event) { OS.showLiquify() },
+        "click-025": function(event) { OS.showCurvedText() },
+        "click-026": function(event) { OS.showPreferences() },
+        "click-027": function(event) { OS.selectAll() },
+        "click-028": function(event) { OS.deselectAll() },
+        "click-029": function(event) { OS.reselectSelection() },
+        "click-030": function(event) { OS.invertSelection() },
+        "click-031": function(event) { OS.showColorRange() },
+        "click-032": function(event) { OS.modifySelection('expand') },
+        "click-033": function(event) { OS.modifySelection('contract') },
+        "click-034": function(event) { OS.modifySelection('feather') },
+        "click-035": function(event) { OS.modifySelection('border') },
+        "click-036": function(event) { OS.modifySelection('smooth') },
+        "click-037": function(event) { OS.growSelection() },
+        "click-038": function(event) { OS.similarSelection() },
+        "click-039": function(event) { OS.showResize() },
+        "click-040": function(event) { OS.flipH() },
+        "click-041": function(event) { OS.flipV() },
+        "click-042": function(event) { OS.rotateObj(90) },
+        "click-043": function(event) { OS.rotateObj(-90) },
+        "click-044": function(event) { OS.canvasRotate(90) },
+        "click-045": function(event) { OS.canvasRotate(-90) },
+        "click-046": function(event) { OS.canvasFlip('h') },
+        "click-047": function(event) { OS.canvasFlip('v') },
+        "click-048": function(event) { OS.flattenImage() },
+        "click-049": function(event) { OS.addWatermark() },
+        "click-050": function(event) { OS.autoEnhance() },
+        "click-051": function(event) { OS.showImageInfo() },
+        "click-052": function(event) { OS.showBeforeAfter() },
+        "click-053": function(event) { OS.showFilterDialog('Blur') },
+        "click-054": function(event) { OS.applyFilterDirect('Sharpen') },
+        "click-055": function(event) { OS.filterUnsharpMask() },
+        "click-056": function(event) { OS.filterTiltShift() },
+        "click-057": function(event) { OS.showFilterDialog('Pixelate') },
+        "click-058": function(event) { OS.filterChromaticAberration() },
+        "click-059": function(event) { OS.adjLensCorrection() },
+        "click-060": function(event) { OS.showFilterDialog('Noise') },
+        "click-061": function(event) { OS.filterNoiseGen() },
+        "click-062": function(event) { OS.applyFilterDirect('Emboss') },
+        "click-063": function(event) { OS.filterEdgeDetect() },
+        "click-064": function(event) { OS.filterSolarize() },
+        "click-065": function(event) { OS.filterOilPaint() },
+        "click-066": function(event) { OS.filterHalftone() },
+        "click-067": function(event) { OS.filterDuotone() },
+        "click-068": function(event) { OS.filterVignette() },
+        "click-069": function(event) { OS.filterPosterize() },
+        "click-070": function(event) { OS.filterThreshold() },
+        "click-071": function(event) { OS.showFilterDialog('Brightness') },
+        "click-072": function(event) { OS.showFilterDialog('Contrast') },
+        "click-073": function(event) { OS.showFilterDialog('Gamma') },
+        "click-074": function(event) { OS.adjExposure() },
+        "click-075": function(event) { OS.adjShadowsHighlights() },
+        "click-076": function(event) { OS.showCurvesDialog() },
+        "click-077": function(event) { OS.showLevelsDialog() },
+        "click-078": function(event) { OS.showFilterDialog('Saturation') },
+        "click-079": function(event) { OS.showFilterDialog('HueRotation') },
+        "click-080": function(event) { OS.adjVibrance() },
+        "click-081": function(event) { OS.showColorBalanceDialog() },
+        "click-082": function(event) { OS.showChannelMixer() },
+        "click-083": function(event) { OS.showGradientMap() },
+        "click-084": function(event) { OS.adjPhotoFilter() },
+        "click-085": function(event) { OS.adjSelectiveColor() },
+        "click-086": function(event) { OS.adjReplaceColor() },
+        "click-087": function(event) { OS.applyFilterDirect('Grayscale') },
+        "click-088": function(event) { OS.applyFilterDirect('Invert') },
+        "click-089": function(event) { OS.applyFilterDirect('Sepia') },
+        "click-090": function(event) { OS.applyFilterDirect('BlackWhite') },
+        "click-091": function(event) { OS.autoLevels() },
+        "click-092": function(event) { OS.autoContrast() },
+        "click-093": function(event) { OS.showPresets() },
+        "click-094": function(event) { OS.aiRemoveBackground() },
+        "click-095": function(event) { OS.clearFilters() },
+        "click-096": function(event) { OS.aiDepthMap() },
+        "click-097": function(event) { OS.aiObjectDetect() },
+        "click-098": function(event) { OS.activateSegmentSelect() },
+        "click-099": function(event) { OS.aiUpscale(2) },
+        "click-100": function(event) { OS.aiUpscale(4) },
+        "click-101": function(event) { OS.zoomIn() },
+        "click-102": function(event) { OS.zoomOut() },
+        "click-103": function(event) { OS.zoomFit() },
+        "click-104": function(event) { OS.zoomReset() },
+        "click-105": function(event) { OS.toggleGrid() },
+        "click-106": function(event) { OS.toggleRulers() },
+        "click-107": function(event) { OS.toggleSnap() },
+        "click-108": function(event) { OS.setSymmetryMode('off') },
+        "click-109": function(event) { OS.setSymmetryMode('horizontal') },
+        "click-110": function(event) { OS.setSymmetryMode('vertical') },
+        "click-111": function(event) { OS.setSymmetryMode('both') },
+        "click-112": function(event) { OS.setSymmetryMode('radial') },
+        "click-113": function(event) { OS.togglePixelGrid() },
+        "click-114": function(event) { OS.addGuide('horizontal') },
+        "click-115": function(event) { OS.addGuide('vertical') },
+        "click-116": function(event) { OS.clearGuides() },
+        "click-117": function(event) { OS.toggleTimeline() },
+        "click-118": function(event) { OS.toggleMacroPanel() },
+        "click-119": function(event) { OS.setTheme('default') },
+        "click-120": function(event) { OS.setTheme('midnight') },
+        "click-121": function(event) { OS.setTheme('oled') },
+        "click-122": function(event) { OS.toggleFullscreen() },
+        "click-123": function(event) { OS.showShortcuts() },
+        "click-124": function(event) { document.getElementById('panels').classList.toggle('mobile-open') },
+        "click-125": function(event) { OS.setTool('select') },
+        "click-126": function(event) { OS.setTool('marquee-rect') },
+        "click-127": function(event) { OS.flyoutSelect(this,'selection') },
+        "click-128": function(event) { OS.setTool('crop') },
+        "click-129": function(event) { OS.flyoutSelect(this,'crop') },
+        "click-130": function(event) { OS.setTool('brush') },
+        "click-131": function(event) { OS.flyoutSelect(this,'brush') },
+        "click-132": function(event) { OS.setTool('eraser') },
+        "click-133": function(event) { OS.setTool('clone') },
+        "click-134": function(event) { OS.flyoutSelect(this,'stamp') },
+        "click-135": function(event) { OS.setTool('dodge') },
+        "click-136": function(event) { OS.flyoutSelect(this,'retouch') },
+        "click-137": function(event) { OS.setTool('rect') },
+        "click-138": function(event) { OS.flyoutSelect(this,'shape') },
+        "click-139": function(event) { OS.setTool('pen') },
+        "click-140": function(event) { OS.setTool('text') },
+        "click-141": function(event) { OS.setTool('gradient') },
+        "click-142": function(event) { OS.flyoutSelect(this,'fillgrp') },
+        "click-143": function(event) { OS.setTool('eyedropper') },
+        "click-144": function(event) { OS.setTool('note') },
+        "click-145": function(event) { OS.setTool('pan') },
+        "click-146": function(event) { OS.flyoutSelect(this,'nav') },
+        "click-147": function(event) { OS.swapCropRatio() },
+        "click-148": function(event) { OS.applyCrop() },
+        "click-149": function(event) { OS.cancelCrop() },
+        "click-150": function(event) { OS.dismissWelcome();OS.newImage() },
+        "click-151": function(event) { OS.dismissWelcome();OS.openFile() },
+        "click-152": function(event) { OS.dismissWelcome();OS.openPSD() },
+        "click-153": function(event) { OS.dismissWelcome() },
+        "click-154": function(event) { OS.switchTab(this,'ptg1','ptg1-layers') },
+        "click-155": function(event) { OS.switchTab(this,'ptg1','ptg1-props') },
+        "click-156": function(event) { OS.switchTab(this,'ptg1','ptg1-align') },
+        "click-157": function(event) { OS.addLayer() },
+        "click-158": function(event) { OS.duplicateLayer() },
+        "click-159": function(event) { OS.mergeDown() },
+        "click-160": function(event) { OS.deleteLayer() },
+        "click-161": function(event) { OS.canvas.getActiveObject()&&OS.canvas.getActiveObject()._hasMask?OS.removeLayerMask():OS.addLayerMask() },
+        "click-162": function(event) { OS.applyAdjustments() },
+        "click-163": function(event) { OS.resetAdjustments() },
+        "click-164": function(event) { OS.applyTextFx() },
+        "click-165": function(event) { OS.clearTextFx() },
+        "click-166": function(event) { OS.applyLayerStyle() },
+        "click-167": function(event) { OS.clearLayerStyle() },
+        "click-168": function(event) { OS.alignObjects('left') },
+        "click-169": function(event) { OS.alignObjects('centerH') },
+        "click-170": function(event) { OS.alignObjects('right') },
+        "click-171": function(event) { OS.alignObjects('top') },
+        "click-172": function(event) { OS.alignObjects('centerV') },
+        "click-173": function(event) { OS.alignObjects('bottom') },
+        "click-174": function(event) { OS.distributeObjects('horizontal') },
+        "click-175": function(event) { OS.distributeObjects('vertical') },
+        "click-176": function(event) { OS.switchTab(this,'ptg2','ptg2-color') },
+        "click-177": function(event) { OS.switchTab(this,'ptg2','ptg2-palettes') },
+        "click-178": function(event) { document.getElementById('fg-picker').click() },
+        "click-179": function(event) { document.getElementById('bg-picker').click() },
+        "click-180": function(event) { OS.swapColors() },
+        "click-181": function(event) { OS.savePaletteColor() },
+        "click-182": function(event) { OS.clearPalette() },
+        "click-183": function(event) { OS.exportPalette() },
+        "click-184": function(event) { OS.importPalette() },
+        "click-185": function(event) { OS.switchTab(this,'ptg3','ptg3-history') },
+        "click-186": function(event) { OS.switchTab(this,'ptg3','ptg3-nav') },
+        "click-187": function(event) { OS.switchTab(this,'ptg3','ptg3-info') },
+        "click-188": function(event) { OS._minimapClick(event) },
+        "click-189": function(event) { OS._histChannel='luminance';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active') },
+        "click-190": function(event) { OS._histChannel='red';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active') },
+        "click-191": function(event) { OS._histChannel='green';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active') },
+        "click-192": function(event) { OS._histChannel='blue';OS.updateHistogram();this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active') },
+        "click-193": function(event) { OS.showOfflineManager() },
+        "click-194": function(event) { if(event.target===this)OS.closeCmdPalette() },
+        "click-195": function(event) { OS._liquifyReset() },
+        "click-196": function(event) { OS.closeLiquify() },
+        "click-197": function(event) { OS._liquifyApply() },
+        "click-198": function(event) { OS.prevFrame() },
+        "click-199": function(event) { OS.togglePlay() },
+        "click-200": function(event) { OS.nextFrame() },
+        "click-201": function(event) { OS.addFrame() },
+        "click-202": function(event) { OS.dupFrame() },
+        "click-203": function(event) { OS.exportGIF() },
+        "click-204": function(event) { OS.toggleMacroRec() },
+        "click-205": function(event) { OS.playMacro() },
+        "click-206": function(event) { OS.clearMacro() },
+        "click-207": function(event) { OS.saveMacro() },
+        "click-208": function(event) { OS.loadMacro() },
+        "click-209": function(event) { OS.closeBeforeAfter() },
+        "click-210": function(event) { OS._curvesChannel='rgb';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid() },
+        "click-211": function(event) { OS._curvesChannel='r';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid() },
+        "click-212": function(event) { OS._curvesChannel='g';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid() },
+        "click-213": function(event) { OS._curvesChannel='b';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid() },
+        "click-214": function(event) { OS._curvesPreset('linear') },
+        "click-215": function(event) { OS._curvesPreset('brighten') },
+        "click-216": function(event) { OS._curvesPreset('darken') },
+        "click-217": function(event) { OS._curvesPreset('contrast') },
+        "click-218": function(event) { OS._curvesPreset('invert') }
+    }),
+    change: Object.freeze({
+        "change-001": function(event) { OS.setBrushPreset(this.value) },
+        "change-002": function(event) { OS.state.shapeFill=this.value },
+        "change-003": function(event) { OS.state.shapeStroke=this.value },
+        "change-004": function(event) { OS.state.shapeStrokeWidth=+this.value },
+        "change-005": function(event) { OS.state.shapeFilled=this.checked },
+        "change-006": function(event) { OS.state.shapeDash=this.value },
+        "change-007": function(event) { OS.state.textFont=this.value },
+        "change-008": function(event) { OS.state.textSize=+this.value },
+        "change-009": function(event) { OS.state.textColor=this.value },
+        "change-010": function(event) { OS.state.textBold=this.checked },
+        "change-011": function(event) { OS.state.textItalic=this.checked },
+        "change-012": function(event) { OS.state.gradFrom=this.value },
+        "change-013": function(event) { OS.state.gradTo=this.value },
+        "change-014": function(event) { OS.state.gradType=this.value },
+        "change-015": function(event) { OS.state.patternType=this.value },
+        "change-016": function(event) { OS.state.patternColor=this.value },
+        "change-017": function(event) { OS.state.wandContiguous=this.checked },
+        "change-018": function(event) { OS.setCropRatio(this.value) },
+        "change-019": function(event) { OS.setCropSize() },
+        "change-020": function(event) { OS.state.penStroke=this.value },
+        "change-021": function(event) { OS.state.penWidth=+this.value },
+        "change-022": function(event) { OS.state.penFilled=this.checked },
+        "change-023": function(event) { OS.state.polySides=+this.value },
+        "change-024": function(event) { OS.state.starPoints=+this.value },
+        "change-025": function(event) { OS.state.dodgeRange=this.value },
+        "change-026": function(event) { OS.state.burnRange=this.value },
+        "change-027": function(event) { OS.state.spongeMode=this.value },
+        "change-028": function(event) { OS.setLayerBlend(this.value) },
+        "change-029": function(event) { OS.commitLayerOpacity() },
+        "change-030": function(event) { OS.applyTextFx() },
+        "change-031": function(event) { OS.previewLayerStyle() },
+        "change-032": function(event) { OS.setFgColor(this.value) },
+        "change-033": function(event) { OS.setBgColor(this.value) },
+        "change-034": function(event) { OS.handleFileOpen(event) },
+        "change-035": function(event) { OS.handlePSDOpen(event) },
+        "change-036": function(event) { OS.handleProjectOpen(event) },
+        "change-037": function(event) { OS._updateGMPreview() }
+    }),
+    input: Object.freeze({
+        "input-001": function(event) { OS.setBrushSize(this.value) },
+        "input-002": function(event) { OS.setBrushOpacity(this.value) },
+        "input-003": function(event) { OS.state.sprayDensity=+this.value },
+        "input-004": function(event) { OS.state.sprayWidth=+this.value },
+        "input-005": function(event) { OS.state.patternScale=+this.value },
+        "input-006": function(event) { OS.state.cloneSize=+this.value;document.getElementById('clone-size-val').textContent=this.value },
+        "input-007": function(event) { OS.state.wandTolerance=+this.value;document.getElementById('wand-tol-val').textContent=this.value },
+        "input-008": function(event) { OS.state.starInner=+this.value },
+        "input-009": function(event) { OS.state.healingSize=+this.value;document.getElementById('heal-size-val').textContent=this.value },
+        "input-010": function(event) { OS.state.dodgeSize=+this.value },
+        "input-011": function(event) { OS.state.dodgeExposure=+this.value },
+        "input-012": function(event) { OS.state.burnSize=+this.value },
+        "input-013": function(event) { OS.state.burnExposure=+this.value },
+        "input-014": function(event) { OS.state.spongeSize=+this.value },
+        "input-015": function(event) { OS.state.spongeFlow=+this.value },
+        "input-016": function(event) { OS.state.smudgeSize=+this.value },
+        "input-017": function(event) { OS.state.smudgeStrength=+this.value },
+        "input-018": function(event) { OS.setLayerOpacity(this.value,false) },
+        "input-019": function(event) { OS.liveAdjust() },
+        "input-020": function(event) { OS.applyTextFx() },
+        "input-021": function(event) { OS.previewLayerStyle() },
+        "input-022": function(event) { OS._hsbToFg() },
+        "input-023": function(event) { OS.filterCommands(this.value) },
+        "input-filter-preview": function(event) { OS._filterPreview(this.dataset.filterName); },
+        "input-024": function(event) { OS._levelsPreview() },
+        "input-025": function(event) { OS._cbPreview() },
+        "input-026": function(event) { this.nextElementSibling.textContent=this.value+'%' },
+        "input-027": function(event) { this.nextElementSibling.textContent=this.value+'°' },
+        "input-028": function(event) { this.nextElementSibling.textContent=this.value },
+        "input-029": function(event) { this.nextElementSibling.textContent=this.value+'px' },
+        "input-030": function(event) { this.nextElementSibling.textContent=(this.value/100).toFixed(1)+'EV' },
+        "input-031": function(event) { this.nextElementSibling.textContent=(this.value/100).toFixed(2) }
+    }),
+    keydown: Object.freeze({
+        "keydown-001": function(event) { OS.cmdKeyDown(event) }
+    })
+});
+
+function registerDeclarativeEvents() {
+    for (const type of Object.keys(OS_EVENT_HANDLERS)) {
+        const attribute = `data-os-${type}`;
+        document.addEventListener(type, event => {
+            const control = event.target?.closest?.(`[${attribute}]`);
+            if (!control) return;
+            const action = control.getAttribute(attribute);
+            const handlers = OS_EVENT_HANDLERS[type];
+            if (!Object.prototype.hasOwnProperty.call(handlers, action)) {
+                event.preventDefault();
+                console.error('Blocked undeclared UI action:', type, action);
+                return;
+            }
+            const result = handlers[action].call(control, event);
+            if (result === false) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
+    }
+}
+
+registerDeclarativeEvents();
+
 const OS = {
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
+    _runtimeAssets: Object.freeze({
+        psdDecoder: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
+            integrity:'sha384-kla4KJzEnshZnuWyJ8+AF8KEX0YZ2rpxTaQpDtDUmDdUv7jK94knsRx/lcRZ/HF4',
+            type:'application/javascript'
+        }),
+        photonModule: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',
+            integrity:'sha384-2poc6y7WarCbgFC86zFZ0ce5oBR0hkYUGIB2ySfyuYwEZ0KsRA51rtlAe7bnMEr0',
+            type:'application/javascript'
+        }),
+        photonWasm: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm',
+            integrity:'sha384-XTalmX4dqxgWAOn0b1wPMbNs/bZhF/kkmL4ttacTyF6/8aeRN3JWlFPF9rLT8ST4',
+            type:'application/wasm'
+        }),
+        gifEncoder: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js',
+            integrity:'sha384-4RMW82CWFobXY+HRHXe5go/V5acBhiIVGCT+2k7TEoxi7AiWKw8WoWb9qMU+FAFu',
+            type:'application/javascript'
+        }),
+        gifWorker: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js',
+            integrity:'sha384-uL0SwIQSos1DfQU2KzlDbPuSz7Jwo+hmNPIhe86VJ+MWwyj0DvjngnAgWrkNi9eQ',
+            type:'application/javascript'
+        }),
+        transformers: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0',
+            integrity:'sha384-LFJpqah1n9Owp3PD9FPMMtLHFQQix0O9QHOpP1S755RwXJM+Op4YYORRnp/NdSZx',
+            type:'application/javascript'
+        }),
+        onnxWasm: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.asyncify.wasm',
+            integrity:'sha384-T4JlwUUF/CSO/pgSDr7Vr9tMqB4XcaEQvrkyTJQn3jO/jx2tnJhAVnEIrR6X6u7x',
+            type:'application/wasm'
+        }),
+        onnxSafariWasm: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.wasm',
+            integrity:'sha384-y8o0JlZRmNSfnpvf0RTT4XrbzIhrfBpR01bMDGFUDPl5l1vOUeXi+rWMwCFBju2i',
+            type:'application/wasm'
+        })
+    }),
+    _runtimeAssetPromises: new Map(),
+    _runtimeBlobPromises: new Map(),
+    async _verifyRuntimeBytes(bytes, integrity) {
+        const match = /^sha(256|384|512)-([A-Za-z0-9+/]+={0,2})$/.exec(String(integrity || ''));
+        if (!match) throw new Error('Runtime asset has an invalid integrity declaration');
+        if (!globalThis.crypto?.subtle) throw new Error('Runtime verification requires Web Crypto');
+        const algorithm = `SHA-${match[1]}`;
+        const digest = await globalThis.crypto.subtle.digest(algorithm, bytes);
+        const actual = btoa(String.fromCharCode(...new Uint8Array(digest)));
+        if (actual !== match[2]) throw new Error('Runtime asset integrity check failed');
+        return true;
+    },
+    async _fetchVerifiedRuntimeAsset(name) {
+        if (!Object.prototype.hasOwnProperty.call(this._runtimeAssets, name)) {
+            throw new Error(`Unknown runtime asset: ${name}`);
+        }
+        if (!this._runtimeAssetPromises.has(name)) {
+            const asset = this._runtimeAssets[name];
+            const pending = (async () => {
+                const response = await fetch(asset.url, {
+                    cache:'force-cache',
+                    credentials:'omit',
+                    mode:'cors'
+                });
+                if (!response.ok) throw new Error(`Runtime asset request failed (${response.status})`);
+                const bytes = await response.arrayBuffer();
+                await this._verifyRuntimeBytes(bytes, asset.integrity);
+                return { asset, bytes };
+            })().catch(error => {
+                this._runtimeAssetPromises.delete(name);
+                throw error;
+            });
+            this._runtimeAssetPromises.set(name, pending);
+        }
+        return this._runtimeAssetPromises.get(name);
+    },
+    async _verifiedRuntimeBlobUrl(name) {
+        if (!this._runtimeBlobPromises.has(name)) {
+            const pending = this._fetchVerifiedRuntimeAsset(name)
+                .then(({asset, bytes}) => URL.createObjectURL(new Blob([bytes], {type:asset.type})))
+                .catch(error => {
+                    this._runtimeBlobPromises.delete(name);
+                    throw error;
+                });
+            this._runtimeBlobPromises.set(name, pending);
+        }
+        return this._runtimeBlobPromises.get(name);
+    },
+    _prepareClassicPhotonSource(bytes) {
+        const source = new TextDecoder().decode(bytes);
+        const importMetaMatches = source.match(/\bimport\.meta\.url\b/g) || [];
+        const exportedDeclarations = source.match(/^export (?=(?:function|const|class) )/gm) || [];
+        const exportTail = /\nexport \{ initSync \};\s*\nexport default __wbg_init;\s*$/;
+        if (importMetaMatches.length !== 1 || exportedDeclarations.length !== 152 || !exportTail.test(source)) {
+            throw new Error('Verified Photon module has an unexpected wrapper');
+        }
+        const classicSource = source
+            .replace(/\bimport\.meta\.url\b/g, 'self.location.href')
+            .replace(/^export (?=(?:function|const|class) )/gm, '')
+            .replace(exportTail, '\n');
+        if (/\bexport\b/.test(classicSource)) throw new Error('Photon module conversion left executable exports');
+        return classicSource;
+    },
     _downloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.download = filename; a.href = url; a.click();
@@ -3469,7 +3898,7 @@ const OS = {
     _restoreGuidesState(guides) {
         this.guides.forEach(guide => guide._cleanup?.());
         const container = document.getElementById('guides-container');
-        if (container) container.innerHTML = '';
+        if (container) container.replaceChildren();
         this.guides = [];
         (Array.isArray(guides) ? guides : []).forEach(guide => {
             if ((guide.orientation === 'horizontal' || guide.orientation === 'vertical') && Number.isFinite(Number(guide.position))) {
@@ -4021,7 +4450,6 @@ const OS = {
         supportedDepths: [8, 16],
         supportedColorModes: [3]
     },
-    _psdLibUrl: 'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
     openPSD() { document.getElementById('psd-input').click(); },
     handlePSDOpen(e) { const file = e.target.files[0]; if (file) this._loadPSDFile(file); e.target.value=''; },
     _normalizePSDOpacity(value, fallback = 1) {
@@ -4269,16 +4697,18 @@ const OS = {
         this._closePSDImportProgress(job);
         return true;
     },
-    _decodePSDInWorker(bytes, fileSize, job) {
+    async _decodePSDInWorker(bytes, fileSize, job) {
         if (typeof Worker === 'undefined') return Promise.reject(new Error('PSD import requires Web Worker support'));
         const header = this._readPSDHeader(bytes);
         this._validatePSDHeader(header, fileSize);
+        this._updatePSDImportProgress(job, 'Verifying PSD decoder…');
+        const decoder = await this._fetchVerifiedRuntimeAsset('psdDecoder');
+        if (job?.cancelled) throw new DOMException('PSD import cancelled', 'AbortError');
         const code = `
 self.onmessage = function(event) {
     const id = event.data.id;
     try {
-        self.postMessage({ id: id, type: 'progress', message: 'Loading PSD decoder…' });
-        importScripts(${JSON.stringify(this._psdLibUrl)});
+        self.postMessage({ id: id, type: 'progress', message: 'Initializing verified PSD decoder…' });
         const lib = self.agPsd || agPsd;
         if (typeof OffscreenCanvas !== 'undefined' && lib.initializeCanvas) {
             lib.initializeCanvas(function(width, height) { return new OffscreenCanvas(width, height); });
@@ -4426,7 +4856,7 @@ self.onmessage = function(event) {
         self.postMessage({ id: id, type: 'error', error: error && error.message ? error.message : String(error) });
     }
 };`;
-        const url = URL.createObjectURL(new Blob([code], { type:'application/javascript' }));
+        const url = URL.createObjectURL(new Blob([decoder.bytes, '\n', code], { type:'application/javascript' }));
         return new Promise((resolve, reject) => {
             if (job.cancelled) {
                 URL.revokeObjectURL(url);
@@ -4843,7 +5273,7 @@ self.onmessage = function(event) {
         }
         previous.guides.forEach(guide => guide._cleanup?.());
         const guides = document.getElementById('guides-container');
-        if (guides) guides.innerHTML = '';
+        if (guides) guides.replaceChildren();
         const selection = document.getElementById('selection-overlay');
         if (selection) selection.style.display = 'none';
         this._renderFrames();
@@ -5258,7 +5688,7 @@ self.onmessage = function(event) {
     },
     updateLayersPanel() {
         this._enforceLayerInvariants({ render:false });
-        const list = document.getElementById('layers-list'); list.innerHTML = '';
+        const list = document.getElementById('layers-list'); list.replaceChildren();
         for (let i = this.layers.length-1; i >= 0; i--) {
             const l = this.layers[i], d = document.createElement('div');
             d.className = 'layer-item'+(i===this.activeLayerIdx?' active':'');
@@ -5384,7 +5814,7 @@ self.onmessage = function(event) {
         const face = grp.querySelector(':scope > .tool-btn');
         const tool = btn.dataset.tool;
         // Swap the face button icon + data
-        face.innerHTML = btn.innerHTML;
+        face.replaceChildren(...[...btn.childNodes].map(node => node.cloneNode(true)));
         face.dataset.tool = tool;
         face.dataset.tip = btn.dataset.tip;
         // Close all flyouts and activate tool
@@ -6606,7 +7036,7 @@ self.onmessage = function(event) {
     cancelCrop() {
         this._cleanupCrop();
         const c = document.getElementById('crop-container');
-        c.style.display='none'; c.innerHTML=''; this._cropRegion=null;
+        c.style.display='none'; c.replaceChildren(); this._cropRegion=null;
     },
 
     // ====================== AI BACKGROUND REMOVAL ======================
@@ -6688,7 +7118,7 @@ self.onmessage = function(event) {
         this._filterBackupRaw = active.filters.slice();
         this._filterTarget = active;
         this._filterName = name;
-        const rows=p.map(r=>`<div class="modal-row"><label>${r.label}</label><input id="${r.id}" type="range" min="${r.min}" max="${r.max}" value="${r.val}" oninput="OS._filterPreview('${name}')"><span class="opt-val" style="min-width:32px">${r.val}</span></div>`).join('');
+        const rows=p.map(r=>`<div class="modal-row"><label>${r.label}</label><input id="${r.id}" type="range" min="${r.min}" max="${r.max}" value="${r.val}" data-os-input="input-filter-preview" data-filter-name="${name}"><span class="opt-val" style="min-width:32px">${r.val}</span></div>`).join('');
         this._openFilterPanel('filter-dialog-overlay', 'Filter: '+name, rows,
             ()=>this._filterCancel(), ()=>this._filterApply());
     },
@@ -7345,7 +7775,7 @@ self.onmessage = function(event) {
     updateHistoryPanel() {
         const list = document.getElementById('history-list');
         if (!list) return;
-        list.innerHTML = '';
+        list.replaceChildren();
         const baseline = document.createElement('div');
         baseline.className = 'history-item' + (this.historyIdx < 0 ? ' current' : '');
         baseline.textContent = this._historyBaseLabel;
@@ -9557,18 +9987,18 @@ self.onmessage = async function(event) {
         this._curvesPoints = { rgb: [[0,0],[64,64],[128,128],[192,192],[255,255]], r: [[0,0],[255,255]], g: [[0,0],[255,255]], b: [[0,0],[255,255]] };
         this._curvesActivePoint = -1;
         const body = `<div class="curves-channel-row">
-                <button class="btn active" id="cv-ch-rgb" onclick="OS._curvesChannel='rgb';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid()">RGB</button>
-                <button class="btn" id="cv-ch-r" onclick="OS._curvesChannel='r';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid()">R</button>
-                <button class="btn" id="cv-ch-g" onclick="OS._curvesChannel='g';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid()">G</button>
-                <button class="btn" id="cv-ch-b" onclick="OS._curvesChannel='b';this.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');OS._drawCurvesGrid()">B</button>
+                <button class="btn active" id="cv-ch-rgb" data-os-click="click-210">RGB</button>
+                <button class="btn" id="cv-ch-r" data-os-click="click-211">R</button>
+                <button class="btn" id="cv-ch-g" data-os-click="click-212">G</button>
+                <button class="btn" id="cv-ch-b" data-os-click="click-213">B</button>
             </div>
             <canvas id="curves-canvas" class="curves-canvas" width="256" height="256"></canvas>
             <div class="curves-presets">
-                <button class="btn" onclick="OS._curvesPreset('linear')">Reset</button>
-                <button class="btn" onclick="OS._curvesPreset('brighten')">Brighten</button>
-                <button class="btn" onclick="OS._curvesPreset('darken')">Darken</button>
-                <button class="btn" onclick="OS._curvesPreset('contrast')">S-Curve</button>
-                <button class="btn" onclick="OS._curvesPreset('invert')">Invert</button>
+                <button class="btn" data-os-click="click-214">Reset</button>
+                <button class="btn" data-os-click="click-215">Brighten</button>
+                <button class="btn" data-os-click="click-216">Darken</button>
+                <button class="btn" data-os-click="click-217">S-Curve</button>
+                <button class="btn" data-os-click="click-218">Invert</button>
             </div>`;
         this._openFilterPanel('curves-dialog-overlay', 'Curves', body,
             ()=>this._removeFilterPanel('curves-dialog-overlay'),
@@ -9674,11 +10104,11 @@ self.onmessage = async function(event) {
         this._lvlSnap = snapOC;
         this._lvlTarget = active;
         const body = `
-            <div class="modal-row"><label>Shadow</label><input id="lvl-shadow" type="range" min="0" max="255" value="0" oninput="OS._levelsPreview()"><span class="opt-val">0</span></div>
-            <div class="modal-row"><label>Midtone</label><input id="lvl-mid" type="range" min="10" max="400" value="100" oninput="OS._levelsPreview()"><span class="opt-val">1.00</span></div>
-            <div class="modal-row"><label>Highlight</label><input id="lvl-high" type="range" min="0" max="255" value="255" oninput="OS._levelsPreview()"><span class="opt-val">255</span></div>
-            <div class="modal-row"><label>Out Black</label><input id="lvl-oblack" type="range" min="0" max="255" value="0" oninput="OS._levelsPreview()"><span class="opt-val">0</span></div>
-            <div class="modal-row"><label>Out White</label><input id="lvl-owhite" type="range" min="0" max="255" value="255" oninput="OS._levelsPreview()"><span class="opt-val">255</span></div>`;
+            <div class="modal-row"><label>Shadow</label><input id="lvl-shadow" type="range" min="0" max="255" value="0" data-os-input="input-024"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Midtone</label><input id="lvl-mid" type="range" min="10" max="400" value="100" data-os-input="input-024"><span class="opt-val">1.00</span></div>
+            <div class="modal-row"><label>Highlight</label><input id="lvl-high" type="range" min="0" max="255" value="255" data-os-input="input-024"><span class="opt-val">255</span></div>
+            <div class="modal-row"><label>Out Black</label><input id="lvl-oblack" type="range" min="0" max="255" value="0" data-os-input="input-024"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Out White</label><input id="lvl-owhite" type="range" min="0" max="255" value="255" data-os-input="input-024"><span class="opt-val">255</span></div>`;
         this._openFilterPanel('levels-dialog-overlay', 'Levels', body,
             ()=>this._levelsCancel(), ()=>this._levelsApply());
     },
@@ -9759,13 +10189,13 @@ self.onmessage = async function(event) {
         this._cbTarget = active;
         const body = `
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-align:center">Shadows</div>
-            <div class="modal-row"><label>Cyan-Red</label><input id="cb-sr" type="range" min="-100" max="100" value="0" oninput="OS._cbPreview()"><span class="opt-val">0</span></div>
-            <div class="modal-row"><label>Mag-Green</label><input id="cb-sg" type="range" min="-100" max="100" value="0" oninput="OS._cbPreview()"><span class="opt-val">0</span></div>
-            <div class="modal-row"><label>Yel-Blue</label><input id="cb-sb" type="range" min="-100" max="100" value="0" oninput="OS._cbPreview()"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Cyan-Red</label><input id="cb-sr" type="range" min="-100" max="100" value="0" data-os-input="input-025"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Mag-Green</label><input id="cb-sg" type="range" min="-100" max="100" value="0" data-os-input="input-025"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Yel-Blue</label><input id="cb-sb" type="range" min="-100" max="100" value="0" data-os-input="input-025"><span class="opt-val">0</span></div>
             <div style="font-size:11px;color:var(--text-muted);margin:6px 0;text-align:center">Midtones</div>
-            <div class="modal-row"><label>Cyan-Red</label><input id="cb-mr" type="range" min="-100" max="100" value="0" oninput="OS._cbPreview()"><span class="opt-val">0</span></div>
-            <div class="modal-row"><label>Mag-Green</label><input id="cb-mg" type="range" min="-100" max="100" value="0" oninput="OS._cbPreview()"><span class="opt-val">0</span></div>
-            <div class="modal-row"><label>Yel-Blue</label><input id="cb-mb" type="range" min="-100" max="100" value="0" oninput="OS._cbPreview()"><span class="opt-val">0</span></div>`;
+            <div class="modal-row"><label>Cyan-Red</label><input id="cb-mr" type="range" min="-100" max="100" value="0" data-os-input="input-025"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Mag-Green</label><input id="cb-mg" type="range" min="-100" max="100" value="0" data-os-input="input-025"><span class="opt-val">0</span></div>
+            <div class="modal-row"><label>Yel-Blue</label><input id="cb-mb" type="range" min="-100" max="100" value="0" data-os-input="input-025"><span class="opt-val">0</span></div>`;
         this._openFilterPanel('cb-dialog-overlay', 'Color Balance', body,
             ()=>this._cbCancel(), ()=>this._cbApply());
     },
@@ -10023,7 +10453,7 @@ self.onmessage = async function(event) {
     },
     clearGuides({ silent = false, recordHistory = true } = {}) {
         this.guides.forEach(g => { if (g._cleanup) g._cleanup(); });
-        document.getElementById('guides-container').innerHTML = '';
+        document.getElementById('guides-container').replaceChildren();
         this.guides = [];
         if (recordHistory) this.saveHistory('Clear Guides');
         if (!silent) this.toast('All guides cleared', 'info');
@@ -10277,17 +10707,17 @@ self.onmessage = async function(event) {
         if (!active || active.type !== 'image') { this.toast('Select an image first', 'info'); return; }
         const body = `
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-align:center">Red Output</div>
-            <div class="modal-row"><label>R</label><input id="cm-rr" type="range" min="-200" max="200" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">100%</span></div>
-            <div class="modal-row"><label>G</label><input id="cm-rg" type="range" min="-200" max="200" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>
-            <div class="modal-row"><label>B</label><input id="cm-rb" type="range" min="-200" max="200" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>
+            <div class="modal-row"><label>R</label><input id="cm-rr" type="range" min="-200" max="200" value="100" data-os-input="input-026"><span class="opt-val">100%</span></div>
+            <div class="modal-row"><label>G</label><input id="cm-rg" type="range" min="-200" max="200" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>
+            <div class="modal-row"><label>B</label><input id="cm-rb" type="range" min="-200" max="200" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>
             <div style="font-size:11px;color:var(--text-muted);margin:6px 0;text-align:center">Green Output</div>
-            <div class="modal-row"><label>R</label><input id="cm-gr" type="range" min="-200" max="200" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>
-            <div class="modal-row"><label>G</label><input id="cm-gg" type="range" min="-200" max="200" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">100%</span></div>
-            <div class="modal-row"><label>B</label><input id="cm-gb" type="range" min="-200" max="200" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>
+            <div class="modal-row"><label>R</label><input id="cm-gr" type="range" min="-200" max="200" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>
+            <div class="modal-row"><label>G</label><input id="cm-gg" type="range" min="-200" max="200" value="100" data-os-input="input-026"><span class="opt-val">100%</span></div>
+            <div class="modal-row"><label>B</label><input id="cm-gb" type="range" min="-200" max="200" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>
             <div style="font-size:11px;color:var(--text-muted);margin:6px 0;text-align:center">Blue Output</div>
-            <div class="modal-row"><label>R</label><input id="cm-br" type="range" min="-200" max="200" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>
-            <div class="modal-row"><label>G</label><input id="cm-bg" type="range" min="-200" max="200" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>
-            <div class="modal-row"><label>B</label><input id="cm-bb" type="range" min="-200" max="200" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">100%</span></div>`;
+            <div class="modal-row"><label>R</label><input id="cm-br" type="range" min="-200" max="200" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>
+            <div class="modal-row"><label>G</label><input id="cm-bg" type="range" min="-200" max="200" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>
+            <div class="modal-row"><label>B</label><input id="cm-bb" type="range" min="-200" max="200" value="100" data-os-input="input-026"><span class="opt-val">100%</span></div>`;
         this._openFilterPanel('cm-dialog-overlay', 'Channel Mixer', body,
             ()=>this._removeFilterPanel('cm-dialog-overlay'),
             ()=>this._applyChannelMixer());
@@ -10319,10 +10749,10 @@ self.onmessage = async function(event) {
     showPerspective() {
         const active = this.canvas.getActiveObject();
         if (!active) { this.toast('Select an object first', 'info'); return; }
-        const body = `<div class="modal-row"><label>Skew X</label><input id="persp-sx" type="range" min="-60" max="60" value="${Math.round(active.skewX||0)}" oninput="this.nextElementSibling.textContent=this.value+'&deg;'"><span class="opt-val">${Math.round(active.skewX||0)}&deg;</span></div>
-            <div class="modal-row"><label>Skew Y</label><input id="persp-sy" type="range" min="-60" max="60" value="${Math.round(active.skewY||0)}" oninput="this.nextElementSibling.textContent=this.value+'&deg;'"><span class="opt-val">${Math.round(active.skewY||0)}&deg;</span></div>
-            <div class="modal-row"><label>Scale X</label><input id="persp-scx" type="range" min="10" max="300" value="${Math.round((active.scaleX||1)*100)}" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">${Math.round((active.scaleX||1)*100)}%</span></div>
-            <div class="modal-row"><label>Scale Y</label><input id="persp-scy" type="range" min="10" max="300" value="${Math.round((active.scaleY||1)*100)}" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">${Math.round((active.scaleY||1)*100)}%</span></div>
+        const body = `<div class="modal-row"><label>Skew X</label><input id="persp-sx" type="range" min="-60" max="60" value="${Math.round(active.skewX||0)}" data-os-input="input-027"><span class="opt-val">${Math.round(active.skewX||0)}&deg;</span></div>
+            <div class="modal-row"><label>Skew Y</label><input id="persp-sy" type="range" min="-60" max="60" value="${Math.round(active.skewY||0)}" data-os-input="input-027"><span class="opt-val">${Math.round(active.skewY||0)}&deg;</span></div>
+            <div class="modal-row"><label>Scale X</label><input id="persp-scx" type="range" min="10" max="300" value="${Math.round((active.scaleX||1)*100)}" data-os-input="input-026"><span class="opt-val">${Math.round((active.scaleX||1)*100)}%</span></div>
+            <div class="modal-row"><label>Scale Y</label><input id="persp-scy" type="range" min="10" max="300" value="${Math.round((active.scaleY||1)*100)}" data-os-input="input-026"><span class="opt-val">${Math.round((active.scaleY||1)*100)}%</span></div>
             <p style="font-size:10px;color:var(--text-muted);margin-top:4px">Use skew + scale to simulate perspective.</p>`;
         this._openFilterPanel('persp-overlay', 'Perspective', body,
             ()=>this._removeFilterPanel('persp-overlay'), ()=>this._applyPerspective());
@@ -10497,24 +10927,36 @@ self.onmessage = async function(event) {
 
     // ====================== FILTER WORKER ======================
     _filterWorker: null,
+    _photonFilterWorker: null,
+    _filterWorkerPhotonReady: false,
     _photonFilterDisabled: false,
-    _photonFilterUrl: 'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',
-    _getFilterWorker() {
-        if (this._filterWorker) return this._filterWorker;
+    _getFilterWorker(backend = 'worker', runtime = null) {
+        const photon = backend === 'photon';
+        const workerKey = photon ? '_photonFilterWorker' : '_filterWorker';
+        if (this[workerKey]) return this[workerKey];
+        if (photon && !runtime?.moduleBytes) throw new Error('Verified Photon module was not provided');
         const code = `
-const PHOTON_URL = ${JSON.stringify(this._photonFilterUrl)};
+const HAS_EMBEDDED_PHOTON = ${photon};
 let photonModulePromise = null;
-async function getPhotonModule() {
+async function getPhotonModule(runtime) {
     if (!photonModulePromise) {
-        photonModulePromise = import(PHOTON_URL).then(async mod => {
-            if (mod.default) await mod.default();
-            return mod;
-        });
+        if (!HAS_EMBEDDED_PHOTON || !runtime?.wasmBytes) throw new Error('Verified Photon runtime was not provided');
+        photonModulePromise = __wbg_init({module_or_path:new Uint8Array(runtime.wasmBytes)}).then(() => ({
+            PhotonImage,
+            edge_detection,
+            threshold,
+            gaussian_blur,
+            sharpen,
+            emboss,
+            grayscale,
+            sepia,
+            invert
+        }));
     }
     return photonModulePromise;
 }
-async function runPhotonFilter(op, d, w, h, p) {
-    const mod = await getPhotonModule();
+async function runPhotonFilter(op, d, w, h, p, runtime) {
+    const mod = await getPhotonModule(runtime);
     const img = new mod.PhotonImage(d, w, h);
     try {
         switch (op) {
@@ -10700,12 +11142,12 @@ const filterOps = {
     }
 };
 self.onmessage = async function(e) {
-    const { data, width, height, params, backend, op, _jobId } = e.data;
+    const { data, width, height, params, backend, op, runtime, _jobId } = e.data;
     const d = new Uint8ClampedArray(data);
     const w = width, h = height, p = params || {};
     try {
         if (backend === 'photon') {
-            const out = await runPhotonFilter(op, d, w, h, p);
+            const out = await runPhotonFilter(op, d, w, h, p, runtime);
             self.postMessage({ _jobId, data: out.buffer, width, height, backend: 'photon' }, [out.buffer]);
             return;
         }
@@ -10719,18 +11161,20 @@ self.onmessage = async function(e) {
         self.postMessage({ _jobId, data: d.buffer, width, height, backend: backend || 'worker', error: message }, [d.buffer]);
     }
 };`;
-        const blob = new Blob([code], {type:'application/javascript'});
-        this._filterWorker = new Worker(URL.createObjectURL(blob));
-        return this._filterWorker;
+        const parts = photon ? [this._prepareClassicPhotonSource(runtime.moduleBytes), '\n', code] : [code];
+        const blob = new Blob(parts, {type:'application/javascript'});
+        this[workerKey] = new Worker(URL.createObjectURL(blob));
+        if (photon) this._filterWorkerPhotonReady = false;
+        return this[workerKey];
     },
     _filterJobId: 0,
     _filterJobCallbacks: {},
     _runFilterJob(payload, imgData, width, height, params) {
         return new Promise((resolve, reject) => {
-            const worker = this._getFilterWorker();
+            const worker = this._getFilterWorker(payload.backend, payload.runtime);
             const id = ++this._filterJobId;
             const buf = imgData.data.buffer.slice(0);
-            this._filterJobCallbacks[id] = { resolve, reject };
+            this._filterJobCallbacks[id] = { resolve, reject, worker };
             if (!worker._osHandlerInstalled) {
                 worker.addEventListener('message', e => {
                     const cb = this._filterJobCallbacks[e.data._jobId];
@@ -10742,20 +11186,35 @@ self.onmessage = async function(e) {
                     cb.resolve(result);
                 });
                 worker.addEventListener('error', err => {
-                    const entries = Object.entries(this._filterJobCallbacks);
-                    this._filterJobCallbacks = {};
-                    entries.forEach(([, cb]) => cb.reject(err));
+                    console.error(`${payload.backend} filter worker crashed:`, err.message || err);
+                    const entries = Object.entries(this._filterJobCallbacks)
+                        .filter(([, cb]) => cb.worker === worker);
+                    entries.forEach(([id, cb]) => {
+                        delete this._filterJobCallbacks[id];
+                        cb.reject(err);
+                    });
                 });
                 worker._osHandlerInstalled = true;
             }
-            worker.postMessage({...payload, _jobId: id, data: buf, width, height, params: params||{}}, [buf]);
+            const runtime = payload.runtime ? {wasmBytes:payload.runtime.wasmBytes} : null;
+            worker.postMessage({...payload, runtime, _jobId: id, data: buf, width, height, params: params||{}}, [buf]);
         });
     },
     _runFilterInWorker(op, imgData, width, height, params) {
         return this._runFilterJob({backend:'worker', op}, imgData, width, height, params);
     },
-    _runPhotonFilterInWorker(op, imgData, width, height, params) {
-        return this._runFilterJob({backend:'photon', op}, imgData, width, height, params);
+    async _runPhotonFilterInWorker(op, imgData, width, height, params) {
+        let runtime = null;
+        if (!this._filterWorkerPhotonReady) {
+            const [module, wasm] = await Promise.all([
+                this._fetchVerifiedRuntimeAsset('photonModule'),
+                this._fetchVerifiedRuntimeAsset('photonWasm')
+            ]);
+            runtime = { moduleBytes:module.bytes, wasmBytes:wasm.bytes };
+        }
+        const result = await this._runFilterJob({backend:'photon', op, runtime}, imgData, width, height, params);
+        this._filterWorkerPhotonReady = true;
+        return result;
     },
     async _runFilterWithPhoton(op, imgData, width, height, params) {
         if (!this._photonFilterDisabled) {
@@ -10783,7 +11242,7 @@ self.onmessage = async function(e) {
         this._replaceActiveImage(info.active, info.canvas.toDataURL(), name);
     },
     filterPosterize() {
-        const body = `<div class="modal-row"><label>Levels</label><input id="fp-lvl" type="range" min="2" max="32" value="6" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">6</span></div>`;
+        const body = `<div class="modal-row"><label>Levels</label><input id="fp-lvl" type="range" min="2" max="32" value="6" data-os-input="input-028"><span class="opt-val">6</span></div>`;
         this._openFilterPanel('posterize-overlay', 'Posterize', body,
             ()=>this._removeFilterPanel('posterize-overlay'), ()=>this._doPosterize());
     },
@@ -10796,7 +11255,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Posterize'); this._removeFilterPanel('posterize-overlay'); this.toast('Posterize applied', 'success');
     },
     filterThreshold() {
-        const body = `<div class="modal-row"><label>Level</label><input id="ft-thr" type="range" min="0" max="255" value="128" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">128</span></div>`;
+        const body = `<div class="modal-row"><label>Level</label><input id="ft-thr" type="range" min="0" max="255" value="128" data-os-input="input-028"><span class="opt-val">128</span></div>`;
         this._openFilterPanel('threshold-overlay', 'Threshold', body,
             ()=>this._removeFilterPanel('threshold-overlay'), ()=>this._doThreshold());
     },
@@ -10820,7 +11279,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Edge Detect'); this.toast('Edge detect applied', 'success');
     },
     filterVignette() {
-        const body = `<div class="modal-row"><label>Amount</label><input id="fv-amt" type="range" min="10" max="100" value="50" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">50%</span></div><div class="modal-row"><label>Softness</label><input id="fv-soft" type="range" min="10" max="100" value="60" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">60%</span></div>`;
+        const body = `<div class="modal-row"><label>Amount</label><input id="fv-amt" type="range" min="10" max="100" value="50" data-os-input="input-026"><span class="opt-val">50%</span></div><div class="modal-row"><label>Softness</label><input id="fv-soft" type="range" min="10" max="100" value="60" data-os-input="input-026"><span class="opt-val">60%</span></div>`;
         this._openFilterPanel('vignette-overlay', 'Vignette', body,
             ()=>this._removeFilterPanel('vignette-overlay'), ()=>this._doVignette());
     },
@@ -10833,7 +11292,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Vignette'); this._removeFilterPanel('vignette-overlay'); this.toast('Vignette applied', 'success');
     },
     filterUnsharpMask() {
-        const body = `<div class="modal-row"><label>Amount</label><input id="fu-amt" type="range" min="10" max="300" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">100%</span></div><div class="modal-row"><label>Radius</label><input id="fu-rad" type="range" min="1" max="10" value="2" oninput="this.nextElementSibling.textContent=this.value+'px'"><span class="opt-val">2px</span></div>`;
+        const body = `<div class="modal-row"><label>Amount</label><input id="fu-amt" type="range" min="10" max="300" value="100" data-os-input="input-026"><span class="opt-val">100%</span></div><div class="modal-row"><label>Radius</label><input id="fu-rad" type="range" min="1" max="10" value="2" data-os-input="input-029"><span class="opt-val">2px</span></div>`;
         this._openFilterPanel('unsharpmask-overlay', 'Unsharp Mask', body,
             ()=>this._removeFilterPanel('unsharpmask-overlay'), ()=>this._doUnsharpMask());
     },
@@ -10847,7 +11306,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Unsharp Mask'); this._removeFilterPanel('unsharpmask-overlay'); this.toast('Unsharp mask applied', 'success');
     },
     filterOilPaint() {
-        const body = `<div class="modal-row"><label>Radius</label><input id="fo-rad" type="range" min="1" max="6" value="3" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">3</span></div><div class="modal-row"><label>Levels</label><input id="fo-lvl" type="range" min="4" max="32" value="16" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">16</span></div>`;
+        const body = `<div class="modal-row"><label>Radius</label><input id="fo-rad" type="range" min="1" max="6" value="3" data-os-input="input-028"><span class="opt-val">3</span></div><div class="modal-row"><label>Levels</label><input id="fo-lvl" type="range" min="4" max="32" value="16" data-os-input="input-028"><span class="opt-val">16</span></div>`;
         this._openFilterPanel('oilpaint-overlay', 'Oil Paint', body,
             ()=>this._removeFilterPanel('oilpaint-overlay'), ()=>this._doOilPaint());
     },
@@ -10861,7 +11320,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Oil Paint'); this._removeFilterPanel('oilpaint-overlay'); this.toast('Oil paint applied', 'success');
     },
     filterHalftone() {
-        const body = `<div class="modal-row"><label>Dot Size</label><input id="fh-size" type="range" min="2" max="16" value="6" oninput="this.nextElementSibling.textContent=this.value+'px'"><span class="opt-val">6px</span></div>`;
+        const body = `<div class="modal-row"><label>Dot Size</label><input id="fh-size" type="range" min="2" max="16" value="6" data-os-input="input-029"><span class="opt-val">6px</span></div>`;
         this._openFilterPanel('halftone-overlay', 'Halftone', body,
             ()=>this._removeFilterPanel('halftone-overlay'), ()=>this._doHalftone());
     },
@@ -10902,7 +11361,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Duotone'); this._removeFilterPanel('duotone-overlay'); this.toast('Duotone applied', 'success');
     },
     filterTiltShift() {
-        const body = `<div class="modal-row"><label>Focus Y</label><input id="fts-y" type="range" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">50%</span></div><div class="modal-row"><label>Focus Width</label><input id="fts-w" type="range" min="5" max="60" value="20" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">20%</span></div><div class="modal-row"><label>Blur</label><input id="fts-blur" type="range" min="1" max="10" value="4" oninput="this.nextElementSibling.textContent=this.value+'px'"><span class="opt-val">4px</span></div>`;
+        const body = `<div class="modal-row"><label>Focus Y</label><input id="fts-y" type="range" min="0" max="100" value="50" data-os-input="input-026"><span class="opt-val">50%</span></div><div class="modal-row"><label>Focus Width</label><input id="fts-w" type="range" min="5" max="60" value="20" data-os-input="input-026"><span class="opt-val">20%</span></div><div class="modal-row"><label>Blur</label><input id="fts-blur" type="range" min="1" max="10" value="4" data-os-input="input-029"><span class="opt-val">4px</span></div>`;
         this._openFilterPanel('tiltshift-overlay', 'Tilt Shift', body,
             ()=>this._removeFilterPanel('tiltshift-overlay'), ()=>this._doTiltShift());
     },
@@ -10916,7 +11375,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Tilt Shift'); this._removeFilterPanel('tiltshift-overlay'); this.toast('Tilt shift applied', 'success');
     },
     filterChromaticAberration() {
-        const body = `<div class="modal-row"><label>Offset</label><input id="fca-off" type="range" min="1" max="15" value="4" oninput="this.nextElementSibling.textContent=this.value+'px'"><span class="opt-val">4px</span></div>`;
+        const body = `<div class="modal-row"><label>Offset</label><input id="fca-off" type="range" min="1" max="15" value="4" data-os-input="input-029"><span class="opt-val">4px</span></div>`;
         this._openFilterPanel('chromab-overlay', 'Chromatic Aberration', body,
             ()=>this._removeFilterPanel('chromab-overlay'), ()=>this._doChromaticAberration());
     },
@@ -10928,7 +11387,7 @@ self.onmessage = async function(e) {
         this._commitImageData(info, 'Chromatic Aberration'); this._removeFilterPanel('chromab-overlay'); this.toast('Chromatic aberration applied', 'success');
     },
     filterNoiseGen() {
-        const body = `<div class="modal-row"><label>Type</label><select id="fn-type"><option value="uniform">Uniform</option><option value="gaussian">Gaussian</option><option value="salt-pepper">Salt & Pepper</option></select></div><div class="modal-row"><label>Amount</label><input id="fn-amt" type="range" min="1" max="100" value="30" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">30%</span></div><div class="modal-row"><label><input type="checkbox" id="fn-mono" checked> Monochrome</label></div>`;
+        const body = `<div class="modal-row"><label>Type</label><select id="fn-type"><option value="uniform">Uniform</option><option value="gaussian">Gaussian</option><option value="salt-pepper">Salt & Pepper</option></select></div><div class="modal-row"><label>Amount</label><input id="fn-amt" type="range" min="1" max="100" value="30" data-os-input="input-026"><span class="opt-val">30%</span></div><div class="modal-row"><label><input type="checkbox" id="fn-mono" checked> Monochrome</label></div>`;
         this._openFilterPanel('noisegen-overlay', 'Generate Noise', body,
             ()=>this._removeFilterPanel('noisegen-overlay'), ()=>this._doNoiseGen());
     },
@@ -10963,9 +11422,9 @@ self.onmessage = async function(e) {
         const active = this.canvas.getActiveObject();
         if (!active || active.type !== 'image') { this.toast('Select an image first', 'info'); return; }
         const body = `<div class="gm-preview" id="gm-preview" style="background:linear-gradient(to right,#000,#6c8cff,#fff)"></div>
-            <div class="modal-row"><label>Shadow</label><input id="gm-c1" type="color" value="#000000" onchange="OS._updateGMPreview()"></div>
-            <div class="modal-row"><label>Midtone</label><input id="gm-c2" type="color" value="#6c8cff" onchange="OS._updateGMPreview()"></div>
-            <div class="modal-row"><label>Highlight</label><input id="gm-c3" type="color" value="#ffffff" onchange="OS._updateGMPreview()"></div>`;
+            <div class="modal-row"><label>Shadow</label><input id="gm-c1" type="color" value="#000000" data-os-change="change-037"></div>
+            <div class="modal-row"><label>Midtone</label><input id="gm-c2" type="color" value="#6c8cff" data-os-change="change-037"></div>
+            <div class="modal-row"><label>Highlight</label><input id="gm-c3" type="color" value="#ffffff" data-os-change="change-037"></div>`;
         this._openFilterPanel('gradmap-overlay', 'Gradient Map', body,
             ()=>this._removeFilterPanel('gradmap-overlay'), ()=>this._applyGradientMap());
     },
@@ -12370,7 +12829,7 @@ self.onmessage = async function(e) {
     },
     // ====================== VIBRANCE ======================
     adjVibrance() {
-        const body = `<div class="modal-row"><label>Vibrance</label><input id="adj-vib" type="range" min="-100" max="100" value="30" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">30</span></div>`;
+        const body = `<div class="modal-row"><label>Vibrance</label><input id="adj-vib" type="range" min="-100" max="100" value="30" data-os-input="input-028"><span class="opt-val">30</span></div>`;
         this._openFilterPanel('vibrance-overlay', 'Vibrance', body,
             ()=>this._removeFilterPanel('vibrance-overlay'), ()=>this._doVibrance());
     },
@@ -12390,7 +12849,7 @@ self.onmessage = async function(e) {
 
     // ====================== EXPOSURE ======================
     adjExposure() {
-        const body = `<div class="modal-row"><label>Exposure</label><input id="adj-exp" type="range" min="-300" max="300" value="0" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(1)+'EV'"><span class="opt-val">0.0EV</span></div><div class="modal-row"><label>Offset</label><input id="adj-exp-off" type="range" min="-50" max="50" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">0</span></div><div class="modal-row"><label>Gamma</label><input id="adj-exp-gam" type="range" min="10" max="400" value="100" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><span class="opt-val">1.00</span></div>`;
+        const body = `<div class="modal-row"><label>Exposure</label><input id="adj-exp" type="range" min="-300" max="300" value="0" data-os-input="input-030"><span class="opt-val">0.0EV</span></div><div class="modal-row"><label>Offset</label><input id="adj-exp-off" type="range" min="-50" max="50" value="0" data-os-input="input-028"><span class="opt-val">0</span></div><div class="modal-row"><label>Gamma</label><input id="adj-exp-gam" type="range" min="10" max="400" value="100" data-os-input="input-031"><span class="opt-val">1.00</span></div>`;
         this._openFilterPanel('exposure-overlay', 'Exposure', body,
             ()=>this._removeFilterPanel('exposure-overlay'), ()=>this._doExposure());
     },
@@ -12413,7 +12872,7 @@ self.onmessage = async function(e) {
 
     // ====================== SHADOWS / HIGHLIGHTS ======================
     adjShadowsHighlights() {
-        const body = `<div class="modal-row"><label>Shadows</label><input id="adj-sh-s" type="range" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">50%</span></div><div class="modal-row"><label>Highlights</label><input id="adj-sh-h" type="range" min="0" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div>`;
+        const body = `<div class="modal-row"><label>Shadows</label><input id="adj-sh-s" type="range" min="0" max="100" value="50" data-os-input="input-026"><span class="opt-val">50%</span></div><div class="modal-row"><label>Highlights</label><input id="adj-sh-h" type="range" min="0" max="100" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div>`;
         this._openFilterPanel('shadowhl-overlay', 'Shadows / Highlights', body,
             ()=>this._removeFilterPanel('shadowhl-overlay'), ()=>this._doShadowsHighlights());
     },
@@ -12437,7 +12896,7 @@ self.onmessage = async function(e) {
 
     // ====================== PHOTO FILTER ======================
     adjPhotoFilter() {
-        const body = `<div class="modal-row"><label>Filter</label><select id="adj-pf-type"><option value="warming">Warming (85)</option><option value="cooling">Cooling (80)</option><option value="sunset">Sunset</option><option value="underwater">Underwater</option><option value="sepia">Sepia</option><option value="custom">Custom Color</option></select></div><div class="modal-row"><label>Color</label><input id="adj-pf-color" type="color" value="#ec8a00"></div><div class="modal-row"><label>Density</label><input id="adj-pf-dens" type="range" min="5" max="100" value="30" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">30%</span></div>`;
+        const body = `<div class="modal-row"><label>Filter</label><select id="adj-pf-type"><option value="warming">Warming (85)</option><option value="cooling">Cooling (80)</option><option value="sunset">Sunset</option><option value="underwater">Underwater</option><option value="sepia">Sepia</option><option value="custom">Custom Color</option></select></div><div class="modal-row"><label>Color</label><input id="adj-pf-color" type="color" value="#ec8a00"></div><div class="modal-row"><label>Density</label><input id="adj-pf-dens" type="range" min="5" max="100" value="30" data-os-input="input-026"><span class="opt-val">30%</span></div>`;
         this._openFilterPanel('photofilter-overlay', 'Photo Filter', body,
             ()=>this._removeFilterPanel('photofilter-overlay'), ()=>this._doPhotoFilter());
     },
@@ -12461,7 +12920,7 @@ self.onmessage = async function(e) {
 
     // ====================== SELECTIVE COLOR ======================
     adjSelectiveColor() {
-        const body = `<div class="modal-row"><label>Target</label><select id="adj-sc-target"><option value="reds">Reds</option><option value="yellows">Yellows</option><option value="greens">Greens</option><option value="cyans">Cyans</option><option value="blues">Blues</option><option value="magentas">Magentas</option></select></div><div class="modal-row"><label>Cyan</label><input id="adj-sc-c" type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">0</span></div><div class="modal-row"><label>Magenta</label><input id="adj-sc-m" type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">0</span></div><div class="modal-row"><label>Yellow</label><input id="adj-sc-y" type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">0</span></div><div class="modal-row"><label>Black</label><input id="adj-sc-k" type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">0</span></div>`;
+        const body = `<div class="modal-row"><label>Target</label><select id="adj-sc-target"><option value="reds">Reds</option><option value="yellows">Yellows</option><option value="greens">Greens</option><option value="cyans">Cyans</option><option value="blues">Blues</option><option value="magentas">Magentas</option></select></div><div class="modal-row"><label>Cyan</label><input id="adj-sc-c" type="range" min="-100" max="100" value="0" data-os-input="input-028"><span class="opt-val">0</span></div><div class="modal-row"><label>Magenta</label><input id="adj-sc-m" type="range" min="-100" max="100" value="0" data-os-input="input-028"><span class="opt-val">0</span></div><div class="modal-row"><label>Yellow</label><input id="adj-sc-y" type="range" min="-100" max="100" value="0" data-os-input="input-028"><span class="opt-val">0</span></div><div class="modal-row"><label>Black</label><input id="adj-sc-k" type="range" min="-100" max="100" value="0" data-os-input="input-028"><span class="opt-val">0</span></div>`;
         this._openFilterPanel('selcolor-overlay', 'Selective Color', body,
             ()=>this._removeFilterPanel('selcolor-overlay'), ()=>this._doSelectiveColor());
     },
@@ -12492,7 +12951,7 @@ self.onmessage = async function(e) {
 
     // ====================== REPLACE COLOR ======================
     adjReplaceColor() {
-        const body = `<div class="modal-row"><label>Source</label><input id="adj-rc-src" type="color" value="#ff0000"></div><div class="modal-row"><label>Target</label><input id="adj-rc-tgt" type="color" value="#0000ff"></div><div class="modal-row"><label>Fuzziness</label><input id="adj-rc-fuzz" type="range" min="5" max="150" value="40" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">40</span></div>`;
+        const body = `<div class="modal-row"><label>Source</label><input id="adj-rc-src" type="color" value="#ff0000"></div><div class="modal-row"><label>Target</label><input id="adj-rc-tgt" type="color" value="#0000ff"></div><div class="modal-row"><label>Fuzziness</label><input id="adj-rc-fuzz" type="range" min="5" max="150" value="40" data-os-input="input-028"><span class="opt-val">40</span></div>`;
         this._openFilterPanel('replcolor-overlay', 'Replace Color', body,
             ()=>this._removeFilterPanel('replcolor-overlay'), ()=>this._doReplaceColor());
     },
@@ -12518,7 +12977,7 @@ self.onmessage = async function(e) {
 
     // ====================== LENS CORRECTION ======================
     adjLensCorrection() {
-        const body = `<div class="modal-row"><label>Barrel/Pin</label><input id="adj-lc-dist" type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="opt-val">0</span></div><div class="modal-row"><label>Vignette</label><input id="adj-lc-vig" type="range" min="0" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="opt-val">0%</span></div><div class="modal-row"><label>CA Fix</label><input id="adj-lc-ca" type="range" min="0" max="10" value="0" oninput="this.nextElementSibling.textContent=this.value+'px'"><span class="opt-val">0px</span></div>`;
+        const body = `<div class="modal-row"><label>Barrel/Pin</label><input id="adj-lc-dist" type="range" min="-100" max="100" value="0" data-os-input="input-028"><span class="opt-val">0</span></div><div class="modal-row"><label>Vignette</label><input id="adj-lc-vig" type="range" min="0" max="100" value="0" data-os-input="input-026"><span class="opt-val">0%</span></div><div class="modal-row"><label>CA Fix</label><input id="adj-lc-ca" type="range" min="0" max="10" value="0" data-os-input="input-029"><span class="opt-val">0px</span></div>`;
         this._openFilterPanel('lenscorr-overlay', 'Lens Correction', body,
             ()=>this._removeFilterPanel('lenscorr-overlay'), ()=>this._doLensCorrection());
     },
@@ -12861,11 +13320,19 @@ self.onmessage = async function(e) {
     },
     async _loadGifJs() {
         if (window.GIF) return window.GIF;
+        const sourceUrl = await this._verifiedRuntimeBlobUrl('gifEncoder');
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js';
-            s.onload = () => window.GIF ? resolve(window.GIF) : reject(new Error('gif.js did not expose GIF'));
-            s.onerror = () => reject(new Error('Failed to load gif.js'));
+            s.src = sourceUrl;
+            s.addEventListener('load', () => {
+                s.remove();
+                if (window.GIF) resolve(window.GIF);
+                else reject(new Error('Verified gif.js did not expose GIF'));
+            }, {once:true});
+            s.addEventListener('error', () => {
+                s.remove();
+                reject(new Error('Failed to execute verified gif.js'));
+            }, {once:true});
             document.head.appendChild(s);
         });
     },
@@ -12874,8 +13341,13 @@ self.onmessage = async function(e) {
         const fps = +document.getElementById('tl-fps').value || 12;
         const delay = Math.round(1000 / fps);
         this.toast('Loading GIF encoder...', 'info');
-        let GIFConstructor;
-        try { GIFConstructor = await this._loadGifJs(); } catch (e) {
+        let GIFConstructor, workerScript;
+        try {
+            [GIFConstructor, workerScript] = await Promise.all([
+                this._loadGifJs(),
+                this._verifiedRuntimeBlobUrl('gifWorker')
+            ]);
+        } catch (e) {
             console.warn('gif.js load failed, falling back to spritesheet:', e.message);
             this._exportSpritesheet(fps);
             return;
@@ -12884,7 +13356,7 @@ self.onmessage = async function(e) {
         const gif = new GIFConstructor({
             workers: 2,
             quality: 10,
-            workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+            workerScript
         });
         let added = 0;
         for (const data of this._animFrames) {
@@ -13068,10 +13540,23 @@ self.onmessage = async function(e) {
 
     async _loadTransformers() {
         if (this._aiLib) return this._aiLib;
-        this._showAIProgress('Loading Transformers.js', 'Fetching AI runtime library...');
+        this._showAIProgress('Loading Transformers.js', 'Verifying AI runtime and inference engine...');
         try {
-            this._aiLib = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0');
-            return this._aiLib;
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '');
+            const wasmName = isSafari ? 'onnxSafariWasm' : 'onnxWasm';
+            const [moduleUrl, wasm] = await Promise.all([
+                this._verifiedRuntimeBlobUrl('transformers'),
+                this._fetchVerifiedRuntimeAsset(wasmName)
+            ]);
+            const lib = await import(moduleUrl);
+            const wasmConfig = lib.env?.backends?.onnx?.wasm;
+            if (!wasmConfig) throw new Error('Transformers.js did not expose its ONNX runtime configuration');
+            wasmConfig.wasmPaths = undefined;
+            wasmConfig.wasmBinary = new Uint8Array(wasm.bytes);
+            wasmConfig.numThreads = 1;
+            wasmConfig.proxy = false;
+            this._aiLib = lib;
+            return lib;
         } catch(e) {
             this._hideAIProgress();
             this.toast('Failed to load AI library: ' + e.message, 'error');
@@ -13836,7 +14321,7 @@ self.onmessage = async function(e) {
         if (canvasArea) canvasArea.setAttribute('aria-label', summary);
         const list = document.getElementById('canvas-a11y-layers');
         if (list) {
-            list.innerHTML = '';
+            list.replaceChildren();
             this.layers.forEach((l, i) => {
                 const item = document.createElement('li');
                 const objectCount = l.objects.filter(o => o.name !== '__boundary__').length;

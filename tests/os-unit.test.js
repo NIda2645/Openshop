@@ -443,6 +443,39 @@ describe('OpenShop core object', () => {
     expect(OS._getDirectPhotonFilter('BlackWhite')).toEqual({ op: 'threshold', params: { thr: 128 } });
   });
 
+  it('rejects tampered lazy runtime bytes and never retains the poisoned response', async () => {
+    const OS = loadOpenShop();
+    const trusted = new TextEncoder().encode('reviewed runtime bytes');
+    const tampered = new TextEncoder().encode('tampered runtime bytes');
+    const digest = await crypto.subtle.digest('SHA-384', trusted);
+    const integrity = `sha384-${Buffer.from(digest).toString('base64')}`;
+    let responseBytes = tampered;
+    const fetchRuntime = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => responseBytes.buffer.slice(0)
+    }));
+    vi.stubGlobal('fetch', fetchRuntime);
+    OS._runtimeAssets = {
+      fixture: Object.freeze({
+        url: 'https://cdn.jsdelivr.net/npm/example@1.0.0/runtime.js',
+        integrity,
+        type: 'application/javascript'
+      })
+    };
+    OS._runtimeAssetPromises = new Map();
+
+    await expect(OS._fetchVerifiedRuntimeAsset('fixture')).rejects.toThrow('integrity check failed');
+    expect(OS._runtimeAssetPromises.has('fixture')).toBe(false);
+
+    responseBytes = trusted;
+    const verified = await OS._fetchVerifiedRuntimeAsset('fixture');
+    expect(verified.bytes.byteLength).toBe(trusted.byteLength);
+    expect(fetchRuntime).toHaveBeenCalledTimes(2);
+    await expect(OS._fetchVerifiedRuntimeAsset('undeclared')).rejects.toThrow('Unknown runtime asset');
+    vi.unstubAllGlobals();
+  });
+
   it('converts a clicked segmentation result into a pixel selection mask', async () => {
     const OS = loadOpenShop();
     const target = {

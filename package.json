@@ -8,7 +8,9 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
-    "test:release": "npm audit --audit-level=high && npm test && npm run test:e2e"
+    "security:check": "node tools/security.mjs --check",
+    "security:write": "node tools/security.mjs --write",
+    "test:release": "npm run security:check && npm audit --audit-level=high && npm test && npm run test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

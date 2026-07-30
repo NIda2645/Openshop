@@ -153,19 +153,22 @@ Recovery uses checksum-verified, immutable generations keyed by stable document 
 
 ## Security
 
-- Core startup CDN scripts are loaded with [Subresource Integrity (SRI)](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hashes
-- On-demand AI/filter modules are version-pinned and run client-side
+- Core startup CDN scripts are version-pinned and loaded with [Subresource Integrity (SRI)](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hashes
+- PSD, Photon, GIF, Transformers.js, and ONNX lazy runtime bytes are version-pinned, SHA-384 verified before execution, and discarded on any digest mismatch
+- Static controls carry opaque action IDs resolved by a frozen listener registry; executable HTML event attributes are forbidden by the release security check
 - Recent files, saved palettes, templates, and photo presets render through DOM APIs so persisted values remain inert text
 - Worker-backed filters use a named operation registry, so filter jobs no longer pass executable source strings or require `unsafe-eval`
 - Command palette, context menu, sticky notes, animation frames, macro list, AI progress titles, and save-preset modals render through DOM APIs instead of runtime `innerHTML`
 - PSD import performs its complete ag-psd decode in a cancellable worker, enforces file/header/layer bounds plus a 256 MB aggregate decoded-pixel ceiling, and commits the new document only after every layer is ready
 - Project, palette, preset, and image imports share central schema/resource budgets for dimensions, file sizes, object counts, color formats, and adjustment ranges
 - Recovery Storage in the command palette exposes checksum-verified per-document generations, corruption fallback, active-tab ownership, quota/durability, naming, preview, restore/open-as-copy, export, and discard actions
-- Content Security Policy restricts script/style/connect sources
+- The script policy uses exact SHA-256 hashes for the two reviewed inline scripts and permits neither `unsafe-inline` nor unrestricted `unsafe-eval`; `wasm-unsafe-eval` is retained only for digest-verified WebAssembly
 - AI model revisions pinned to immutable commit SHAs (not mutable branch refs)
 - PSD layer names and project JSON are sanitized to prevent XSS injection
 - SVG export is sanitized to strip script tags and event handlers
 - jsPDF upgraded to 4.2.1 to patch CVE-2026-25755
+
+The portable `file://` lane enforces the policy embedded in `index.html`; because it has no response headers, it cannot emit violation reports. Hosted deployments retain that baseline and should copy the generated policy into an HTTP `Content-Security-Policy` header. Test stricter policies with `Content-Security-Policy-Report-Only` and a deployment-owned reporting endpoint before enforcing them. After any inline script edit, run `npm run security:write`; `npm run security:check` rejects stale hashes, executable event attributes, undeclared UI actions, unverified external scripts, and lazy executable paths that bypass the digest manifest.
 
 ## Offline, Install, and File Launch
 

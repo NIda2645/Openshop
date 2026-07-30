@@ -132,7 +132,7 @@ test('applies a one-click pixel filter to an active image layer', async ({ page 
 
   expect(result.historyAction).toBe('Filter: Sharpen');
   expect(result.activeName).toBe('Filter: Sharpen');
-  expect(typeof result.photonDisabled).toBe('boolean');
+  expect(result.photonDisabled).toBe(false);
 });
 
 test('creates a pixel selection from a mocked AI segment mask', async ({ page }) => {
