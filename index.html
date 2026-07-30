@@ -2882,6 +2882,7 @@ const OS = {
         if (resetProject) {
             this._documentGeneration += 1;
             this._projectFileHandle = null;
+            this._savedSnapshot = null;
             this._docName = 'Untitled';
         }
         this.canvasW = w; this.canvasH = h; this.layers = []; this.canvas.clear();
@@ -3684,6 +3685,7 @@ const OS = {
         maxDimension: 30000,
         maxLayers: 256,
         maxLayerPixels: 80 * 1000 * 1000,
+        maxDecodedBytes: 256 * 1024 * 1024,
         supportedDepths: [8, 16],
         supportedColorModes: [3]
     },
@@ -3738,137 +3740,414 @@ const OS = {
         });
         return layers;
     },
-    _readPSDStructureOnMainThread(lib, bytes) {
-        return lib.readPsd(bytes, {
-            skipCompositeImageData: true,
-            skipLayerImageData: true,
-            skipThumbnail: true,
-            useRawData: true,
-            useRawThumbnail: true
-        });
+    _validatePSDDecodedPayload(psd) {
+        this._validatePSDStructure(psd);
+        if (!Number.isFinite(psd.decodedBytes) || psd.decodedBytes < 0 || psd.decodedBytes > this._psdLimits.maxDecodedBytes) {
+            throw new Error('PSD decoded memory exceeds 256 MB limit');
+        }
+        let transferredBytes = 0;
+        const validatePixels = (pixels, label) => {
+            if (!pixels) return;
+            const width = Math.round(Number(pixels.width || 0));
+            const height = Math.round(Number(pixels.height || 0));
+            const buffer = pixels.buffer;
+            const byteLength = buffer instanceof ArrayBuffer ? buffer.byteLength : ArrayBuffer.isView(buffer) ? buffer.byteLength : -1;
+            if (width < 1 || height < 1 || width > this._psdLimits.maxDimension || height > this._psdLimits.maxDimension || width * height > this._psdLimits.maxLayerPixels) {
+                throw new Error(`${label} dimensions exceed import limits`);
+            }
+            if (byteLength !== width * height * 4) throw new Error(`${label} pixel buffer is truncated`);
+            transferredBytes += byteLength;
+            if (transferredBytes > this._psdLimits.maxDecodedBytes) throw new Error('PSD transferred pixels exceed 256 MB limit');
+        };
+        validatePixels(psd.composite, 'PSD composite');
+        this._flattenPSDChildren(psd.children || []).forEach((layer, index) => validatePixels(layer.pixels, `PSD layer ${index + 1}`));
+        if (transferredBytes > psd.decodedBytes) throw new Error('PSD decoded byte accounting is invalid');
+        return psd;
     },
-    _readPSDStructureInWorker(bytes) {
-        if (typeof Worker === 'undefined') return Promise.reject(new Error('Workers unavailable'));
-        const code = `
-self.onmessage = function(e) {
-    try {
-        importScripts(${JSON.stringify(this._psdLibUrl)});
-        const lib = self.agPsd || agPsd;
-        const psd = lib.readPsd(new Uint8Array(e.data), {
-            skipCompositeImageData: true,
-            skipLayerImageData: true,
-            skipThumbnail: true,
-            useRawData: true,
-            useRawThumbnail: true
-        });
-        const simplify = node => ({
-            name: node.name || '',
-            left: node.left || 0,
-            top: node.top || 0,
-            right: node.right || node.left || 0,
-            bottom: node.bottom || node.top || 0,
-            children: Array.isArray(node.children) ? node.children.map(simplify) : []
-        });
-        self.postMessage({ ok: true, psd: {
-            width: psd.width,
-            height: psd.height,
-            children: Array.isArray(psd.children) ? psd.children.map(simplify) : []
-        }});
-    } catch (err) {
-        self.postMessage({ ok: false, error: err && err.message ? err.message : String(err) });
-    }
-};`;
-        const worker = new Worker(URL.createObjectURL(new Blob([code], {type:'application/javascript'})));
-        return new Promise((resolve, reject) => {
-            worker.onmessage = e => {
-                worker.terminate();
-                e.data && e.data.ok ? resolve(e.data.psd) : reject(new Error(e.data?.error || 'PSD worker preflight failed'));
-            };
-            worker.onerror = err => {
-                worker.terminate();
-                reject(err);
-            };
-            const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-            worker.postMessage(copy, [copy]);
-        });
+    _showPSDImportProgress(fileName, job) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+        overlay.id = 'psd-import-progress';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'psd-import-title');
+        modal.style.maxWidth = '380px';
+        const title = document.createElement('h3');
+        title.id = 'psd-import-title';
+        title.textContent = 'Importing PSD';
+        const file = document.createElement('p');
+        file.style.cssText = 'font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere';
+        file.textContent = this._safeText(fileName || 'Untitled.psd', 160);
+        const status = document.createElement('p');
+        status.style.cssText = 'font-size:12px;color:var(--text-primary);margin-top:10px';
+        status.textContent = 'Reading file…';
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-btns';
+        const cancel = document.createElement('button');
+        cancel.className = 'btn btn-danger';
+        cancel.textContent = 'Cancel Import';
+        cancel.addEventListener('click', () => this._cancelPSDImport());
+        buttons.appendChild(cancel);
+        modal.append(title, file, status, buttons);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        job.overlay = overlay;
+        job.status = status;
+        cancel.focus();
     },
-    async _preflightPSD(lib, bytes, fileSize) {
+    _updatePSDImportProgress(job, message) {
+        if (job && !job.cancelled && job.status) job.status.textContent = message;
+    },
+    _closePSDImportProgress(job) {
+        if (job?.overlay) job.overlay.remove();
+        if (job) {
+            job.overlay = null;
+            job.status = null;
+        }
+    },
+    _cancelPSDImport(message = 'PSD import cancelled') {
+        const job = this._psdDecodeJob;
+        if (!job || job.cancelled) return false;
+        job.cancelled = true;
+        job.worker?.terminate();
+        const error = new Error(message);
+        error.name = 'AbortError';
+        job.reject?.(error);
+        job.reject = null;
+        this._closePSDImportProgress(job);
+        return true;
+    },
+    _decodePSDInWorker(bytes, fileSize, job) {
+        if (typeof Worker === 'undefined') return Promise.reject(new Error('PSD import requires Web Worker support'));
         const header = this._readPSDHeader(bytes);
         this._validatePSDHeader(header, fileSize);
-        let structure;
-        try {
-            structure = await this._readPSDStructureInWorker(bytes);
-        } catch (err) {
-            console.warn('PSD worker preflight unavailable; falling back to main thread:', err.message || err);
-            structure = this._readPSDStructureOnMainThread(lib, bytes);
+        const code = `
+self.onmessage = function(event) {
+    const id = event.data.id;
+    try {
+        self.postMessage({ id: id, type: 'progress', message: 'Loading PSD decoder…' });
+        importScripts(${JSON.stringify(this._psdLibUrl)});
+        const lib = self.agPsd || agPsd;
+        if (typeof OffscreenCanvas !== 'undefined' && lib.initializeCanvas) {
+            lib.initializeCanvas(function(width, height) { return new OffscreenCanvas(width, height); });
         }
-        this._validatePSDStructure(structure);
-        return header;
-    },
-    _dataUrlFromPSDCanvas(canvas) {
-        if (!canvas) return null;
-        if (typeof canvas.toDataURL === 'function') return canvas.toDataURL();
-        return null;
-    },
-    _loadPSDFile(file) {
-        this.toast('Parsing PSD...', 'info');
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            try {
-                if (typeof agPsd === 'undefined' && typeof window.agPsd === 'undefined') {
-                    this.toast('PSD library not loaded', 'error'); return;
-                }
-                const lib = window.agPsd || agPsd;
-                const buffer = ev.target.result;
-                const bytes = new Uint8Array(buffer);
-                const header = await this._preflightPSD(lib, bytes, file.size || bytes.byteLength);
-                this.toast(`PSD preflight passed: ${header.width} x ${header.height}`, 'info');
-                const psd = lib.readPsd(bytes);
-                this._validatePSDStructure(psd);
-                this.createNewDocument(psd.width, psd.height, { resetProject:true });
-                this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
-                this._setPersistenceState('dirty');
-                // Add composite image as base
-                if (psd.canvas) {
-                    const dataUrl = this._dataUrlFromPSDCanvas(psd.canvas);
-                    if (!dataUrl) throw new Error('PSD composite image could not be decoded');
-                    await new Promise(resolve => {
-                        fabric.Image.fromURL(dataUrl, img => {
-                            img.set({ left:0, top:0, selectable:true, name:'PSD Composite' });
-                            this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img);
-                            resolve();
-                        });
-                    });
-                }
-                // Import individual layers
-                if (psd.children && psd.children.length) {
-                    for (const child of this._flattenPSDChildren(psd.children)) {
-                        if (child.canvas) {
-                            const layerDataUrl = this._dataUrlFromPSDCanvas(child.canvas);
-                            if (!layerDataUrl) continue;
-                            this.addLayer();
-                            this.layers[this.activeLayerIdx].name = this._safeText(child.name || 'PSD Layer', 80);
-                            if (typeof child.opacity === 'number') this.layers[this.activeLayerIdx].opacity = Math.round(child.opacity * 100 / 255);
-                            this.layers[this.activeLayerIdx].visible = !child.hidden;
-                            await new Promise(resolve => {
-                                fabric.Image.fromURL(layerDataUrl, img => {
-                                    img.set({ left: child.left||0, top: child.top||0, selectable:true, name: this._safeText(child.name||'Layer', 80), visible: !child.hidden });
-                                    if (typeof child.opacity === 'number') img.opacity = child.opacity / 255;
-                                    this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img);
-                                    resolve();
-                                });
-                            });
-                        }
-                    }
-                }
-                this.zoomFit(); this.saveHistory('Import PSD'); this.updateLayersPanel();
-                this.toast(`PSD imported: ${psd.children?psd.children.length:0} layers`, 'success');
-            } catch(err) {
-                console.error('PSD parse error:', err);
-                this.toast('PSD import failed: ' + err.message, 'error');
+        self.postMessage({ id: id, type: 'progress', message: 'Decoding pixels off the UI thread…' });
+        const psd = lib.readPsd(new Uint8Array(event.data.buffer), {
+            useImageData: true,
+            skipThumbnail: true,
+            skipLinkedFilesData: true,
+            totalMemoryLimit: event.data.limits.maxDecodedBytes
+        });
+        let layerCount = 0;
+        let decodedBytes = 0;
+        const transfer = [];
+        const transferSet = new Set();
+        const takePixels = function(imageData, label) {
+            if (!imageData || !imageData.data) return null;
+            const width = Number(imageData.width);
+            const height = Number(imageData.height);
+            if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
+                width > event.data.limits.maxDimension || height > event.data.limits.maxDimension ||
+                width * height > event.data.limits.maxLayerPixels) {
+                throw new Error(label + ' dimensions exceed import limits');
             }
+            const view = imageData.data;
+            if (view.byteLength !== width * height * 4) throw new Error(label + ' pixel buffer is truncated');
+            decodedBytes += view.byteLength;
+            if (decodedBytes > event.data.limits.maxDecodedBytes) throw new Error('PSD decoded memory exceeds 256 MB limit');
+            const buffer = view.byteOffset === 0 && view.byteLength === view.buffer.byteLength
+                ? view.buffer
+                : view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+            if (!transferSet.has(buffer)) {
+                transferSet.add(buffer);
+                transfer.push(buffer);
+            }
+            return { width: width, height: height, buffer: buffer };
         };
-        reader.readAsArrayBuffer(file);
+        const simplify = function(node, depth) {
+            if (depth > 80) throw new Error('PSD layer nesting exceeds import limits');
+            layerCount += 1;
+            if (layerCount > event.data.limits.maxLayers) throw new Error('PSD layer count exceeds import limits');
+            const left = Number(node.left || 0);
+            const top = Number(node.top || 0);
+            const right = Number(node.right == null ? left : node.right);
+            const bottom = Number(node.bottom == null ? top : node.bottom);
+            const width = Math.max(0, right - left);
+            const height = Math.max(0, bottom - top);
+            if (width > event.data.limits.maxDimension || height > event.data.limits.maxDimension ||
+                width * height > event.data.limits.maxLayerPixels) {
+                throw new Error('PSD layer ' + layerCount + ' exceeds import limits');
+            }
+            return {
+                name: node.name || '',
+                left: left,
+                top: top,
+                right: right,
+                bottom: bottom,
+                hidden: Boolean(node.hidden),
+                opacity: typeof node.opacity === 'number' ? node.opacity : 1,
+                blendMode: node.blendMode || 'normal',
+                pixels: takePixels(node.imageData, 'PSD layer ' + layerCount),
+                children: Array.isArray(node.children) ? node.children.map(function(child) { return simplify(child, depth + 1); }) : []
+            };
+        };
+        const result = {
+            width: Number(psd.width),
+            height: Number(psd.height),
+            decodedBytes: 0,
+            composite: takePixels(psd.imageData, 'PSD composite'),
+            children: Array.isArray(psd.children) ? psd.children.map(function(child) { return simplify(child, 0); }) : []
+        };
+        result.decodedBytes = decodedBytes;
+        self.postMessage({ id: id, type: 'result', psd: result }, transfer);
+    } catch (error) {
+        self.postMessage({ id: id, type: 'error', error: error && error.message ? error.message : String(error) });
+    }
+};`;
+        const url = URL.createObjectURL(new Blob([code], { type:'application/javascript' }));
+        return new Promise((resolve, reject) => {
+            if (job.cancelled) {
+                URL.revokeObjectURL(url);
+                const error = new Error('PSD import cancelled');
+                error.name = 'AbortError';
+                reject(error);
+                return;
+            }
+            const worker = new Worker(url);
+            URL.revokeObjectURL(url);
+            job.worker = worker;
+            job.reject = reject;
+            const finish = () => {
+                worker.terminate();
+                job.worker = null;
+                job.reject = null;
+            };
+            worker.onmessage = event => {
+                if (event.data?.id !== job.id) return;
+                if (event.data.type === 'progress') {
+                    this._updatePSDImportProgress(job, event.data.message);
+                    return;
+                }
+                finish();
+                if (event.data.type === 'result') resolve({ header, psd:event.data.psd });
+                else reject(new Error(event.data.error || 'PSD worker decode failed'));
+            };
+            worker.onerror = error => {
+                finish();
+                reject(new Error(error.message || 'PSD worker crashed'));
+            };
+            const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            worker.postMessage({
+                id: job.id,
+                buffer: copy,
+                limits: {
+                    maxLayers: this._psdLimits.maxLayers,
+                    maxDimension: this._psdLimits.maxDimension,
+                    maxLayerPixels: this._psdLimits.maxLayerPixels,
+                    maxDecodedBytes: this._psdLimits.maxDecodedBytes
+                }
+            }, [copy]);
+        });
+    },
+    _fabricImageFromPSDPixels(pixels, options) {
+        const canvas = document.createElement('canvas');
+        canvas.width = pixels.width;
+        canvas.height = pixels.height;
+        const context = canvas.getContext('2d');
+        const buffer = pixels.buffer instanceof ArrayBuffer
+            ? pixels.buffer
+            : pixels.buffer.buffer.slice(pixels.buffer.byteOffset, pixels.buffer.byteOffset + pixels.buffer.byteLength);
+        context.putImageData(new ImageData(new Uint8ClampedArray(buffer), pixels.width, pixels.height), 0, 0);
+        return new fabric.Image(canvas, options);
+    },
+    async _preparePSDImport(psd, job) {
+        const boundary = this._createCheckerBoundary(psd.width, psd.height);
+        const layers = [
+            { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:[boundary] }
+        ];
+        const objects = [boundary];
+        if (psd.composite) {
+            const image = this._fabricImageFromPSDPixels(psd.composite, { left:0, top:0, selectable:true, name:'PSD Composite' });
+            layers.push({ id:this._newDocumentId('layer'), name:'PSD Composite', visible:true, locked:false, opacity:100, blend:'source-over', objects:[image] });
+            objects.push(image);
+        } else {
+            layers.push({ id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
+        }
+        const decodedLayers = this._flattenPSDChildren(psd.children || []).filter(layer => layer.pixels);
+        for (let index = 0; index < decodedLayers.length; index++) {
+            if (job.cancelled) {
+                const error = new Error('PSD import cancelled');
+                error.name = 'AbortError';
+                throw error;
+            }
+            const layer = decodedLayers[index];
+            const opacityValue = Number(layer.opacity);
+            const opacity = Math.max(0, Math.min(1, opacityValue > 1 ? opacityValue / 255 : opacityValue));
+            const name = this._safeText(layer.name || `PSD Layer ${index + 1}`, 80);
+            const image = this._fabricImageFromPSDPixels(layer.pixels, {
+                left:layer.left || 0,
+                top:layer.top || 0,
+                selectable:!layer.hidden,
+                evented:!layer.hidden,
+                name,
+                visible:!layer.hidden,
+                opacity
+            });
+            layers.push({
+                id:this._newDocumentId('layer'),
+                name,
+                visible:!layer.hidden,
+                locked:false,
+                opacity:Math.round(opacity * 100),
+                blend:'source-over',
+                objects:[image]
+            });
+            objects.push(image);
+            if (index % 4 === 3) {
+                this._updatePSDImportProgress(job, `Preparing layer ${index + 1} of ${decodedLayers.length}…`);
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+        }
+        return { boundary, layers, objects, decodedLayerCount:decodedLayers.length };
+    },
+    _commitPSDImport(prepared, psd, file) {
+        const previous = {
+            objects:this.canvas.getObjects().slice(),
+            activeObject:this.canvas.getActiveObject(),
+            backgroundColor:this.canvas.backgroundColor,
+            layers:this.layers,
+            activeLayerIdx:this.activeLayerIdx,
+            canvasW:this.canvasW,
+            canvasH:this.canvasH,
+            zoom:this.zoom,
+            viewportTransform:this.canvas.viewportTransform?.slice(),
+            docName:this._docName,
+            projectFileHandle:this._projectFileHandle,
+            documentGeneration:this._documentGeneration,
+            documentRevision:this._documentRevision,
+            history:this.history,
+            historyIdx:this.historyIdx,
+            guides:this.guides,
+            selectionMask:this._selectionMask,
+            selectionBounds:this._selectionBounds,
+            animFrames:this._animFrames,
+            animIdx:this._animIdx,
+            isDirty:this._isDirty,
+            autoSaveDirty:this._autoSaveDirty,
+            persistenceState:this._persistenceState,
+            savedSnapshot:this._savedSnapshot
+        };
+        try {
+            this.canvas.discardActiveObject();
+            this.canvas.clear();
+            this.canvas.backgroundColor = null;
+            prepared.objects.forEach(object => this.canvas.add(object));
+            this.canvasW = psd.width;
+            this.canvasH = psd.height;
+            this.layers = prepared.layers;
+            this.activeLayerIdx = Math.max(1, this.layers.length - 1);
+            this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
+            this._projectFileHandle = null;
+            this._savedSnapshot = null;
+            this._documentGeneration += 1;
+            this.guides = [];
+            this._selectionMask = null;
+            this._selectionBounds = null;
+            this._animFrames = [];
+            this._animIdx = 0;
+            this.history = [];
+            this.historyIdx = -1;
+            this.zoomFit();
+            this.saveHistory('Import PSD');
+        } catch (error) {
+            this.canvas.clear();
+            previous.objects.forEach(object => this.canvas.add(object));
+            this.canvas.backgroundColor = previous.backgroundColor;
+            this.layers = previous.layers;
+            this.activeLayerIdx = previous.activeLayerIdx;
+            this.canvasW = previous.canvasW;
+            this.canvasH = previous.canvasH;
+            this.zoom = previous.zoom;
+            if (previous.viewportTransform) this.canvas.setViewportTransform(previous.viewportTransform);
+            this._docName = previous.docName;
+            this._projectFileHandle = previous.projectFileHandle;
+            this._documentGeneration = previous.documentGeneration;
+            this._documentRevision = previous.documentRevision;
+            this.history = previous.history;
+            this.historyIdx = previous.historyIdx;
+            this.guides = previous.guides;
+            this._selectionMask = previous.selectionMask;
+            this._selectionBounds = previous.selectionBounds;
+            this._animFrames = previous.animFrames;
+            this._animIdx = previous.animIdx;
+            this._isDirty = previous.isDirty;
+            this._autoSaveDirty = previous.autoSaveDirty;
+            this._savedSnapshot = previous.savedSnapshot;
+            if (previous.activeObject) this.canvas.setActiveObject(previous.activeObject);
+            this.canvas.renderAll();
+            this._setPersistenceState(previous.persistenceState);
+            this.updateLayersPanel();
+            throw error;
+        }
+        previous.guides.forEach(guide => guide._cleanup?.());
+        const guides = document.getElementById('guides-container');
+        if (guides) guides.innerHTML = '';
+        const selection = document.getElementById('selection-overlay');
+        if (selection) selection.style.display = 'none';
+        this._renderFrames();
+        this.canvas.renderAll();
+        this.updateLayersPanel();
+        this.updateStatus();
+        const dims = document.getElementById('canvas-dims');
+        if (dims) dims.textContent = `${this.canvasW} x ${this.canvasH}`;
+        this._captureBA();
+    },
+    _psdDecodeJob: null,
+    async _loadPSDFile(file) {
+        if (!file) return false;
+        if (this._psdDecodeJob) this._cancelPSDImport('A newer PSD import replaced this one');
+        const job = { id:`psd-${Date.now()}-${++this._idSequence}`, cancelled:false, worker:null, reject:null, overlay:null, status:null };
+        this._psdDecodeJob = job;
+        this._showPSDImportProgress(file.name, job);
+        try {
+            if (file.size > this._psdLimits.maxFileBytes) throw new Error('PSD exceeds 256 MB import limit');
+            const buffer = await file.arrayBuffer();
+            if (job.cancelled) {
+                const error = new Error('PSD import cancelled');
+                error.name = 'AbortError';
+                throw error;
+            }
+            const bytes = new Uint8Array(buffer);
+            const { header, psd } = await this._decodePSDInWorker(bytes, file.size || bytes.byteLength, job);
+            this._updatePSDImportProgress(job, 'Validating decoded memory…');
+            this._validatePSDDecodedPayload(psd);
+            if (psd.width !== header.width || psd.height !== header.height) throw new Error('PSD decoded dimensions do not match its header');
+            const prepared = await this._preparePSDImport(psd, job);
+            if (job.cancelled) {
+                const error = new Error('PSD import cancelled');
+                error.name = 'AbortError';
+                throw error;
+            }
+            this._updatePSDImportProgress(job, 'Committing document…');
+            this._commitPSDImport(prepared, psd, file);
+            this.toast(`PSD imported: ${prepared.decodedLayerCount} layers`, 'success');
+            return true;
+        } catch (error) {
+            if (error.name === 'AbortError') this.toast('PSD import cancelled', 'info');
+            else {
+                console.error('PSD parse error:', error);
+                this.toast('PSD import failed: ' + error.message, 'error');
+            }
+            return false;
+        } finally {
+            if (this._psdDecodeJob === job) {
+                job.worker?.terminate();
+                this._closePSDImportProgress(job);
+                this._psdDecodeJob = null;
+            }
+        }
     },
 
     // ====================== LAYERS ======================

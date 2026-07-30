@@ -10,10 +10,12 @@ All notable changes to Openshop will be documented in this file.
 - Make mobile inspector groups independently usable through a bounded, scrollable drawer with no horizontal page overflow
 - Unify project save/open, recovery, and history on document schema v1 with stable layer/object identity, masks, guides, selections, animation, active-state preservation, and legacy OpenShop/Fabric migration
 - Make project and recovery writes transactional with visible clean/dirty/saving/saved/error states, acknowledged worker autosaves, revision-safe concurrent edits, and stale file-handle resets on new/open/recovery flows
+- Move the complete PSD decode into a cancellable worker and atomically prepare every decoded layer before replacing the open document
 
 ### Security
 - Upgrade Fabric.js from 5.3.1 to 7.4.0 with legacy project adapters and browser regressions for stored-SVG injection through object IDs and gradient colors
 - Refresh the contributor lock to PostCSS 8.5.25 and Nano ID 3.3.16, synchronize its root version, and add a release test command that fails on high or critical npm advisories
+- Enforce a 256 MB aggregate PSD decoded-pixel budget in addition to existing file, canvas, layer-count, nesting, and per-layer bounds
 
 ## [v0.19.1] - 2026-07-01
 

@@ -404,7 +404,7 @@ describe('OpenShop core object', () => {
     expect(OS.toast).toHaveBeenCalledWith('Applied Sharpen', 'success');
   });
 
-  it('preflights PSD headers, dimensions, layers, and metadata before bitmap decode', async () => {
+  it('bounds PSD headers, layer structure, transferred pixels, and aggregate decode memory', () => {
     const OS = loadOpenShop();
     const makeHeader = ({ width = 100, height = 80, channels = 4, depth = 8, colorMode = 3 } = {}) => {
       const bytes = new Uint8Array(26);
@@ -418,23 +418,11 @@ describe('OpenShop core object', () => {
       view.setUint16(24, colorMode, false);
       return bytes;
     };
-    const lib = {
-      readPsd: vi.fn(() => ({
-        width: 100,
-        height: 80,
-        children: [{ name: '<img src=x onerror=alert(1)>', left: 0, top: 0, right: 10, bottom: 10 }]
-      }))
-    };
-
-    await expect(OS._preflightPSD(lib, makeHeader(), 1024)).resolves.toMatchObject({ width: 100, height: 80 });
-    expect(lib.readPsd).toHaveBeenCalledWith(expect.any(Uint8Array), expect.objectContaining({
-      skipCompositeImageData: true,
-      skipLayerImageData: true
-    }));
-
+    expect(OS._readPSDHeader(makeHeader())).toMatchObject({ width: 100, height: 80, depth: 8, colorMode: 3 });
     expect(() => OS._validatePSDHeader(OS._readPSDHeader(makeHeader({ width: 90000 })), 1024)).toThrow(/dimensions exceed/);
     expect(() => OS._validatePSDHeader(OS._readPSDHeader(makeHeader({ depth: 32 })), 1024)).toThrow(/bit depth/);
     expect(() => OS._validatePSDHeader(OS._readPSDHeader(makeHeader({ colorMode: 4 })), 1024)).toThrow(/RGB/);
+    expect(() => OS._validatePSDHeader(OS._readPSDHeader(makeHeader()), OS._psdLimits.maxFileBytes + 1)).toThrow(/256 MB/);
     expect(() => OS._validatePSDStructure({
       width: 100,
       height: 80,
@@ -445,6 +433,29 @@ describe('OpenShop core object', () => {
       height: 80,
       children: [{ left: 0, top: 0, right: 100000, bottom: 2 }]
     })).toThrow(/layer 1 exceeds/);
+
+    const validPixels = { width: 10, height: 10, buffer: new ArrayBuffer(10 * 10 * 4) };
+    expect(() => OS._validatePSDDecodedPayload({
+      width: 100,
+      height: 80,
+      decodedBytes: validPixels.buffer.byteLength,
+      composite: validPixels,
+      children: []
+    })).not.toThrow();
+    expect(() => OS._validatePSDDecodedPayload({
+      width: 100,
+      height: 80,
+      decodedBytes: OS._psdLimits.maxDecodedBytes + 1,
+      composite: null,
+      children: []
+    })).toThrow(/decoded memory/);
+    expect(() => OS._validatePSDDecodedPayload({
+      width: 100,
+      height: 80,
+      decodedBytes: 8,
+      composite: { width: 2, height: 2, buffer: new ArrayBuffer(8) },
+      children: []
+    })).toThrow(/truncated/);
   });
 
   it('centralizes import schemas and resource budgets', () => {

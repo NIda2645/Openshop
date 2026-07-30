@@ -352,6 +352,181 @@ test('keeps hostile Fabric object ids and gradient colors inert in SVG export', 
   });
 });
 
+test('decodes and bounds PSD pixels in a worker before committing the document', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const makeCanvas = (color) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 8;
+      canvas.height = 6;
+      const context = canvas.getContext('2d');
+      context.fillStyle = color;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas;
+    };
+    const bytes = agPsd.writePsd({
+      width: 8,
+      height: 6,
+      canvas: makeCanvas('#cc2233'),
+      children: [{
+        name: 'Blue worker layer',
+        left: 0,
+        top: 0,
+        right: 8,
+        bottom: 6,
+        canvas: makeCanvas('#2244cc')
+      }]
+    });
+    const file = new File([bytes], 'worker-fixture.psd', { type: 'image/vnd.adobe.photoshop' });
+
+    let workerCalls = 0;
+    let mainThreadReadCalls = 0;
+    let heartbeats = 0;
+    const decode = OS._decodePSDInWorker.bind(OS);
+    OS._decodePSDInWorker = (...args) => {
+      workerCalls++;
+      return decode(...args);
+    };
+    const mainRead = agPsd.readPsd;
+    agPsd.readPsd = (...args) => {
+      mainThreadReadCalls++;
+      return mainRead(...args);
+    };
+    const heartbeat = setInterval(() => { heartbeats++; }, 0);
+    const imported = await OS._loadPSDFile(file);
+    clearInterval(heartbeat);
+    agPsd.readPsd = mainRead;
+
+    const layerImage = OS.layers.find((layer) => layer.name === 'Blue worker layer')?.objects[0];
+    const pixel = layerImage?.getElement()?.getContext('2d')?.getImageData(0, 0, 1, 1).data;
+    return {
+      imported,
+      workerCalls,
+      mainThreadReadCalls,
+      heartbeats,
+      dimensions: [OS.canvasW, OS.canvasH],
+      layers: OS.layers.map((layer) => layer.name),
+      bluePixel: pixel ? [...pixel] : null,
+      decodedLimit: OS._psdLimits.maxDecodedBytes,
+      progressClosed: !document.getElementById('psd-import-progress'),
+      dirty: OS._isDirty
+    };
+  });
+
+  expect(result).toEqual(expect.objectContaining({
+    imported: true,
+    workerCalls: 1,
+    mainThreadReadCalls: 0,
+    dimensions: [8, 6],
+    layers: ['Background', 'PSD Composite', 'Blue worker layer'],
+    progressClosed: true,
+    dirty: true
+  }));
+  expect(result.heartbeats).toBeGreaterThan(0);
+  expect(result.bluePixel[2]).toBeGreaterThan(result.bluePixel[0]);
+  expect(result.decodedLimit).toBe(256 * 1024 * 1024);
+  expect(pageErrors).toEqual([]);
+});
+
+test('rejects hostile or cancelled PSD work without mutating the open document', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const makeHeader = ({ width = 4, height = 4 } = {}) => {
+      const bytes = new Uint8Array(26);
+      bytes.set([0x38, 0x42, 0x50, 0x53], 0);
+      const view = new DataView(bytes.buffer);
+      view.setUint16(4, 1, false);
+      view.setUint16(12, 4, false);
+      view.setUint32(14, height, false);
+      view.setUint32(18, width, false);
+      view.setUint16(22, 8, false);
+      view.setUint16(24, 3, false);
+      return bytes;
+    };
+    const summary = () => JSON.stringify({
+      dimensions: [OS.canvasW, OS.canvasH],
+      layers: OS.layers.map((layer) => [layer.name, layer.objects.map((object) => object.name)]),
+      objects: OS.canvas.getObjects().map((object) => object.name),
+      history: OS.history.map((entry) => entry.action),
+      generation: OS._documentGeneration,
+      name: OS._docName
+    });
+    const before = summary();
+
+    const huge = await OS._loadPSDFile(new File(
+      [makeHeader({ width: OS._psdLimits.maxDimension + 1 })],
+      'huge.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const afterHuge = summary();
+
+    const truncated = await OS._loadPSDFile(new File(
+      [makeHeader()],
+      'truncated.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const afterTruncated = summary();
+
+    const decode = OS._decodePSDInWorker;
+    OS._decodePSDInWorker = async (bytes, size) => ({
+      header: OS._readPSDHeader(bytes),
+      psd: {
+        width: 4,
+        height: 4,
+        decodedBytes: OS._psdLimits.maxDecodedBytes + 1,
+        composite: null,
+        children: []
+      }
+    });
+    const overBudget = await OS._loadPSDFile(new File(
+      [makeHeader()],
+      'decompression-heavy.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const afterOverBudget = summary();
+
+    OS._decodePSDInWorker = (bytes, size, job) => new Promise((resolve, reject) => {
+      job.reject = reject;
+    });
+    const pendingCancellation = OS._loadPSDFile(new File(
+      [makeHeader()],
+      'cancel.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    while (!OS._psdDecodeJob?.reject) await new Promise((resolve) => setTimeout(resolve, 0));
+    const cancelAccepted = OS._cancelPSDImport();
+    const cancelled = await pendingCancellation;
+    const afterCancelled = summary();
+    OS._decodePSDInWorker = decode;
+
+    return {
+      huge,
+      truncated,
+      overBudget,
+      cancelAccepted,
+      cancelled,
+      atomic: [afterHuge, afterTruncated, afterOverBudget, afterCancelled].every((value) => value === before),
+      progressClosed: !document.getElementById('psd-import-progress')
+    };
+  });
+
+  expect(result).toEqual({
+    huge: false,
+    truncated: false,
+    overBudget: false,
+    cancelAccepted: true,
+    cancelled: false,
+    atomic: true,
+    progressClosed: true
+  });
+});
+
 test('round-trips one document state through save, open, recovery, undo, and redo', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();

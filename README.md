@@ -155,7 +155,7 @@ OpenShop JSON files use document schema v1. The same envelope drives project sav
 - Recent files, saved palettes, templates, and photo presets render through DOM APIs so persisted values remain inert text
 - Worker-backed filters use a named operation registry, so filter jobs no longer pass executable source strings or require `unsafe-eval`
 - Command palette, context menu, sticky notes, animation frames, macro list, AI progress titles, and save-preset modals render through DOM APIs instead of runtime `innerHTML`
-- PSD import preflights file size, header fields, canvas dimensions, layer count, and layer bounds before bitmap decode; structure parsing is isolated in a worker when available
+- PSD import performs its complete ag-psd decode in a cancellable worker, enforces file/header/layer bounds plus a 256 MB aggregate decoded-pixel ceiling, and commits the new document only after every layer is ready
 - Project, palette, preset, and image imports share central schema/resource budgets for dimensions, file sizes, object counts, color formats, and adjustment ranges
 - Recovery Storage in the command palette shows autosave age, size, quota usage, corruption state, and restore/export/discard actions
 - Content Security Policy restricts script/style/connect sources
@@ -219,7 +219,7 @@ No. Everything runs in your browser. Images are processed locally via Canvas API
 After the first load, CDN resources are cached via the Cache API. Most features work offline. AI features require their models to be cached from a prior use. Install as a PWA for the best offline experience.
 
 **Q: How does PSD import/export work?**
-OpenShop uses the ag-psd library to parse and write `.psd` files client-side. Layers, blend modes, opacity, and visibility are preserved in both directions. Some advanced PSD features (layer effects, smart objects, adjustment layers) may not import perfectly.
+OpenShop uses the ag-psd library to parse and write `.psd` files client-side. Import decoding runs in a worker with explicit resource limits and a cancel action, so a rejected import leaves the open document unchanged. Pixel layers, opacity, and visibility are carried into the editor; group hierarchy, non-normal blend semantics, layer effects, smart objects, and adjustment layers can be flattened or simplified.
 
 **Q: Why not React/Vue/Svelte?**
 Simplicity. A single HTML file can be hosted anywhere, shared as an email attachment, opened from a USB drive, or embedded in any environment. No build toolchain means zero maintenance burden.
