@@ -1428,6 +1428,62 @@ describe('OpenShop core object', () => {
     expect(capture).toHaveBeenCalled();
   });
 
+  it('renames a contested document once and clears every generation in its lineage', async () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    quietUiMethods(OS);
+    OS.zoomFit = vi.fn();
+    OS._documentId = 'document-contested';
+    OS._getRecoveryTabId = () => 'this-tab';
+
+    // A history snapshot embeds whichever id was live when it was taken.
+    const snapshot = JSON.stringify(OS._captureDocumentState());
+
+    const foreign = [{
+      valid: true,
+      documentId: 'document-contested',
+      ownerId: 'other-tab',
+      filename: 'recovery-document-contested-0.json',
+      leaseExpiresAt: Date.now() + 60000
+    }];
+
+    expect(OS._ensureRecoveryOwnership(foreign)).toBe(true);
+    const renamed = OS._documentId;
+    expect(renamed).not.toBe('document-contested');
+    expect(OS._documentIdAliases).toContain('document-contested');
+
+    // Undo re-installs the snapshot. It must not re-claim the contested id.
+    await OS._loadDocumentState(JSON.parse(snapshot), { trusted: true });
+    expect(OS._documentId).toBe(renamed);
+
+    // ...so the next autosave finds no foreign owner and does not rename again.
+    expect(OS._ensureRecoveryOwnership(foreign)).toBe(false);
+    expect(OS._documentId).toBe(renamed);
+    expect(OS._documentIdAliases).toEqual(['document-contested']);
+
+    // Save Project must clear the generations written under both ids.
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: { getDirectory: vi.fn().mockResolvedValue({}) }
+    });
+    const generations = [
+      { valid: true, legacy: false, documentId: 'document-contested', ownerId: 'this-tab', filename: 'recovery-old-0.json' },
+      { valid: true, legacy: false, documentId: renamed, ownerId: 'this-tab', filename: 'recovery-new-0.json' },
+      { valid: true, legacy: false, documentId: 'document-elsewhere', ownerId: 'this-tab', filename: 'recovery-other-0.json' }
+    ];
+    OS._listRecoveryGenerations = vi.fn().mockResolvedValue(generations);
+    OS._discardRecovery = vi.fn().mockResolvedValue(true);
+    OS._rewriteRecoveryIndex = vi.fn().mockResolvedValue(true);
+
+    await expect(OS._clearAutoSave()).resolves.toBe(true);
+    const cleared = OS._discardRecovery.mock.calls.map(([record]) => record.filename);
+    expect(cleared).toEqual(['recovery-old-0.json', 'recovery-new-0.json']);
+    // An unrelated document's recovery data is left alone.
+    expect(OS._rewriteRecoveryIndex).toHaveBeenCalledWith([generations[2]]);
+  });
+
   it('offers recovery with event-delegated buttons and restores or discards', async () => {
     const OS = loadOpenShop();
     const canvas = createCanvasMock();

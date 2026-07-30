@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-OCDCurdp9KUaGwMOoQ+WCQyDYzqITapQBIUiiqfocYU=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-fjg/RpqP7s93AW7KL1ZpGHkaqvKwH4hnYC1TI4nTMyw=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3341,6 +3341,26 @@ const OS = {
     canvas: null, layers: [], activeLayerIdx: 0,
     _documentSchemaVersion: 1,
     _documentId: null,
+    // Ids this document has already used and surrendered this session. Kept so
+    // a snapshot cannot re-install a contested id, and so Save Project clears
+    // every generation the document wrote rather than only its newest name.
+    _documentIdAliases: [],
+    _maxDocumentIdAliases: 20,
+    _adoptDocumentId(id, { alias = false } = {}) {
+        const next = this._coerceDocumentId(id, 'document');
+        if (next === this._documentId) return next;
+        if (alias && this._documentId) {
+            this._documentIdAliases = [...this._documentIdAliases, this._documentId].slice(-this._maxDocumentIdAliases);
+        } else if (!this._documentIdAliases.includes(next)) {
+            // A different document entirely; the old lineage no longer applies.
+            this._documentIdAliases = [];
+        }
+        this._documentId = next;
+        return next;
+    },
+    _isSameDocumentLineage(id) {
+        return Boolean(id) && (id === this._documentId || this._documentIdAliases.includes(id));
+    },
     _idSequence: 0,
     _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow'],
     _isDirty: false,
@@ -3731,9 +3751,9 @@ const OS = {
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._docName = 'Untitled';
-            this._documentId = this._newDocumentId('document');
+            this._adoptDocumentId(this._newDocumentId('document'));
         }
-        if (!this._documentId) this._documentId = this._newDocumentId('document');
+        if (!this._documentId) this._adoptDocumentId(this._newDocumentId('document'));
         this._psdInterchange = null;
         this._lastPSDImportReport = null;
         this._lastPSDExportReport = null;
@@ -4297,7 +4317,12 @@ const OS = {
         });
         this._enforceLayerInvariants({ render:false });
 
-        this._documentId = this._coerceDocumentId(state.document?.id, 'document');
+        // Every snapshot embeds whichever id was live when it was taken. If
+        // that id was surrendered to another tab, restoring it re-broadcasts a
+        // claim for a contested stream and the next autosave renames again —
+        // one rename, and one orphaned generation set, per undo.
+        const restoredDocumentId = this._coerceDocumentId(state.document?.id, 'document');
+        if (!this._documentIdAliases.includes(restoredDocumentId)) this._adoptDocumentId(restoredDocumentId);
         this._docName = this._safeText(state.document?.name || 'Untitled', 100);
         this._restoreGuidesState(state.guides);
         this._restoreSelectionState(state.selection);
@@ -4916,7 +4941,7 @@ const OS = {
         try {
             await this._loadDocumentState(JSON.parse(state.snapshot), { trusted:true });
             this._docName = state.docName;
-            this._documentId = state.documentId;
+            this._adoptDocumentId(state.documentId);
             this._projectFileHandle = state.projectFileHandle;
             this._isDirty = state.isDirty;
             this._autoSaveDirty = state.autoSaveDirty;
@@ -5749,7 +5774,7 @@ self.onmessage = function(event) {
             this.layers = prepared.layers;
             this.activeLayerIdx = Math.max(1, this.layers.length - 1);
             this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
-            this._documentId = this._newDocumentId('document');
+            this._adoptDocumentId(this._newDocumentId('document'));
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._psdInterchange = prepared.psdInterchange;
@@ -5773,7 +5798,7 @@ self.onmessage = function(event) {
             this.zoom = previous.zoom;
             if (previous.viewportTransform) this.canvas.setViewportTransform(previous.viewportTransform);
             this._docName = previous.docName;
-            this._documentId = previous.documentId;
+            this._adoptDocumentId(previous.documentId);
             this._projectFileHandle = previous.projectFileHandle;
             this._documentGeneration = previous.documentGeneration;
             this._documentRevision = previous.documentRevision;
@@ -9668,12 +9693,12 @@ self.onmessage = function(event) {
         );
     },
     _ensureRecoveryOwnership(records) {
-        if (!this._documentId) this._documentId = this._newDocumentId('document');
+        if (!this._documentId) this._adoptDocumentId(this._newDocumentId('document'));
         if (!this._hasForeignRecoveryOwner(this._documentId, records)) {
             this._claimRecoveryOwnership();
             return false;
         }
-        this._documentId = this._newDocumentId('document');
+        this._adoptDocumentId(this._newDocumentId('document'), { alias:true });
         this._activeRecoverySourceFilename = null;
         this._claimRecoveryOwnership();
         this.toast('Another tab owns that recovery stream; this tab will save a separate copy', 'info');
@@ -10557,7 +10582,11 @@ self.onmessage = async function(event) {
                 const records = await this._listRecoveryGenerations();
                 const targets = records.filter(record =>
                     record.legacy ||
-                    (record.documentId === this._documentId &&
+                    // Match every id in this document's lineage: an ownership
+                    // rename would otherwise strand the generations written
+                    // under the previous id, and they would be offered as
+                    // unsaved work on a later launch.
+                    (this._isSameDocumentLineage(record.documentId) &&
                         (record.ownerId === this._getRecoveryTabId() || record.filename === this._activeRecoverySourceFilename))
                 );
                 for (const record of targets) await this._discardRecovery(record, { updateIndex:false });

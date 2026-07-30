@@ -5,6 +5,7 @@ All notable changes to Openshop will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Stop recovery ownership from flapping when another tab owns the stream. Autosave switches this tab to a fresh document id, but every history snapshot embeds the old one, so each undo re-installed the contested id and the next autosave renamed again — orphaning a set of generations every time, which were then offered as unsaved work on a later launch. The surrendered ids are now tracked as a session lineage: snapshots no longer re-claim them, and Save Project clears the generations written under all of them
 - Refuse to autosave while a document load is in flight. `canvasW/H` are assigned before `loadFromJSON` resolves, so a capture landing in that window persisted the outgoing document'''s content under the incoming document'''s dimensions, stored against the outgoing id — a generation that restored at the wrong size and could evict a good one under the five-per-document retention cap. The work now stays queued and flushes once the load settles
 
 ## [v0.23.0] - 2026-07-30
