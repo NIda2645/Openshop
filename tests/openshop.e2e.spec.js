@@ -135,6 +135,68 @@ test('applies a one-click pixel filter to an active image layer', async ({ page 
   expect(result.photonDisabled).toBe(false);
 });
 
+test('cancels a running pixel filter without changing pixels or history', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const before = await page.evaluate(async () => {
+    const source = document.createElement('canvas');
+    source.width = 8;
+    source.height = 8;
+    source.getContext('2d').fillRect(0, 0, 8, 8);
+    const img = await fabric.Image.fromURL(source.toDataURL('image/png'));
+    img.set({ name: 'Cancelable Filter', left: 20, top: 20, selectable: true });
+    OS.canvas.add(img);
+    OS.layers[OS.activeLayerIdx].objects.push(img);
+    OS.canvas.setActiveObject(img);
+    OS.canvas.renderAll();
+
+    const listeners = {};
+    const worker = {
+      terminated: false,
+      addEventListener(type, listener) { listeners[type] = listener; },
+      postMessage() {},
+      terminate() { this.terminated = true; }
+    };
+    OS._photonFilterDisabled = true;
+    OS._getFilterWorker = () => worker;
+    window.__cancelWorker = worker;
+    window.__cancelFilterPromise = OS.applyFilterDirect('Sharpen');
+    return {
+      revision: OS._documentRevision,
+      history: OS.history.map((entry) => entry.action),
+      objectNames: OS.canvas.getObjects().map((object) => object.name)
+    };
+  });
+
+  await expect(page.locator('#compute-cancel')).toBeVisible();
+  await page.locator('#compute-cancel').click();
+
+  const after = await page.evaluate(async () => {
+    await window.__cancelFilterPromise;
+    return {
+      revision: OS._documentRevision,
+      history: OS.history.map((entry) => entry.action),
+      objectNames: OS.canvas.getObjects().map((object) => object.name),
+      workerTerminated: window.__cancelWorker.terminated,
+      callbacks: Object.keys(OS._filterJobCallbacks).length,
+      progressVisible: document.getElementById('ai-progress').classList.contains('visible')
+    };
+  });
+
+  expect(after).toMatchObject({
+    revision: before.revision,
+    history: before.history,
+    objectNames: before.objectNames,
+    workerTerminated: true,
+    callbacks: 0,
+    progressVisible: false
+  });
+  expect(pageErrors).toEqual([]);
+});
+
 test('creates a pixel selection from a mocked AI segment mask', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();

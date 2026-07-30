@@ -63,13 +63,13 @@ Batch export to multiple formats in one click. Export Settings previews real PNG
 | **Segment Select** | Click-to-segment pixel selections via pinned DETR panoptic segmentation |
 | **Smart Upscale** | 2x / 4x AI super-resolution |
 
-All AI models download once and run entirely in-browser via WebGPU/WASM. No API keys, no server calls. Model revisions are pinned to immutable commit SHAs for supply-chain security. Segment Select uses `Xenova/detr-resnet-50-panoptic`; SAM-style mask-generation is not available in current Transformers.js browser pipelines.
+All AI models download once and run entirely in-browser via WebGPU/WASM. No API keys, no server calls. Model revisions are pinned to immutable commit SHAs for supply-chain security. Segment Select uses `Xenova/detr-resnet-50-panoptic`; SAM-style mask-generation is not available in current Transformers.js browser pipelines. Model loading, inference, and CPU post-processing expose one cancel action; late results are discarded if the document revision or target layer changes.
 
 ### Adjustments & Filters
 
 Levels, Curves (per-channel), Brightness/Contrast, Hue/Saturation, Color Balance, Auto Levels, Auto Enhance, Grayscale, Sepia, Invert, Black & White, Sharpen, Blur, Noise, Vignette, Posterize, Threshold, Emboss, Edge Detect, Pixelate, Oil Paint, Halftone, Duotone, Tilt Shift, Chromatic Aberration, Gradient Map, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Selective Color, Replace Color, Lens Correction, and 8 built-in photo presets with custom preset import/export.
 
-Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignette, Edge Detect, Duotone, Chromatic Aberration) run in a Web Worker so the UI stays responsive on large images. Photon WASM is loaded on demand as an optional accelerator for supported pixel filters, with automatic fallback to the JavaScript worker.
+Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignette, Edge Detect, Duotone, Chromatic Aberration) run in a Web Worker so the UI stays responsive on large images. Photon WASM is loaded on demand as an optional accelerator for supported pixel filters, with automatic fallback to the JavaScript worker. Cancel terminates the active filter worker, rejects its pending job, and leaves the source layer and history unchanged.
 
 ### Interface
 

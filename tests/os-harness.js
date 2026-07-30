@@ -200,7 +200,7 @@ export function mountEditorDom() {
     <div id="sticky-container"></div>
     <div id="timeline-frames"></div>
     <div id="macro-list"></div>
-    <div id="ai-progress"><div id="ai-title"></div><div id="ai-msg"></div><div id="ai-bar"></div><div id="ai-pct"></div></div>
+    <div id="ai-progress"><div id="ai-title"></div><div id="ai-msg"></div><div id="ai-bar"></div><div id="ai-pct"></div><div id="compute-actions" hidden><button id="compute-cancel"></button></div></div>
     <span id="brush-size-val"></span>
     <span id="zoom-display"></span>
     <button id="offline-state" data-state="limited"><i></i><span id="offline-state-label"></span></button>

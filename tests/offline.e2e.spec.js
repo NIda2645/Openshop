@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const origin = 'http://127.0.0.1:4173';
-const productionRevision = '0.20.0-r2';
+const productionRevision = '0.20.0-r3';
 
 async function setServerState(request, state = {}) {
   const response = await request.post(`${origin}/__test/control`, {
