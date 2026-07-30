@@ -16,6 +16,7 @@ All notable changes to Openshop will be documented in this file.
 - Replace label-based macros with validated schema-v1 commands and atomic action replay; initialize history without a fake edit, coalesce live previews, and make crop, flatten, canvas rotation/flip, and frame changes fail-safe and exactly undoable
 - Make raster export alpha/matte behavior explicit with real previews and format-loss guidance; keep checker pixels out of PNG, WebP, JPEG, SVG, and PDF output, restore temporary canvas state on failure, and leave project dirty state untouched
 - Preserve nested PSD groups, supported blends, 0–1 opacity, visibility, locks, and basic editable text across import/export/reimport; avoid composite-layer duplication and report precise whole-document or per-layer raster fallbacks for unsupported semantics
+- Replace the singleton autosave with checksum-verified immutable OPFS generations, staged promotion, bounded retention, corrupt-newest fallback, legacy migration, quota/durability UI, per-generation recovery actions, and cross-tab ownership forks
 
 ### Security
 - Upgrade Fabric.js from 5.3.1 to 7.4.0 with legacy project adapters and browser regressions for stored-SVG injection through object IDs and gradient colors

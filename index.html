@@ -512,6 +512,22 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .export-impact ul{margin:0;padding-left:16px;display:grid;gap:2px}
 .export-project-state{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-depth-3);font-size:11px;color:var(--text-secondary)}
 .export-project-state[hidden]{display:none}
+.recovery-manager{width:min(680px,100%);max-width:min(680px,100%)}
+.recovery-list{display:grid;gap:10px;margin-top:14px}
+.recovery-empty{padding:18px;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;text-align:center}
+.recovery-warning{margin-top:10px;padding:8px 10px;border:1px solid color-mix(in srgb,var(--danger) 45%,var(--border));border-radius:6px;background:color-mix(in srgb,var(--danger) 8%,var(--bg-depth-3));color:var(--text-secondary);font-size:12px}
+.recovery-generation{padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-depth-3)}
+.recovery-generation.corrupt{border-color:color-mix(in srgb,var(--danger) 55%,var(--border))}
+.recovery-generation-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.recovery-generation-heading strong{overflow-wrap:anywhere}
+.recovery-generation-heading span{padding:2px 6px;border-radius:999px;background:var(--bg-depth-4);color:var(--text-muted);font:9px 'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.05em}
+.recovery-generation>p{margin:5px 0 9px;color:var(--text-muted);font-size:10px;overflow-wrap:anywhere}
+.recovery-details{margin:8px 0;padding:8px;border-radius:6px;background:var(--bg-depth-2)}
+.recovery-details[hidden]{display:none}
+.recovery-rename{display:flex;gap:6px;margin:8px 0}
+.recovery-rename input{min-width:0;flex:1;height:30px;padding:0 9px;border:1px solid var(--border);border-radius:5px;background:var(--bg-depth-2);color:var(--text-primary);font:11px 'JetBrains Mono',monospace;outline:none}
+.recovery-rename input:focus{border-color:var(--accent)}
+.recovery-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
 
 /* === BEFORE/AFTER SPLIT === */
 #ba-overlay{position:fixed;inset:0;z-index:29000;background:var(--bg-depth-0);display:none;flex-direction:column}
@@ -2760,6 +2776,7 @@ const OS = {
     },
     canvas: null, layers: [], activeLayerIdx: 0,
     _documentSchemaVersion: 1,
+    _documentId: null,
     _idSequence: 0,
     _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow'],
     _isDirty: false,
@@ -2993,7 +3010,9 @@ const OS = {
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._docName = 'Untitled';
+            this._documentId = this._newDocumentId('document');
         }
+        if (!this._documentId) this._documentId = this._newDocumentId('document');
         this._psdInterchange = null;
         this._lastPSDImportReport = null;
         this._lastPSDExportReport = null;
@@ -3021,6 +3040,7 @@ const OS = {
         this.updateLayersPanel();
         document.getElementById('canvas-dims').textContent = `${w} x ${h}`;
         this._captureBA();
+        this._claimRecoveryOwnership();
     },
     _createCheckerBoundary(w, h) {
         const patSize = 16, half = patSize / 2;
@@ -3253,7 +3273,10 @@ const OS = {
             kind: 'openshop-document',
             schemaVersion: this._documentSchemaVersion,
             appVersion: '0.20.0',
-            document: { name: this._safeText(this._docName || 'Untitled', 100) },
+            document: {
+                id:this._coerceDocumentId(this._documentId, 'document'),
+                name:this._safeText(this._docName || 'Untitled', 100)
+            },
             canvas: {
                 width: this.canvasW,
                 height: this.canvasH,
@@ -3357,7 +3380,10 @@ const OS = {
             schemaVersion: 1,
             appVersion: this._safeText(meta.version || fabricState.version || 'legacy', 40),
             migratedFrom: this._safeText(meta.version || fabricState.version || 'legacy-fabric', 40),
-            document: { name: this._safeText(meta.name || this._docName || 'Untitled', 100) },
+            document: {
+                id:this._newDocumentId('document'),
+                name:this._safeText(meta.name || this._docName || 'Untitled', 100)
+            },
             canvas: { width, height, fabric: fabricState },
             layers,
             active: {
@@ -3475,6 +3501,7 @@ const OS = {
         });
         this._enforceLayerInvariants({ render:false });
 
+        this._documentId = this._coerceDocumentId(state.document?.id, 'document');
         this._docName = this._safeText(state.document?.name || 'Untitled', 100);
         this._restoreGuidesState(state.guides);
         this._restoreSelectionState(state.selection);
@@ -3505,6 +3532,7 @@ const OS = {
         this.updateHistogram();
         const dims = document.getElementById('canvas-dims');
         if (dims) dims.textContent = `${this.canvasW} x ${this.canvasH}`;
+        this._claimRecoveryOwnership();
         return state;
     },
     _sanitizePaletteColors(colors) {
@@ -4683,6 +4711,7 @@ self.onmessage = function(event) {
             zoom:this.zoom,
             viewportTransform:this.canvas.viewportTransform?.slice(),
             docName:this._docName,
+            documentId:this._documentId,
             projectFileHandle:this._projectFileHandle,
             documentGeneration:this._documentGeneration,
             documentRevision:this._documentRevision,
@@ -4713,6 +4742,7 @@ self.onmessage = function(event) {
             this.layers = prepared.layers;
             this.activeLayerIdx = Math.max(1, this.layers.length - 1);
             this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
+            this._documentId = this._newDocumentId('document');
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._psdInterchange = prepared.psdInterchange;
@@ -4737,6 +4767,7 @@ self.onmessage = function(event) {
             this.zoom = previous.zoom;
             if (previous.viewportTransform) this.canvas.setViewportTransform(previous.viewportTransform);
             this._docName = previous.docName;
+            this._documentId = previous.documentId;
             this._projectFileHandle = previous.projectFileHandle;
             this._documentGeneration = previous.documentGeneration;
             this._documentRevision = previous.documentRevision;
@@ -4773,6 +4804,7 @@ self.onmessage = function(event) {
         const dims = document.getElementById('canvas-dims');
         if (dims) dims.textContent = `${this.canvasW} x ${this.canvasH}`;
         this._captureBA();
+        this._claimRecoveryOwnership();
     },
     _psdDecodeJob: null,
     async _loadPSDFile(file) {
@@ -8002,18 +8034,115 @@ self.onmessage = function(event) {
         } catch(e) { console.debug('CDN precache failed:', e.message); }
     },
 
-    // ====================== AUTO-SAVE (OPFS) ======================
+    // ====================== AUTO-SAVE / RECOVERY (OPFS) ======================
     _autoSaveTimer: null,
     _autoSaveDirty: false,
+    _autoSaveWorker: null,
+    _autoSaveInFlight: null,
+    _autoSaveRequestId: 0,
+    _autoSaveRequests: new Map(),
+    _recoverySchemaVersion: 1,
+    _recoveryDirectoryName: 'openshop-recovery-v1',
+    _recoveryIndexName: 'index.json',
+    _recoveryRetentionPerDocument: 5,
+    _recoveryRetentionTotal: 30,
+    _recoveryTabId: null,
+    _recoveryChannel: null,
+    _recoveryOwners: new Map(),
+    _recoveryClaimTimer: null,
+    _activeRecoverySourceFilename: null,
 
+    _recoveryToken(prefix = 'recovery') {
+        const random = globalThis.crypto?.randomUUID?.().replace(/-/g, '') || `${Date.now().toString(36)}${(++this._idSequence).toString(36)}`;
+        return `${prefix}-${random.slice(0, 24)}`;
+    },
+    _getRecoveryTabId() {
+        if (!this._recoveryTabId) this._recoveryTabId = this._recoveryToken('tab');
+        return this._recoveryTabId;
+    },
+    _initRecoveryCoordination() {
+        if (this._recoveryChannel || typeof BroadcastChannel === 'undefined') return;
+        const tabId = this._getRecoveryTabId();
+        this._recoveryChannel = new BroadcastChannel('openshop-recovery-v1');
+        this._recoveryChannel.addEventListener('message', event => {
+            const message = event.data;
+            if (!message || message.tabId === tabId || !message.documentId) return;
+            if (message.type === 'release') {
+                const owner = this._recoveryOwners.get(message.documentId);
+                if (owner?.tabId === message.tabId) this._recoveryOwners.delete(message.documentId);
+                return;
+            }
+            if (message.type === 'claim' || message.type === 'saved') {
+                this._recoveryOwners.set(message.documentId, {
+                    tabId:message.tabId,
+                    name:this._safeText(message.name || 'Untitled', 100),
+                    expiresAt:Date.now() + 65000
+                });
+            }
+        });
+        const release = () => {
+            if (this._documentId) this._recoveryChannel?.postMessage({ type:'release', tabId, documentId:this._documentId });
+        };
+        window.addEventListener('beforeunload', release);
+        this._claimRecoveryOwnership();
+        this._recoveryClaimTimer = setInterval(() => this._claimRecoveryOwnership(), 20000);
+    },
+    _claimRecoveryOwnership() {
+        if (!this._documentId || !this._recoveryChannel) return;
+        this._recoveryChannel.postMessage({
+            type:'claim',
+            tabId:this._getRecoveryTabId(),
+            documentId:this._documentId,
+            name:this._docName || 'Untitled'
+        });
+    },
+    _hasForeignRecoveryOwner(documentId, records = []) {
+        const now = Date.now();
+        const ownLease = records.some(record =>
+            record.valid &&
+            record.documentId === documentId &&
+            record.ownerId === this._getRecoveryTabId() &&
+            Number(record.leaseExpiresAt || 0) > now
+        );
+        if (ownLease) return false;
+        const live = this._recoveryOwners.get(documentId);
+        if (live && live.tabId !== this._getRecoveryTabId() && live.expiresAt > now) return true;
+        return records.some(record =>
+            record.valid &&
+            record.documentId === documentId &&
+            record.ownerId &&
+            record.ownerId !== this._getRecoveryTabId() &&
+            Number(record.leaseExpiresAt || 0) > now
+        );
+    },
+    _ensureRecoveryOwnership(records) {
+        if (!this._documentId) this._documentId = this._newDocumentId('document');
+        if (!this._hasForeignRecoveryOwner(this._documentId, records)) {
+            this._claimRecoveryOwnership();
+            return false;
+        }
+        this._documentId = this._newDocumentId('document');
+        this._activeRecoverySourceFilename = null;
+        this._claimRecoveryOwnership();
+        this.toast('Another tab owns that recovery stream; this tab will save a separate copy', 'info');
+        return true;
+    },
+    async _withRecoveryLock(operation) {
+        if (navigator.locks?.request) {
+            return navigator.locks.request('openshop-recovery-index-v1', { mode:'exclusive' }, operation);
+        }
+        return operation();
+    },
     async _initAutoSave() {
-        if (!navigator.storage || !navigator.storage.getDirectory) return;
+        if (!navigator.storage?.getDirectory) return;
+        this._initRecoveryCoordination();
         try {
+            await this._migrateLegacyRecovery();
             const info = await this._getRecoveryInfo();
-            if (info.exists && info.text && info.ageMs < 86400000 && !info.corrupt) {
-                this._offerRecovery(info.text);
-            } else if (info.corrupt) {
-                this.toast('Corrupt recovery data found. Open Recovery Storage to export or discard it.', 'error');
+            if (info.recoverable) {
+                this._offerRecovery(info.recoverable, { fallbackUsed:info.fallbackUsed });
+            } else if (info.generations.some(generation => generation.corrupt)) {
+                this.toast('Only corrupt recovery generations were found. Open Recovery Storage to export or discard them.', 'error');
             }
         } catch(e) { console.warn('Auto-save check failed:', e); }
         this._autoSaveTimer = setInterval(() => this._autoSave(), 30000);
@@ -8034,150 +8163,743 @@ self.onmessage = function(event) {
         if (hours < 48) return `${hours} hr ago`;
         return `${Math.round(hours / 24)} days ago`;
     },
-    async _getRecoveryInfo() {
-        const estimate = navigator.storage?.estimate ? await navigator.storage.estimate().catch(() => ({})) : {};
-        const info = { supported: !!navigator.storage?.getDirectory, exists:false, size:0, lastModified:0, ageMs:Infinity, text:'', corrupt:false, usage:estimate.usage || 0, quota:estimate.quota || 0 };
-        if (!info.supported) return info;
+    _formatRecoveryTime(value) {
+        const date = new Date(value);
+        return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Unknown time';
+    },
+    async _getRecoveryDirectory(create = false) {
         const root = await navigator.storage.getDirectory();
-        const handle = await root.getFileHandle('openshop-autosave.json', { create: false }).catch(() => null);
-        if (!handle) return info;
-        const file = await handle.getFile();
-        const text = await file.text();
-        info.exists = file.size > 0;
-        info.size = file.size;
-        info.lastModified = file.lastModified;
-        info.ageMs = Date.now() - file.lastModified;
-        info.text = text;
-        if (info.exists) {
+        return root.getDirectoryHandle(this._recoveryDirectoryName, { create });
+    },
+    async _readRecoveryIndex(directory) {
+        try {
+            const handle = await directory.getFileHandle(this._recoveryIndexName, { create:false });
+            const json = JSON.parse(await (await handle.getFile()).text());
+            if (json.kind !== 'openshop-recovery-index' || json.schemaVersion !== this._recoverySchemaVersion || !Array.isArray(json.snapshots)) {
+                throw new Error('Recovery index schema is invalid');
+            }
+            return json;
+        } catch {
+            return { kind:'openshop-recovery-index', schemaVersion:this._recoverySchemaVersion, updatedAt:null, snapshots:[] };
+        }
+    },
+    async _recoveryChecksum(text) {
+        const bytes = new TextEncoder().encode(text);
+        if (globalThis.crypto?.subtle) {
+            const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+            return { algorithm:'sha256', value:[...digest].map(byte => byte.toString(16).padStart(2, '0')).join('') };
+        }
+        let hash = 0x811c9dc5;
+        bytes.forEach(byte => {
+            hash ^= byte;
+            hash = Math.imul(hash, 0x01000193) >>> 0;
+        });
+        return { algorithm:'fnv1a-32', value:hash.toString(16).padStart(8, '0') };
+    },
+    async _writeRecoveryTextAtomic(directory, filename, text) {
+        const tempName = `.tmp-${this._recoveryToken('write')}.json`;
+        const write = async (name, value) => {
+            const handle = await directory.getFileHandle(name, { create:true });
+            const writable = await handle.createWritable();
             try {
-                const json = JSON.parse(text);
-                this._sanitizeProjectJSON(json);
-            } catch(e) {
-                info.corrupt = true;
-                info.error = e.message;
+                await writable.write(value);
+                await writable.close();
+            } catch (error) {
+                try { await writable.abort?.(); } catch {}
+                throw error;
+            }
+            return handle;
+        };
+        const tempHandle = await write(tempName, text);
+        const staged = await (await tempHandle.getFile()).text();
+        if (staged !== text) throw new Error('Recovery staging verification failed');
+        let moved = false;
+        if (typeof tempHandle.move === 'function') {
+            try {
+                await tempHandle.move(filename);
+                moved = true;
+            } catch {}
+        }
+        if (!moved) await write(filename, text);
+        const finalHandle = await directory.getFileHandle(filename, { create:false });
+        if (await (await finalHandle.getFile()).text() !== text) throw new Error('Recovery promotion verification failed');
+        if (!moved) await directory.removeEntry(tempName).catch(() => {});
+        return true;
+    },
+    async _readRecoveryRecord(directory, filename, indexEntry = null) {
+        let rawText = '';
+        let file = null;
+        try {
+            const handle = await directory.getFileHandle(filename, { create:false });
+            file = await handle.getFile();
+            rawText = await file.text();
+            const envelope = JSON.parse(rawText);
+            if (envelope.kind !== 'openshop-recovery' || envelope.schemaVersion !== this._recoverySchemaVersion || typeof envelope.payload !== 'string') {
+                throw new Error('Recovery envelope schema is invalid');
+            }
+            const checksum = await this._recoveryChecksum(envelope.payload);
+            if (envelope.checksumAlgorithm !== checksum.algorithm || envelope.checksum !== checksum.value) {
+                throw new Error('Recovery checksum does not match');
+            }
+            const payload = JSON.parse(envelope.payload);
+            this._sanitizeProjectJSON(payload);
+            const createdAt = envelope.createdAt || indexEntry?.createdAt || new Date(file.lastModified).toISOString();
+            return {
+                filename,
+                valid:true,
+                corrupt:false,
+                legacy:false,
+                envelope,
+                payload,
+                payloadText:envelope.payload,
+                rawText,
+                documentId:this._coerceDocumentId(envelope.documentId || payload.document?.id, 'document'),
+                generationId:this._safeText(envelope.generationId || filename, 160),
+                ownerId:this._safeText(envelope.ownerId || '', 120),
+                leaseExpiresAt:Number(envelope.leaseExpiresAt || 0),
+                name:this._safeText(envelope.name || payload.document?.name || 'Untitled', 100),
+                label:this._safeText(envelope.label || '', 100),
+                revision:Number(envelope.revision || 0),
+                createdAt,
+                createdMs:Date.parse(createdAt) || file.lastModified,
+                lastModified:file.lastModified,
+                size:file.size,
+                checksum:envelope.checksum,
+                checksumAlgorithm:envelope.checksumAlgorithm
+            };
+        } catch(error) {
+            return {
+                filename,
+                valid:false,
+                corrupt:true,
+                legacy:false,
+                rawText,
+                error:this._safeText(error.message || error, 180),
+                createdAt:indexEntry?.createdAt || (file ? new Date(file.lastModified).toISOString() : null),
+                createdMs:Date.parse(indexEntry?.createdAt || '') || file?.lastModified || 0,
+                lastModified:file?.lastModified || 0,
+                size:file?.size || rawText.length,
+                name:this._safeText(indexEntry?.name || 'Corrupt recovery', 100),
+                documentId:indexEntry?.documentId || null
+            };
+        }
+    },
+    async _readLegacyRecovery() {
+        try {
+            const root = await navigator.storage.getDirectory();
+            const handle = await root.getFileHandle('openshop-autosave.json', { create:false });
+            const file = await handle.getFile();
+            const text = await file.text();
+            const payload = JSON.parse(text);
+            this._sanitizeProjectJSON(payload);
+            return {
+                filename:'openshop-autosave.json',
+                valid:true,
+                corrupt:false,
+                legacy:true,
+                payload,
+                payloadText:text,
+                rawText:text,
+                documentId:this._coerceDocumentId(payload.document?.id, 'document'),
+                generationId:'legacy-singleton',
+                ownerId:'',
+                leaseExpiresAt:0,
+                name:this._safeText(payload.document?.name || 'Legacy recovery', 100),
+                label:'Legacy autosave',
+                revision:0,
+                createdAt:new Date(file.lastModified).toISOString(),
+                createdMs:file.lastModified,
+                lastModified:file.lastModified,
+                size:file.size
+            };
+        } catch(error) {
+            if (error?.name === 'NotFoundError') return null;
+            try {
+                const root = await navigator.storage.getDirectory();
+                const handle = await root.getFileHandle('openshop-autosave.json', { create:false });
+                const file = await handle.getFile();
+                return {
+                    filename:'openshop-autosave.json',
+                    valid:false,
+                    corrupt:true,
+                    legacy:true,
+                    rawText:await file.text(),
+                    error:this._safeText(error.message || error, 180),
+                    name:'Corrupt legacy recovery',
+                    createdAt:new Date(file.lastModified).toISOString(),
+                    createdMs:file.lastModified,
+                    lastModified:file.lastModified,
+                    size:file.size
+                };
+            } catch {
+                return null;
             }
         }
-        return info;
+    },
+    async _listRecoveryGenerations({ includeLegacy = true } = {}) {
+        if (!navigator.storage?.getDirectory) return [];
+        const records = [];
+        const directory = await this._getRecoveryDirectory(false).catch(() => null);
+        if (directory) {
+            const index = await this._readRecoveryIndex(directory);
+            const indexByName = new Map(index.snapshots.map(entry => [entry.filename, entry]));
+            const names = new Set(index.snapshots.map(entry => entry.filename).filter(Boolean));
+            if (typeof directory.entries === 'function') {
+                for await (const [name, handle] of directory.entries()) {
+                    if (handle.kind === 'file' && /^recovery-.*\.json$/i.test(name)) names.add(name);
+                }
+            }
+            for (const name of names) records.push(await this._readRecoveryRecord(directory, name, indexByName.get(name)));
+        }
+        if (includeLegacy) {
+            const legacy = await this._readLegacyRecovery();
+            if (legacy) records.push(legacy);
+        }
+        records.sort((a, b) => b.createdMs - a.createdMs || String(b.filename).localeCompare(String(a.filename)));
+        return records;
+    },
+    async _getRecoveryInfo() {
+        const estimate = navigator.storage?.estimate ? await navigator.storage.estimate().catch(() => ({})) : {};
+        const persisted = navigator.storage?.persisted ? await navigator.storage.persisted().catch(() => false) : null;
+        const supported = Boolean(navigator.storage?.getDirectory);
+        const generations = supported ? await this._listRecoveryGenerations() : [];
+        const valid = generations.filter(generation => generation.valid);
+        const newest = generations[0] || null;
+        const recoverable = valid[0] || null;
+        const fallbackUsed = Boolean(newest?.corrupt && recoverable && recoverable !== newest);
+        return {
+            supported,
+            persisted,
+            durability:persisted === true ? 'Durable' : persisted === false ? 'Best effort' : 'Unknown',
+            exists:generations.length > 0,
+            generations,
+            validGenerations:valid,
+            recoverable,
+            fallbackUsed,
+            corrupt:Boolean(newest?.corrupt),
+            text:recoverable?.payloadText || '',
+            size:recoverable?.size || 0,
+            lastModified:recoverable?.lastModified || 0,
+            ageMs:recoverable ? Date.now() - recoverable.createdMs : Infinity,
+            usage:estimate.usage || 0,
+            quota:estimate.quota || 0,
+            error:newest?.corrupt ? newest.error : null
+        };
+    },
+    async _createRecoveryEnvelope(payloadText, {
+        documentId = this._documentId,
+        name = this._docName,
+        label = '',
+        revision = this._documentRevision,
+        createdAt = new Date().toISOString(),
+        ownerId = this._getRecoveryTabId()
+    } = {}) {
+        const checksum = await this._recoveryChecksum(payloadText);
+        const generationId = this._recoveryToken('generation');
+        return {
+            kind:'openshop-recovery',
+            schemaVersion:this._recoverySchemaVersion,
+            generationId,
+            documentId:this._coerceDocumentId(documentId, 'document'),
+            ownerId:this._safeText(ownerId, 120),
+            leaseExpiresAt:Date.now() + 65000,
+            name:this._safeText(name || 'Untitled', 100),
+            label:this._safeText(label, 100),
+            revision:Number(revision || 0),
+            createdAt,
+            checksumAlgorithm:checksum.algorithm,
+            checksum:checksum.value,
+            payload:payloadText
+        };
+    },
+    _recoveryIndexEntry(filename, envelope, size = 0) {
+        return {
+            filename,
+            generationId:envelope.generationId,
+            documentId:envelope.documentId,
+            ownerId:envelope.ownerId,
+            leaseExpiresAt:envelope.leaseExpiresAt,
+            name:envelope.name,
+            label:envelope.label,
+            revision:envelope.revision,
+            createdAt:envelope.createdAt,
+            checksumAlgorithm:envelope.checksumAlgorithm,
+            checksum:envelope.checksum,
+            size
+        };
+    },
+    _selectRecoveryRetention(records, newEntry) {
+        const entries = records.filter(record => record.valid && !record.legacy).map(record => this._recoveryIndexEntry(
+            record.filename,
+            record.envelope,
+            record.size
+        ));
+        entries.push(newEntry);
+        const deduplicated = [...new Map(entries.map(entry => [entry.filename, entry])).values()]
+            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        const perDocument = new Map();
+        const kept = [];
+        deduplicated.forEach(entry => {
+            const count = perDocument.get(entry.documentId) || 0;
+            if (count >= this._recoveryRetentionPerDocument || kept.length >= this._recoveryRetentionTotal) return;
+            perDocument.set(entry.documentId, count + 1);
+            kept.push(entry);
+        });
+        const keptNames = new Set(kept.map(entry => entry.filename));
+        return {
+            kept,
+            pruned:deduplicated.filter(entry => !keptNames.has(entry.filename)).map(entry => entry.filename)
+        };
+    },
+    async _commitRecoveryMain(snapshot, index, pruned) {
+        const directory = await this._getRecoveryDirectory(true);
+        await this._writeRecoveryTextAtomic(directory, snapshot.filename, snapshot.data);
+        await this._writeRecoveryTextAtomic(directory, this._recoveryIndexName, JSON.stringify(index));
+        for (const filename of pruned) await directory.removeEntry(filename).catch(() => {});
+        return true;
+    },
+    async _persistRecoveryPayload(payloadText, metadata = {}, existingRecords = null) {
+        const envelope = await this._createRecoveryEnvelope(payloadText, metadata);
+        const filename = `recovery-${envelope.documentId}-${envelope.generationId}.json`;
+        const data = JSON.stringify(envelope);
+        const records = existingRecords || await this._listRecoveryGenerations({ includeLegacy:false });
+        const entry = this._recoveryIndexEntry(filename, envelope, data.length);
+        const retention = this._selectRecoveryRetention(records, entry);
+        const index = {
+            kind:'openshop-recovery-index',
+            schemaVersion:this._recoverySchemaVersion,
+            updatedAt:new Date().toISOString(),
+            snapshots:retention.kept
+        };
+        const request = {
+            snapshot:{ filename, data, entry },
+            index,
+            pruned:retention.pruned,
+            directoryName:this._recoveryDirectoryName,
+            indexName:this._recoveryIndexName
+        };
+        try {
+            await this._commitRecoveryMain(request.snapshot, request.index, request.pruned);
+        } catch {
+            await this._writeAutoSaveWithWorker(request);
+        }
+        return {
+            filename,
+            valid:true,
+            corrupt:false,
+            legacy:false,
+            envelope,
+            payload:JSON.parse(payloadText),
+            payloadText,
+            rawText:data,
+            documentId:envelope.documentId,
+            generationId:envelope.generationId,
+            ownerId:envelope.ownerId,
+            leaseExpiresAt:envelope.leaseExpiresAt,
+            name:envelope.name,
+            label:envelope.label,
+            revision:envelope.revision,
+            createdAt:envelope.createdAt,
+            createdMs:Date.parse(envelope.createdAt),
+            lastModified:Date.parse(envelope.createdAt),
+            size:data.length,
+            checksum:envelope.checksum,
+            checksumAlgorithm:envelope.checksumAlgorithm
+        };
+    },
+    async _migrateLegacyRecovery() {
+        const legacy = await this._readLegacyRecovery();
+        if (!legacy?.valid) return false;
+        await this._withRecoveryLock(async () => {
+            const records = await this._listRecoveryGenerations({ includeLegacy:false });
+            await this._persistRecoveryPayload(legacy.payloadText, {
+                documentId:legacy.documentId,
+                name:legacy.name,
+                label:'Migrated legacy autosave',
+                createdAt:legacy.createdAt,
+                ownerId:'legacy'
+            }, records);
+            const root = await navigator.storage.getDirectory();
+            await root.removeEntry('openshop-autosave.json').catch(() => {});
+        });
+        return true;
+    },
+    async _requestRecoveryPersistence(overlay = null) {
+        if (!navigator.storage?.persist) {
+            this.toast('Durable storage requests are not supported by this browser', 'info');
+            return false;
+        }
+        const granted = await navigator.storage.persist().catch(() => false);
+        this.toast(granted ? 'Recovery storage is now durable' : 'Recovery storage remains best effort', granted ? 'success' : 'info');
+        if (overlay) {
+            overlay.remove();
+            await this.showRecoveryManager();
+        }
+        return granted;
+    },
+    _recoveryPreviewText(record) {
+        if (!record?.valid) return `Corrupt · ${record.error || 'validation failed'}`;
+        const payload = record.payload || {};
+        const width = payload.canvas?.width || payload._openShop?.w || '?';
+        const height = payload.canvas?.height || payload._openShop?.h || '?';
+        const layers = Array.isArray(payload.layers) ? payload.layers.length : Array.isArray(payload._openShop?.layers) ? payload._openShop.layers.length : '?';
+        return `${width} × ${height} · ${layers} layers · schema ${payload.schemaVersion || 'legacy'}`;
     },
     async showRecoveryManager() {
-        const info = await this._getRecoveryInfo().catch(err => ({ supported:false, exists:false, error:err.message, usage:0, quota:0 }));
-        const o = document.createElement('div'); o.className = 'modal-overlay';
-        const modal = document.createElement('div'); modal.className = 'modal'; modal.style.minWidth = '430px';
-        const title = document.createElement('h3'); title.textContent = 'Recovery Storage';
+        const info = await this._getRecoveryInfo().catch(error => ({
+            supported:false,
+            persisted:null,
+            durability:'Unavailable',
+            generations:[],
+            validGenerations:[],
+            usage:0,
+            quota:0,
+            error:error.message
+        }));
+        if (!Array.isArray(info.generations) && info.exists) {
+            info.generations = [{
+                filename:'legacy-mock',
+                valid:!info.corrupt,
+                corrupt:Boolean(info.corrupt),
+                legacy:true,
+                payloadText:info.text,
+                rawText:info.text,
+                name:'Recovery',
+                label:'',
+                createdMs:Date.now() - Number(info.ageMs || 0),
+                createdAt:new Date(Date.now() - Number(info.ageMs || 0)).toISOString(),
+                size:info.size,
+                error:info.error
+            }];
+        }
+        const generations = Array.isArray(info.generations) ? info.generations : [];
+        const o = document.createElement('div');
+        o.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal recovery-manager';
+        modal.style.minWidth = 'min(620px,100%)';
+        const title = document.createElement('h3');
+        title.textContent = 'Recovery Storage';
         const summary = document.createElement('dl');
         summary.className = 'info-grid';
+        const activeForeignOwners = [...this._recoveryOwners.values()].filter(owner => owner.expiresAt > Date.now()).length;
         [
             ['Storage', info.supported ? 'Available' : 'Unavailable'],
-            ['Autosave', info.exists ? (info.corrupt ? 'Corrupt' : 'Available') : 'None'],
-            ['Age', info.exists ? this._formatAge(info.ageMs) : 'None'],
-            ['Autosave Size', this._formatBytes(info.size)],
+            ['Durability', info.durability || (info.persisted ? 'Durable' : 'Best effort')],
+            ['Generations', String(generations.length)],
+            ['Restorable', String(generations.filter(record => record.valid).length)],
+            ['Other active tabs', String(activeForeignOwners)],
             ['Storage Used', `${this._formatBytes(info.usage)} / ${info.quota ? this._formatBytes(info.quota) : 'Unknown'}`]
-        ].forEach(([k, v]) => {
-            const dt = document.createElement('dt'); dt.textContent = k;
-            const dd = document.createElement('dd'); dd.textContent = v;
+        ].forEach(([key, value]) => {
+            const dt = document.createElement('dt');
+            dt.textContent = key;
+            const dd = document.createElement('dd');
+            dd.textContent = value;
             summary.append(dt, dd);
         });
-        if (info.error) {
-            const err = document.createElement('p');
-            err.style.cssText = 'font-size:12px;color:var(--danger);margin:10px 0';
-            err.textContent = `Recovery issue: ${this._safeText(info.error, 160)}`;
-            modal.append(title, summary, err);
-        } else {
-            modal.append(title, summary);
+        modal.append(title, summary);
+        if (info.fallbackUsed) {
+            const fallback = document.createElement('p');
+            fallback.className = 'recovery-warning';
+            fallback.textContent = 'The newest generation is corrupt. The newest verified older generation is offered instead.';
+            modal.appendChild(fallback);
+        } else if (info.error) {
+            const error = document.createElement('p');
+            error.className = 'recovery-warning';
+            error.textContent = `Recovery issue: ${this._safeText(info.error, 160)}`;
+            modal.appendChild(error);
         }
-        const btns = document.createElement('div'); btns.className = 'modal-btns';
-        const addBtn = (label, cls, fn, disabled = false) => {
-            const btn = document.createElement('button');
-            btn.className = cls;
-            btn.textContent = label;
-            btn.disabled = disabled;
-            btn.addEventListener('click', fn);
-            btns.appendChild(btn);
-            return btn;
-        };
-        addBtn('Export', 'btn', () => this._exportRecovery(info), !info.exists);
-        addBtn(info.corrupt ? 'Discard Corrupt' : 'Discard', 'btn btn-danger', async () => { await this._discardRecovery(); o.remove(); this.toast('Recovery data discarded', 'info'); }, !info.exists);
-        addBtn('Restore', 'btn btn-primary', () => this._restoreRecoveryText(info.text, o), !info.exists || info.corrupt);
-        addBtn('Close', 'btn', () => o.remove()).dataset.modalClose = '';
-        modal.appendChild(btns);
+        const list = document.createElement('div');
+        list.className = 'recovery-list';
+        if (!generations.length) {
+            const empty = document.createElement('p');
+            empty.className = 'recovery-empty';
+            empty.textContent = info.supported ? 'No recovery generations are stored.' : 'This browser does not expose Origin Private File System storage.';
+            list.appendChild(empty);
+        }
+        generations.forEach(record => {
+            const card = document.createElement('section');
+            card.className = `recovery-generation${record.corrupt ? ' corrupt' : ''}`;
+            const heading = document.createElement('div');
+            heading.className = 'recovery-generation-heading';
+            const name = document.createElement('strong');
+            name.textContent = record.label || record.name || (record.corrupt ? 'Corrupt recovery' : 'Untitled');
+            const status = document.createElement('span');
+            status.textContent = record.corrupt ? 'Corrupt' : record.legacy ? 'Legacy' : 'Verified';
+            heading.append(name, status);
+            const meta = document.createElement('p');
+            meta.textContent = `${this._formatAge(Date.now() - Number(record.createdMs || Date.parse(record.createdAt)))} · ${this._formatRecoveryTime(record.createdAt || record.createdMs)} · ${this._formatBytes(record.size)} · ${this._recoveryPreviewText(record)}`;
+            const details = document.createElement('dl');
+            details.className = 'info-grid recovery-details';
+            details.hidden = true;
+            [
+                ['Document ID', record.documentId || 'Unavailable'],
+                ['Generation', record.generationId || record.filename],
+                ['Revision', String(record.revision || 0)],
+                ['Checksum', record.checksum ? `${record.checksumAlgorithm}: ${record.checksum.slice(0, 16)}…` : 'Unavailable'],
+                ['Owner', record.ownerId || 'Legacy / unknown']
+            ].forEach(([key, value]) => {
+                const dt = document.createElement('dt'); dt.textContent = key;
+                const dd = document.createElement('dd'); dd.textContent = value;
+                details.append(dt, dd);
+            });
+            const rename = document.createElement('div');
+            rename.className = 'recovery-rename';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.maxLength = 100;
+            input.value = record.label || record.name || '';
+            input.setAttribute('aria-label', 'Recovery name');
+            const saveName = document.createElement('button');
+            saveName.className = 'btn';
+            saveName.textContent = 'Save Name';
+            saveName.disabled = !record.valid;
+            saveName.addEventListener('click', async () => {
+                await this._renameRecoveryGeneration(record, input.value);
+                o.remove();
+                await this.showRecoveryManager();
+            });
+            rename.append(input, saveName);
+            const actions = document.createElement('div');
+            actions.className = 'recovery-actions';
+            const addAction = (label, className, handler, disabled = false) => {
+                const button = document.createElement('button');
+                button.className = className;
+                button.textContent = label;
+                button.disabled = disabled;
+                button.addEventListener('click', handler);
+                actions.appendChild(button);
+            };
+            addAction('Preview', 'btn', () => { details.hidden = !details.hidden; });
+            addAction('Export', 'btn', () => this._exportRecovery(record), !record.rawText && !record.payloadText);
+            addAction('Discard', 'btn btn-danger', async () => {
+                await this._discardRecovery(record);
+                card.remove();
+                this.toast('Recovery generation discarded', 'info');
+            });
+            addAction('Open as Copy', 'btn', () => this._restoreRecoveryRecord(record, o, true), !record.valid);
+            addAction('Restore', 'btn btn-primary', () => this._restoreRecoveryRecord(record, o, false), !record.valid);
+            card.append(heading, meta, details, rename, actions);
+            list.appendChild(card);
+        });
+        modal.appendChild(list);
+        const footer = document.createElement('div');
+        footer.className = 'modal-btns';
+        if (info.persisted === false) {
+            const persist = document.createElement('button');
+            persist.className = 'btn';
+            persist.textContent = 'Request Durable Storage';
+            persist.addEventListener('click', () => this._requestRecoveryPersistence(o));
+            footer.appendChild(persist);
+        }
+        const discardAll = document.createElement('button');
+        discardAll.className = 'btn btn-danger';
+        discardAll.textContent = 'Discard All';
+        discardAll.disabled = !generations.length;
+        discardAll.addEventListener('click', async () => {
+            await this._discardAllRecovery(generations);
+            o.remove();
+            this.toast('All recovery generations discarded', 'info');
+        });
+        const close = document.createElement('button');
+        close.className = 'btn';
+        close.dataset.modalClose = '';
+        close.textContent = 'Close';
+        close.addEventListener('click', () => o.remove());
+        footer.append(discardAll, close);
+        modal.appendChild(footer);
         o.appendChild(modal);
-        document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
-    },
-    _exportRecovery(info) {
-        if (!info?.text) { this.toast('No recovery data to export', 'info'); return; }
-        const blob = new Blob([info.text], { type:'application/json' });
-        this._downloadBlob(blob, info.corrupt ? 'openshop-corrupt-recovery.json' : 'openshop-recovery.json');
-        this.toast('Recovery data exported', 'success');
-    },
-
-    _offerRecovery(jsonText) {
-        const o = document.createElement('div'); o.className = 'modal-overlay';
-        o.innerHTML = `<div class="modal"><h3>Recover Unsaved Work?</h3>
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">An auto-saved project was found. Would you like to restore it?</p>
-            <div class="modal-btns">
-                <button class="btn btn-danger" data-recovery-discard>Discard</button>
-                <button class="btn btn-primary" data-recovery-restore>Restore</button>
-            </div></div>`;
-        o.querySelector('[data-recovery-discard]').addEventListener('click', () => { this._discardRecovery(); o.remove(); });
-        o.querySelector('[data-recovery-restore]').addEventListener('click', () => this._restoreRecovery(o));
         document.body.appendChild(o);
-        this._recoveryData = jsonText;
         requestAnimationFrame(() => o.classList.add('show'));
+        return o;
     },
-
+    _exportRecovery(record) {
+        const text = record?.valid ? record.payloadText : record?.rawText;
+        if (!text) { this.toast('No recovery data to export', 'info'); return false; }
+        const blob = new Blob([text], { type:'application/json' });
+        const base = this._safeText(record.label || record.name || 'openshop-recovery', 80).replace(/[^a-zA-Z0-9_-]/g, '_') || 'openshop-recovery';
+        this._downloadBlob(blob, record.corrupt ? `${base}-corrupt-envelope.json` : `${base}.openshop.json`);
+        this.toast('Recovery data exported', 'success');
+        return true;
+    },
+    async _renameRecoveryGeneration(record, label) {
+        if (!record?.valid) return false;
+        const name = this._safeText(label, 100);
+        return this._withRecoveryLock(async () => {
+            const records = await this._listRecoveryGenerations({ includeLegacy:false });
+            const replacement = await this._persistRecoveryPayload(record.payloadText, {
+                documentId:record.documentId,
+                name:record.name,
+                label:name,
+                revision:record.revision,
+                createdAt:record.createdAt,
+                ownerId:record.ownerId || this._getRecoveryTabId()
+            }, records.filter(candidate => candidate.filename !== record.filename));
+            await this._discardRecovery(record, { updateIndex:false });
+            return replacement;
+        });
+    },
+    _offerRecovery(recordOrText, { fallbackUsed = false } = {}) {
+        const record = typeof recordOrText === 'string'
+            ? { valid:true, legacy:true, payloadText:recordOrText, rawText:recordOrText, name:'Unsaved project', createdAt:new Date().toISOString() }
+            : recordOrText;
+        const o = document.createElement('div');
+        o.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        const title = document.createElement('h3');
+        title.textContent = 'Recover Unsaved Work?';
+        const message = document.createElement('p');
+        message.style.cssText = 'font-size:12px;color:var(--text-secondary);margin-bottom:8px';
+        message.textContent = fallbackUsed
+            ? 'The newest generation is corrupt. This is the newest verified older generation.'
+            : 'A verified recovery generation is available.';
+        const meta = document.createElement('p');
+        meta.style.cssText = 'font-size:11px;color:var(--text-muted);margin-bottom:16px';
+        meta.textContent = `${record.label || record.name || 'Untitled'} · ${this._formatRecoveryTime(record.createdAt)}`;
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-btns';
+        const discard = document.createElement('button');
+        discard.className = 'btn btn-danger';
+        discard.dataset.recoveryDiscard = '';
+        discard.textContent = 'Discard';
+        discard.addEventListener('click', () => { o.remove(); void this._discardRecovery(record); });
+        const copy = document.createElement('button');
+        copy.className = 'btn';
+        copy.dataset.recoveryCopy = '';
+        copy.textContent = 'Open as Copy';
+        copy.addEventListener('click', () => this._restoreRecoveryRecord(record, o, true));
+        const restore = document.createElement('button');
+        restore.className = 'btn btn-primary';
+        restore.dataset.recoveryRestore = '';
+        restore.textContent = 'Restore';
+        restore.addEventListener('click', () => this._restoreRecoveryRecord(record, o, false));
+        buttons.append(discard, copy, restore);
+        modal.append(title, message, meta, buttons);
+        o.appendChild(modal);
+        document.body.appendChild(o);
+        this._recoveryData = record;
+        requestAnimationFrame(() => o.classList.add('show'));
+        return o;
+    },
     _restoreRecovery(overlay) {
         if (!this._recoveryData) { overlay.remove(); return; }
-        this._restoreRecoveryText(this._recoveryData, overlay);
+        return this._restoreRecoveryRecord(this._recoveryData, overlay, false);
     },
-    async _restoreRecoveryText(jsonText, overlay) {
+    _restoreRecoveryRecord(record, overlay, asCopy = false) {
+        if (!record?.valid || !record.payloadText) {
+            this.toast('Recovery generation is not restorable', 'error');
+            return Promise.resolve(false);
+        }
+        return this._restoreRecoveryText(record.payloadText, overlay, { asCopy, record });
+    },
+    async _restoreRecoveryText(jsonText, overlay, { asCopy = false, record = null } = {}) {
         try {
             const json = JSON.parse(jsonText);
             if (this._autoSaveInFlight) await this._autoSaveInFlight;
             await this._loadDocumentState(json, { fitToViewport:true });
+            if (asCopy) {
+                this._documentId = this._newDocumentId('document');
+                this._docName = `${this._docName || 'Recovered Project'} Copy`.slice(0, 100);
+                this._activeRecoverySourceFilename = null;
+            } else {
+                this._activeRecoverySourceFilename = record?.filename || null;
+            }
             this._documentGeneration += 1;
             this._projectFileHandle = null;
             this._savedSnapshot = null;
-            this._initializeHistory('Recovered Project');
+            this._initializeHistory(asCopy ? 'Opened Recovery Copy' : 'Recovered Project');
             this._markDocumentDirty();
-            this.toast('Project restored from auto-save', 'success');
-        } catch(e) { this.toast('Recovery failed: ' + e.message, 'error'); }
-        this._recoveryData = null;
-        if (overlay) overlay.remove();
+            this._claimRecoveryOwnership();
+            this.toast(asCopy ? 'Recovery opened as a separate copy' : 'Project restored from auto-save', 'success');
+            this._recoveryData = null;
+            if (overlay) overlay.remove();
+            return true;
+        } catch(e) {
+            this.toast('Recovery failed: ' + e.message, 'error');
+            return false;
+        }
     },
-
-    async _discardRecovery() {
+    async _rewriteRecoveryIndex(records) {
+        const valid = records.filter(record => record.valid && !record.legacy);
+        const index = {
+            kind:'openshop-recovery-index',
+            schemaVersion:this._recoverySchemaVersion,
+            updatedAt:new Date().toISOString(),
+            snapshots:valid.map(record => this._recoveryIndexEntry(record.filename, record.envelope, record.size))
+        };
+        try {
+            const directory = await this._getRecoveryDirectory(true);
+            await this._writeRecoveryTextAtomic(directory, this._recoveryIndexName, JSON.stringify(index));
+            return true;
+        } catch(error) {
+            console.debug('Recovery index rewrite:', error.message);
+            return false;
+        }
+    },
+    async _discardRecovery(record = null, { updateIndex = true } = {}) {
         this._recoveryData = null;
         try {
-            const root = await navigator.storage.getDirectory();
-            await root.removeEntry('openshop-autosave.json').catch(() => {});
-        } catch(e) { console.debug('Discard recovery:', e.message); }
+            if (!record || record.legacy) {
+                const root = await navigator.storage.getDirectory();
+                await root.removeEntry('openshop-autosave.json').catch(() => {});
+            }
+            if (record && !record.legacy) {
+                const directory = await this._getRecoveryDirectory(false);
+                await directory.removeEntry(record.filename).catch(() => {});
+            }
+            if (updateIndex) {
+                const remaining = (await this._listRecoveryGenerations({ includeLegacy:false }))
+                    .filter(candidate => !record || candidate.filename !== record.filename);
+                await this._rewriteRecoveryIndex(remaining);
+            }
+            return true;
+        } catch(e) {
+            console.debug('Discard recovery:', e.message);
+            return false;
+        }
     },
-
-    _autoSaveWorker: null,
-    _autoSaveInFlight: null,
-    _autoSaveRequestId: 0,
-    _autoSaveRequests: new Map(),
+    async _discardAllRecovery(records = null) {
+        const generations = records || await this._listRecoveryGenerations();
+        for (const record of generations) await this._discardRecovery(record, { updateIndex:false });
+        await this._rewriteRecoveryIndex([]);
+        return true;
+    },
     _getAutoSaveWorker() {
         if (this._autoSaveWorker) return this._autoSaveWorker;
         const code = `
-self.onmessage = async function(e) {
-    const {id, action, data} = e.data;
+const writeText = async function(directory, name, text) {
+    const tempName = '.tmp-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.json';
+    const write = async function(filename, value) {
+        const file = await directory.getFileHandle(filename, {create: true});
+        const handle = await file.createSyncAccessHandle();
+        const encoded = new TextEncoder().encode(value);
+        handle.truncate(0);
+        handle.write(encoded);
+        handle.flush();
+        handle.close();
+    };
+    await write(tempName, text);
+    const staged = await (await (await directory.getFileHandle(tempName)).getFile()).text();
+    if (staged !== text) throw new Error('Worker recovery staging verification failed');
+    await write(name, text);
+    const promoted = await (await (await directory.getFileHandle(name)).getFile()).text();
+    if (promoted !== text) throw new Error('Worker recovery promotion verification failed');
+    await directory.removeEntry(tempName).catch(function() {});
+};
+self.onmessage = async function(event) {
+    const id = event.data.id;
     try {
+        const request = event.data.request;
         const root = await navigator.storage.getDirectory();
-        if (action === 'write') {
-            const file = await root.getFileHandle('openshop-autosave.json', {create: true});
-            const handle = await file.createSyncAccessHandle();
-            const encoded = new TextEncoder().encode(data);
-            handle.truncate(0);
-            handle.write(encoded);
-            handle.flush();
-            handle.close();
-            self.postMessage({id, ok: true});
-        } else if (action === 'delete') {
-            await root.removeEntry('openshop-autosave.json').catch(() => {});
-            self.postMessage({id, ok: true});
-        }
-    } catch(e) { self.postMessage({id, ok: false, error: e.message}); }
+        const directory = await root.getDirectoryHandle(request.directoryName, {create: true});
+        await writeText(directory, request.snapshot.filename, request.snapshot.data);
+        await writeText(directory, request.indexName, JSON.stringify(request.index));
+        for (const filename of request.pruned || []) await directory.removeEntry(filename).catch(function() {});
+        self.postMessage({id: id, ok: true});
+    } catch(error) {
+        self.postMessage({id: id, ok: false, error: error && error.message ? error.message : String(error)});
+    }
 };`;
         const blob = new Blob([code], {type:'application/javascript'});
         const url = URL.createObjectURL(blob);
@@ -8202,16 +8924,16 @@ self.onmessage = async function(e) {
         });
         return this._autoSaveWorker;
     },
-    _writeAutoSaveWithWorker(data) {
+    _writeAutoSaveWithWorker(request) {
         return new Promise((resolve, reject) => {
             const id = ++this._autoSaveRequestId;
             const timeout = setTimeout(() => {
                 this._autoSaveRequests.delete(id);
                 reject(new Error('Auto-save worker acknowledgement timed out'));
-            }, 15000);
+            }, 30000);
             this._autoSaveRequests.set(id, { resolve, reject, timeout });
             try {
-                this._getAutoSaveWorker().postMessage({ id, action:'write', data });
+                this._getAutoSaveWorker().postMessage({ id, request });
             } catch (error) {
                 clearTimeout(timeout);
                 this._autoSaveRequests.delete(id);
@@ -8235,16 +8957,19 @@ self.onmessage = async function(e) {
         const generation = this._documentGeneration;
         this._setPersistenceState('saving');
         try {
-            const data = JSON.stringify(this._captureDocumentState());
-            try {
-                const root = await navigator.storage.getDirectory();
-                const file = await root.getFileHandle('openshop-autosave.json', { create: true });
-                const writable = await file.createWritable();
-                await writable.write(data);
-                await writable.close();
-            } catch {
-                await this._writeAutoSaveWithWorker(data);
-            }
+            const record = await this._withRecoveryLock(async () => {
+                const records = await this._listRecoveryGenerations({ includeLegacy:false });
+                this._ensureRecoveryOwnership(records);
+                const data = JSON.stringify(this._captureDocumentState());
+                return this._persistRecoveryPayload(data, {}, records);
+            });
+            this._activeRecoverySourceFilename = record.filename;
+            this._recoveryChannel?.postMessage({
+                type:'saved',
+                tabId:this._getRecoveryTabId(),
+                documentId:record.documentId,
+                name:record.name
+            });
             if (this._documentGeneration !== generation) {
                 if (this._isDirty) {
                     this._autoSaveDirty = true;
@@ -8265,13 +8990,22 @@ self.onmessage = async function(e) {
             return false;
         }
     },
-
     async _clearAutoSave() {
         if (!navigator.storage?.getDirectory) return false;
         try {
-            const root = await navigator.storage.getDirectory();
-            await root.removeEntry('openshop-autosave.json').catch(() => {});
-            return true;
+            return await this._withRecoveryLock(async () => {
+                const records = await this._listRecoveryGenerations();
+                const targets = records.filter(record =>
+                    record.legacy ||
+                    (record.documentId === this._documentId &&
+                        (record.ownerId === this._getRecoveryTabId() || record.filename === this._activeRecoverySourceFilename))
+                );
+                for (const record of targets) await this._discardRecovery(record, { updateIndex:false });
+                const remaining = records.filter(record => !targets.includes(record) && !record.legacy);
+                await this._rewriteRecoveryIndex(remaining);
+                this._activeRecoverySourceFilename = null;
+                return true;
+            });
         } catch(e) {
             console.debug('Clear auto-save:', e.message);
             return false;

@@ -149,6 +149,8 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 
 OpenShop JSON files use document schema v1. The same envelope drives project save/open, recovery, and undo/redo so layer membership and order, masks, guides, selections, animation frames, and active state stay synchronized. Legacy Fabric 5 / OpenShop 0.18.13 project JSON is migrated on load.
 
+Recovery uses checksum-verified, immutable generations keyed by stable document IDs rather than one overwrite-in-place file. Writes stage and verify a temporary OPFS file before promotion, retain up to five generations per document, rebuild from snapshot files if the index is damaged, and fall back to the newest verified older generation when necessary. Web Locks serialize the shared index and active tab leases fork competing documents into separate recovery streams. Recovery Storage shows quota and durable/best-effort status and supports metadata preview, naming, export, restore, open-as-copy, and per-generation discard. The legacy singleton autosave migrates on first supported startup.
+
 ## Security
 
 - Core startup CDN scripts are loaded with [Subresource Integrity (SRI)](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hashes
@@ -158,7 +160,7 @@ OpenShop JSON files use document schema v1. The same envelope drives project sav
 - Command palette, context menu, sticky notes, animation frames, macro list, AI progress titles, and save-preset modals render through DOM APIs instead of runtime `innerHTML`
 - PSD import performs its complete ag-psd decode in a cancellable worker, enforces file/header/layer bounds plus a 256 MB aggregate decoded-pixel ceiling, and commits the new document only after every layer is ready
 - Project, palette, preset, and image imports share central schema/resource budgets for dimensions, file sizes, object counts, color formats, and adjustment ranges
-- Recovery Storage in the command palette shows autosave age, size, quota usage, corruption state, and restore/export/discard actions
+- Recovery Storage in the command palette exposes checksum-verified per-document generations, corruption fallback, active-tab ownership, quota/durability, naming, preview, restore/open-as-copy, export, and discard actions
 - Content Security Policy restricts script/style/connect sources
 - AI model revisions pinned to immutable commit SHAs (not mutable branch refs)
 - PSD layer names and project JSON are sanitized to prevent XSS injection

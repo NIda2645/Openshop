@@ -683,6 +683,46 @@ describe('OpenShop core object', () => {
     expect(corruptModal.querySelector('.btn-primary').disabled).toBe(true);
   });
 
+  it('retains bounded immutable recovery generations per document and globally', () => {
+    const OS = loadOpenShop();
+    OS._recoveryRetentionPerDocument = 3;
+    OS._recoveryRetentionTotal = 5;
+    const makeRecord = (documentId, index) => {
+      const envelope = {
+        generationId: `${documentId}-${index}`,
+        documentId,
+        ownerId: 'tab-a',
+        leaseExpiresAt: 0,
+        name: documentId,
+        label: '',
+        revision: index,
+        createdAt: new Date(Date.UTC(2026, 6, 29, 12, 0, index)).toISOString(),
+        checksumAlgorithm: 'sha256',
+        checksum: String(index).padStart(64, '0')
+      };
+      return {
+        filename: `recovery-${documentId}-${index}.json`,
+        valid: true,
+        legacy: false,
+        envelope,
+        size: 100 + index
+      };
+    };
+    const records = [
+      ...Array.from({ length: 4 }, (_, index) => makeRecord('doc-a', index)),
+      ...Array.from({ length: 3 }, (_, index) => makeRecord('doc-b', index))
+    ];
+    const newEnvelope = makeRecord('doc-a', 5).envelope;
+    const newest = OS._recoveryIndexEntry('recovery-doc-a-5.json', newEnvelope, 105);
+    const retention = OS._selectRecoveryRetention(records, newest);
+
+    expect(retention.kept).toHaveLength(5);
+    expect(retention.kept.filter((entry) => entry.documentId === 'doc-a')).toHaveLength(3);
+    expect(retention.kept.filter((entry) => entry.documentId === 'doc-b')).toHaveLength(2);
+    expect(retention.kept[0].generationId).toBe('doc-a-5');
+    expect(retention.pruned).toContain('recovery-doc-a-0.json');
+  });
+
   it('round-trips project save and open with sanitization', async () => {
     const OS = loadOpenShop();
     const boundary = { name: '__boundary__', type: 'rect', visible: true };

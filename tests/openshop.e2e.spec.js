@@ -727,6 +727,232 @@ test('rejects hostile or cancelled PSD work without mutating the open document',
   });
 });
 
+test('stores atomic recovery generations, falls back from corruption, and forks cross-tab ownership', async ({ page }) => {
+  test.setTimeout(60_000);
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  const hostedHtml = await readFile(join(process.cwd(), 'index.html'), 'utf8');
+  await page.route('http://localhost/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: hostedHtml
+  }));
+  await page.goto('http://localhost/index.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => OS.dismissWelcome());
+  await page.waitForTimeout(100);
+
+  const first = await page.evaluate(async () => {
+    clearInterval(OS._autoSaveTimer);
+    OS._autoSaveTimer = null;
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(OS._recoveryDirectoryName, { recursive: true }).catch(() => {});
+    await root.removeEntry('openshop-autosave.json').catch(() => {});
+    OS.createNewDocument(64, 48, { resetProject: true });
+    OS._docName = 'Recovery Primary';
+    OS._markDocumentDirty();
+    await OS._autoSave();
+    const records = await OS._listRecoveryGenerations();
+    return {
+      documentId: OS._documentId,
+      records: records.map((record) => ({
+        filename: record.filename,
+        documentId: record.documentId,
+        ownerId: record.ownerId,
+        schemaVersion: record.envelope?.schemaVersion,
+        checksumAlgorithm: record.checksumAlgorithm,
+        valid: record.valid
+      }))
+    };
+  });
+
+  expect(first.records).toHaveLength(1);
+  expect(first.records[0]).toEqual(expect.objectContaining({
+    documentId: first.documentId,
+    schemaVersion: 1,
+    checksumAlgorithm: 'sha256',
+    valid: true
+  }));
+
+  const secondPage = await page.context().newPage();
+  const secondErrors = [];
+  secondPage.on('pageerror', (error) => secondErrors.push(error.message));
+  await secondPage.route('http://localhost/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: hostedHtml
+  }));
+  await secondPage.goto('http://localhost/index.html', { waitUntil: 'domcontentloaded' });
+  await secondPage.evaluate(() => {
+    OS.dismissWelcome();
+    document.querySelectorAll('.modal-overlay').forEach((overlay) => overlay.remove());
+  });
+  await secondPage.waitForTimeout(100);
+  const second = await secondPage.evaluate(async (documentId) => {
+    clearInterval(OS._autoSaveTimer);
+    OS._autoSaveTimer = null;
+    OS.createNewDocument(64, 48, { resetProject: true });
+    OS._documentId = documentId;
+    OS._docName = 'Recovery Competing Tab';
+    OS._initRecoveryCoordination();
+    OS._claimRecoveryOwnership();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    OS._markDocumentDirty();
+    const saved = await OS._autoSave();
+    const records = await OS._listRecoveryGenerations();
+    return {
+      saved,
+      documentId: OS._documentId,
+      forked: OS._documentId !== documentId,
+      recordDocumentIds: records.filter((record) => record.valid).map((record) => record.documentId),
+      toast: document.getElementById('toast-container').textContent
+    };
+  }, first.documentId);
+  await secondPage.close();
+
+  expect(second.saved).toBe(true);
+  expect(second.forked).toBe(true);
+  expect(new Set(second.recordDocumentIds).size).toBe(2);
+  expect(second.toast).toContain('separate copy');
+  expect(secondErrors).toEqual([]);
+
+  const generations = await page.evaluate(async () => {
+    for (let index = 0; index < 2; index++) {
+      OS.layers[1].name = `Checkpoint ${index + 2}`;
+      OS._markDocumentDirty();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await OS._autoSave();
+    }
+    const records = await OS._listRecoveryGenerations();
+    const primary = records.filter((record) => record.valid && record.documentId === OS._documentId);
+    const newest = primary[0];
+    const directory = await OS._getRecoveryDirectory(false);
+    const handle = await directory.getFileHandle(newest.filename, { create: false });
+    const writable = await handle.createWritable();
+    await writable.write('{"truncated":');
+    await writable.close();
+    const info = await OS._getRecoveryInfo();
+    const directoryEntries = [];
+    const recoveryDirectory = await OS._getRecoveryDirectory(false);
+    for await (const [name] of recoveryDirectory.entries()) directoryEntries.push(name);
+    await OS.showRecoveryManager();
+    const manager = document.querySelector('.recovery-manager');
+    const verifiedCard = [...manager.querySelectorAll('.recovery-generation')]
+      .find((card) => !card.classList.contains('corrupt'));
+    verifiedCard?.querySelector('.recovery-actions .btn')?.click();
+    const managerState = {
+      text: manager.textContent,
+      cards: [...manager.querySelectorAll('.recovery-generation')].map((card) => card.textContent),
+      restoreButtons: [...manager.querySelectorAll('.recovery-actions .btn-primary')].map((button) => button.disabled),
+      previewVisible: verifiedCard ? !verifiedCard.querySelector('.recovery-details').hidden : false
+    };
+    document.querySelector('.modal-overlay:has(.recovery-manager)')?.remove();
+    return {
+      filenames: records.map((record) => record.filename),
+      primaryCount: primary.length,
+      fallbackUsed: info.fallbackUsed,
+      recoverableFilename: info.recoverable?.filename,
+      corruptedFilename: newest.filename,
+      newestCorrupt: info.generations[0]?.corrupt,
+      directoryEntries,
+      managerState
+    };
+  });
+
+  expect(new Set(generations.filenames).size).toBe(generations.filenames.length);
+  expect(generations.primaryCount).toBe(3);
+  expect(generations.fallbackUsed).toBe(true);
+  expect(generations.newestCorrupt).toBe(true);
+  expect(generations.recoverableFilename).not.toBe(generations.corruptedFilename);
+  expect(generations.directoryEntries).toContain('index.json');
+  expect(generations.directoryEntries.some((name) => name.startsWith('.tmp-'))).toBe(false);
+  expect(generations.managerState.text).toContain('newest generation is corrupt');
+  expect(generations.managerState.text).toContain('Durability');
+  expect(generations.managerState.text).toContain('Storage Used');
+  expect(generations.managerState.cards.some((card) => card.includes('Corrupt'))).toBe(true);
+  expect(generations.managerState.restoreButtons).toContain(true);
+  expect(generations.managerState.restoreButtons).toContain(false);
+  expect(generations.managerState.previewVisible).toBe(true);
+
+  const renamed = await page.evaluate(async () => {
+    const info = await OS._getRecoveryInfo();
+    const record = info.recoverable;
+    await OS._renameRecoveryGeneration(record, 'Named checkpoint');
+    const records = await OS._listRecoveryGenerations();
+    const named = records.find((candidate) => candidate.label === 'Named checkpoint');
+    return {
+      exists: Boolean(named),
+      filename: named?.filename,
+      documentId: named?.documentId,
+      label: named?.label
+    };
+  });
+  expect(renamed).toEqual(expect.objectContaining({
+    exists: true,
+    label: 'Named checkpoint',
+    documentId: first.documentId
+  }));
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.evaluate(async (filename) => {
+    const record = (await OS._listRecoveryGenerations()).find((candidate) => candidate.filename === filename);
+    OS._exportRecovery(record);
+  }, renamed.filename);
+  const recoveryDownload = await downloadPromise;
+  expect(recoveryDownload.suggestedFilename()).toBe('Named_checkpoint.openshop.json');
+
+  const restoredCopy = await page.evaluate(async ({ filename, originalDocumentId }) => {
+    const record = (await OS._listRecoveryGenerations()).find((candidate) => candidate.filename === filename);
+    const restored = await OS._restoreRecoveryRecord(record, null, true);
+    return {
+      restored,
+      documentId: OS._documentId,
+      changedId: OS._documentId !== originalDocumentId,
+      name: OS._docName,
+      dirty: OS._isDirty
+    };
+  }, { filename: renamed.filename, originalDocumentId: first.documentId });
+  expect(restoredCopy).toEqual(expect.objectContaining({
+    restored: true,
+    changedId: true,
+    name: 'Recovery Primary Copy',
+    dirty: true
+  }));
+
+  const finalState = await page.evaluate(async (corruptedFilename) => {
+    const records = await OS._listRecoveryGenerations();
+    const corrupt = records.find((record) => record.filename === corruptedFilename);
+    await OS._discardRecovery(corrupt);
+    const remaining = await OS._listRecoveryGenerations();
+    const corruptRemoved = !remaining.some((record) => record.filename === corruptedFilename);
+    await OS._discardAllRecovery(remaining);
+    const root = await navigator.storage.getDirectory();
+    const legacyHandle = await root.getFileHandle('openshop-autosave.json', { create: true });
+    const legacyWritable = await legacyHandle.createWritable();
+    await legacyWritable.write(JSON.stringify(OS._captureDocumentState()));
+    await legacyWritable.close();
+    const migrated = await OS._migrateLegacyRecovery();
+    const legacyExists = Boolean(await root.getFileHandle('openshop-autosave.json', { create: false }).catch(() => null));
+    const migratedRecords = await OS._listRecoveryGenerations();
+    const migratedLabel = migratedRecords.find((record) => record.valid)?.label || '';
+    await OS._discardAllRecovery(migratedRecords);
+    return {
+      corruptRemoved,
+      migrated,
+      legacyExists,
+      migratedLabel,
+      remainingAfterCleanup: (await OS._listRecoveryGenerations()).length
+    };
+  }, generations.corruptedFilename);
+  expect(finalState).toEqual({
+    corruptRemoved: true,
+    migrated: true,
+    legacyExists: false,
+    migratedLabel: 'Migrated legacy autosave',
+    remainingAfterCleanup: 0
+  });
+  expect(pageErrors).toEqual([]);
+});
+
 test('round-trips one document state through save, open, recovery, undo, and redo', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
