@@ -3245,3 +3245,140 @@ test('honours the New Image background choice instead of ignoring it', async ({ 
     .toEqual(['__boundary__', 'Background Fill']);
   expect(await sampleCentre()).toEqual([255, 255, 255, 255]);
 });
+
+test('reads every palette format the file picker advertises', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const asFile = (data, name, type) => new File([data], name, { type });
+
+    // GIMP palette: header, comments, and a Columns line all have to be skipped.
+    const gpl = [
+      'GIMP Palette',
+      'Name: Smoke',
+      'Columns: 4',
+      '# a comment',
+      '255   0   0\tRed',
+      '  0 128   0 Green',
+      '17 34 51',
+      '999 0 0 out of range'
+    ].join('\n');
+
+    // Minimal ASEF file with one RGB entry and one CMYK entry.
+    const encodeAse = (entries) => {
+      const parts = [];
+      const header = new DataView(new ArrayBuffer(12));
+      header.setUint8(0, 0x41); header.setUint8(1, 0x53); header.setUint8(2, 0x45); header.setUint8(3, 0x46);
+      header.setUint16(4, 1, false); header.setUint16(6, 0, false);
+      header.setUint32(8, entries.length, false);
+      parts.push(new Uint8Array(header.buffer));
+      for (const entry of entries) {
+        const values = entry.values;
+        const bodyLength = 2 + 2 + 4 + values.length * 4 + 2;
+        const block = new DataView(new ArrayBuffer(6 + bodyLength));
+        block.setUint16(0, 0x0001, false);
+        block.setUint32(2, bodyLength, false);
+        block.setUint16(6, 1, false);           // one UTF-16 char (the null terminator)
+        block.setUint16(8, 0, false);
+        for (let i = 0; i < 4; i++) block.setUint8(10 + i, entry.model.charCodeAt(i));
+        values.forEach((v, i) => block.setFloat32(14 + i * 4, v, false));
+        block.setUint16(14 + values.length * 4, 0, false);
+        parts.push(new Uint8Array(block.buffer));
+      }
+      const total = parts.reduce((sum, p) => sum + p.length, 0);
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const p of parts) { out.set(p, offset); offset += p.length; }
+      return out;
+    };
+    const ase = encodeAse([
+      { model: 'RGB ', values: [1, 0, 0] },
+      { model: 'Gray', values: [0.5] }
+    ]);
+
+    const json = JSON.stringify({ colors: ['#123456', 'not a colour', '#abcdef'] });
+
+    const out = {};
+    out.gpl = await OS.readPaletteFile(asFile(gpl, 'smoke.gpl', 'text/plain'));
+    out.ase = await OS.readPaletteFile(asFile(ase, 'smoke.ase', 'application/octet-stream'));
+    out.json = await OS.readPaletteFile(asFile(json, 'smoke.json', 'application/json'));
+    // A GIMP palette named .txt is still detected from its header.
+    out.sniffed = await OS.readPaletteFile(asFile(gpl, 'smoke.txt', 'text/plain'));
+
+    try {
+      await OS.readPaletteFile(asFile('nonsense', 'broken.ase', 'application/octet-stream'));
+      out.badAse = 'accepted';
+    } catch (error) { out.badAse = error.message; }
+
+    OS._savedPalette = [];
+    out.committed = OS._commitImportedPalette(out.json);
+    out.stored = JSON.parse(localStorage.getItem('os_palette') || '[]');
+    return out;
+  });
+
+  expect(result.gpl).toEqual(['#ff0000', '#008000', '#112233']);
+  expect(result.ase).toEqual(['#ff0000', '#808080']);
+  expect(result.json).toEqual(['#123456', 'not a colour', '#abcdef']);
+  expect(result.sniffed).toEqual(['#ff0000', '#008000', '#112233']);
+  expect(result.badAse).toContain('Not an ASE palette');
+  // Only the valid hex values survive sanitisation and reach storage.
+  expect(result.committed).toBe(2);
+  expect(result.stored).toEqual(['#123456', '#abcdef']);
+});
+
+test('persists preferences across a reload instead of only saying it did', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { localStorage.removeItem('os_prefs'); localStorage.removeItem('os_theme'); });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  await page.evaluate(() => OS.showPreferences());
+  await page.locator('#pref-dw').fill('1234');
+  await page.locator('#pref-dh').fill('789');
+  await page.locator('#pref-grid').fill('42');
+  await page.locator('#pref-snap').fill('7');
+  await page.locator('#pref-hist').fill('120');
+  await page.locator('#pref-accent').evaluate(el => { el.value = '#aa3355'; });
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.locator('.modal-overlay')).toHaveCount(0);
+
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('os_prefs')));
+  expect(stored).toMatchObject({
+    version: 1, defaultW: 1234, defaultH: 789, gridSize: 42, snapTolerance: 7, maxHistory: 120, accent: '#aa3355'
+  });
+
+  // The whole set has to come back, not just the language.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  const restored = await page.evaluate(() => ({
+    defaultW: OS._prefs.defaultW,
+    defaultH: OS._prefs.defaultH,
+    gridSize: OS.gridSize,
+    snapTolerance: OS._prefs.snapTolerance,
+    maxHistory: OS.maxHistory,
+    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  }));
+  expect(restored).toEqual({
+    defaultW: 1234, defaultH: 789, gridSize: 42, snapTolerance: 7, maxHistory: 120, accent: '#aa3355'
+  });
+
+  // A corrupted store cannot disable undo or break the grid on the way in.
+  await page.evaluate(() => localStorage.setItem('os_prefs', JSON.stringify({
+    version: 1, defaultW: -50, defaultH: 1e9, gridSize: 0, snapTolerance: 'x', maxHistory: 0, accent: 'javascript:alert(1)'
+  })));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  const clamped = await page.evaluate(() => ({
+    defaultW: OS._prefs.defaultW,
+    gridSize: OS.gridSize,
+    maxHistory: OS.maxHistory,
+    accentIsHex: /^#[0-9a-f]{6}$/i.test(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())
+  }));
+  expect(clamped.defaultW).toBe(1);
+  expect(clamped.gridSize).toBe(1);
+  expect(clamped.maxHistory).toBe(10);
+  expect(clamped.accentIsHex).toBe(true);
+
+  await page.evaluate(() => localStorage.removeItem('os_prefs'));
+});

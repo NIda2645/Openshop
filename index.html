@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-YNfv4VbhNGw8bwLoqJuCSJQ8Sp1SYscyq/Pjoy5MP74=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-0gaZlag/vNk/c9PoOVRS8WZuZFJyfGNXpV7JGECXzUI=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3438,6 +3438,7 @@ const OS = {
             if (this._isDirty) { e.preventDefault(); e.returnValue = ''; }
         });
         this.initSwatches();
+        this._restorePreferences();
         this._restoreTheme();
         this.initCmdPalette();
         this.setTool('select');
@@ -11435,8 +11436,45 @@ self.onmessage = async function(event) {
         const lang = overlay.querySelector('#pref-lang')?.value || 'en';
         if (lang !== this._lang) this.setLocale(lang);
         try { localStorage.setItem('os_lang', lang); } catch(e) { console.warn('Language save failed:', e.message); }
+        // "Preferences saved" used to mean the language only; every other value
+        // here was session-scoped and reset on the next reload.
+        this._persistPreferences(accent);
         if (this.gridVisible) this.drawGrid();
         overlay.remove(); this.toast(this._t('Preferences saved'), 'success');
+    },
+    _persistPreferences(accent = null) {
+        const payload = {
+            version: 1,
+            defaultW: this._prefs.defaultW,
+            defaultH: this._prefs.defaultH,
+            gridSize: this.gridSize,
+            snapTolerance: this._prefs.snapTolerance,
+            maxHistory: this.maxHistory
+        };
+        if (/^#[0-9a-fA-F]{6}$/.test(String(accent || ''))) payload.accent = String(accent).toLowerCase();
+        try { localStorage.setItem('os_prefs', JSON.stringify(payload)); }
+        catch(e) { console.warn('Preferences not stored:', e.message); }
+    },
+    _restorePreferences() {
+        let stored = null;
+        try { stored = JSON.parse(localStorage.getItem('os_prefs') || 'null'); }
+        catch(e) { console.warn('Preferences restore failed:', e.message); return; }
+        if (!stored || stored.version !== 1) return;
+        const limit = this._importLimits.maxImageDimension;
+        // Clamp on the way in as well as on the way out: a hand-edited or
+        // corrupted store must not be able to disable undo or break the grid.
+        const clamp = (value, min, max, fallback) => {
+            const number = Number(value);
+            return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+        };
+        this._prefs.defaultW = clamp(stored.defaultW, 1, limit, this._prefs.defaultW);
+        this._prefs.defaultH = clamp(stored.defaultH, 1, limit, this._prefs.defaultH);
+        this.gridSize = clamp(stored.gridSize, 1, 500, this.gridSize);
+        this._prefs.snapTolerance = clamp(stored.snapTolerance, 0, 100, this._prefs.snapTolerance);
+        this.maxHistory = clamp(stored.maxHistory, 10, 200, this.maxHistory);
+        if (/^#[0-9a-fA-F]{6}$/.test(String(stored.accent || ''))) {
+            document.documentElement.style.setProperty('--accent', String(stored.accent).toLowerCase());
+        }
     },
 
     // ====================== LAYER DRAG REORDER ======================
@@ -13486,24 +13524,118 @@ self.onmessage = async function(e) {
         this._downloadBlob(blob, 'openshop-palette.json');
         this.toast('Palette exported', 'success');
     },
+    // The file picker advertised .gpl and .ase, but the reader only ever ran
+    // JSON.parse, so choosing either reported "Invalid palette file".
+    _parseGimpPalette(text) {
+        const lines = String(text).split(/\r?\n/);
+        if (!/^GIMP Palette/i.test(lines[0] || '')) throw new Error('Not a GIMP palette');
+        const colors = [];
+        for (const line of lines.slice(1)) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            if (/^(Name|Columns)\s*:/i.test(trimmed)) continue;
+            const match = trimmed.match(/^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})/);
+            if (!match) continue;
+            const [r, g, b] = match.slice(1, 4).map(Number);
+            if (r > 255 || g > 255 || b > 255) continue;
+            colors.push('#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join(''));
+            if (colors.length >= this._importLimits.maxPaletteColors) break;
+        }
+        return colors;
+    },
+    _aseColorToHex(model, values) {
+        const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
+        let rgb;
+        if (model === 'RGB ') rgb = values.slice(0, 3).map(v => v * 255);
+        else if (model === 'CMYK') {
+            const [c, m, y, k] = values;
+            rgb = [255 * (1 - c) * (1 - k), 255 * (1 - m) * (1 - k), 255 * (1 - y) * (1 - k)];
+        } else if (model === 'Gray') {
+            const g = values[0] * 255;
+            rgb = [g, g, g];
+        } else if (model === 'LAB ') {
+            // ASE stores L as 0..1 and a/b as -128..127.
+            const L = values[0] * 100, a = values[1], bb = values[2];
+            const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - bb / 200;
+            const inv = t => (t > 6 / 29 ? t * t * t : 3 * (6 / 29) ** 2 * (t - 4 / 29));
+            const x = 0.95047 * inv(fx), y = 1 * inv(fy), z = 1.08883 * inv(fz);
+            const lin = [
+                x * 3.2406 + y * -1.5372 + z * -0.4986,
+                x * -0.9689 + y * 1.8758 + z * 0.0415,
+                x * 0.0557 + y * -0.204 + z * 1.057
+            ];
+            rgb = lin.map(v => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055));
+        } else return null;
+        return '#' + rgb.map(v => clamp(v).toString(16).padStart(2, '0')).join('');
+    },
+    _parseAsePalette(buffer) {
+        const view = new DataView(buffer);
+        if (view.byteLength < 12) throw new Error('Not an ASE palette');
+        const signature = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+        if (signature !== 'ASEF') throw new Error('Not an ASE palette');
+        const blocks = view.getUint32(8, false);
+        const colors = [];
+        let offset = 12;
+        for (let i = 0; i < blocks && offset + 6 <= view.byteLength; i++) {
+            const type = view.getUint16(offset, false);
+            const length = view.getUint32(offset + 2, false);
+            const body = offset + 6;
+            if (length < 0 || body + length > view.byteLength) break;
+            // 0x0001 is a colour entry; 0xC001/0xC002 are group markers.
+            if (type === 0x0001) {
+                let cursor = body;
+                const nameChars = view.getUint16(cursor, false);
+                cursor += 2 + nameChars * 2;
+                if (cursor + 4 <= view.byteLength) {
+                    const model = String.fromCharCode(
+                        view.getUint8(cursor), view.getUint8(cursor + 1),
+                        view.getUint8(cursor + 2), view.getUint8(cursor + 3)
+                    );
+                    cursor += 4;
+                    const componentCount = model === 'CMYK' ? 4 : model === 'Gray' ? 1 : 3;
+                    if (cursor + componentCount * 4 <= view.byteLength) {
+                        const values = [];
+                        for (let c = 0; c < componentCount; c++) values.push(view.getFloat32(cursor + c * 4, false));
+                        const hex = this._aseColorToHex(model, values);
+                        if (hex) colors.push(hex);
+                    }
+                }
+            }
+            offset = body + length;
+            if (colors.length >= this._importLimits.maxPaletteColors) break;
+        }
+        if (!colors.length) throw new Error('ASE palette contained no readable colours');
+        return colors;
+    },
+    _commitImportedPalette(colors) {
+        const safeColors = this._sanitizePaletteColors(colors);
+        if (!safeColors.length) { this.toast('Palette contained no usable colours', 'error'); return 0; }
+        this._savedPalette = [...this._savedPalette, ...safeColors].slice(0, this._importLimits.maxPaletteColors);
+        try { localStorage.setItem('os_palette', JSON.stringify(this._savedPalette)); } catch(e) { console.warn('Palette save failed:', e.message); }
+        this._renderSavedPalette();
+        this.toast(`Imported ${safeColors.length} colors`, 'success');
+        return safeColors.length;
+    },
+    async readPaletteFile(file) {
+        const name = String(file?.name || '').toLowerCase();
+        if (name.endsWith('.ase')) return this._parseAsePalette(await file.arrayBuffer());
+        const text = await file.text();
+        if (name.endsWith('.gpl') || /^GIMP Palette/i.test(text)) return this._parseGimpPalette(text);
+        const data = JSON.parse(text);
+        const colors = Array.isArray(data) ? data : data?.colors;
+        if (!Array.isArray(colors)) throw new Error('Palette JSON has no colors array');
+        return colors;
+    },
     importPalette() {
         const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,.gpl,.ase';
-        input.onchange = e => {
+        input.onchange = async e => {
             const file = e.target.files[0]; if (!file) return;
             try { this._assertJsonFileBudget(file, 'Palette'); } catch(err) { this.toast(err.message, 'error'); return; }
-            const reader = new FileReader();
-            reader.onload = ev => {
-                try {
-                    const data = JSON.parse(ev.target.result);
-                    if (data.colors && Array.isArray(data.colors)) {
-                        const safeColors = this._sanitizePaletteColors(data.colors);
-                        this._savedPalette = [...this._savedPalette, ...safeColors].slice(0, this._importLimits.maxPaletteColors);
-                        try { localStorage.setItem('os_palette', JSON.stringify(this._savedPalette)); } catch(e) { console.warn('Palette save failed:', e.message); }
-                        this._renderSavedPalette();
-                        this.toast(`Imported ${safeColors.length} colors`, 'success');
-                    }
-                } catch(e) { this.toast('Invalid palette file', 'error'); }
-            }; reader.readAsText(file);
+            try {
+                this._commitImportedPalette(await this.readPaletteFile(file));
+            } catch(err) {
+                this.toast(`Could not read that palette — ${err.message}`, 'error');
+            }
         }; input.click();
     },
 

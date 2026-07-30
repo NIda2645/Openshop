@@ -6,6 +6,8 @@ All notable changes to Openshop will be documented in this file.
 
 ### Fixed
 - Honour the New Image background choice: the colour picker was read by nothing, so every new document came out transparent whatever was selected. The dialog now offers Transparent, White, or a custom colour, and the swatch is enabled only when it applies
+- Save every preference, not just the language: default canvas size, grid size, snap tolerance, history cap, and accent colour now survive a reload, and a corrupted store is clamped on the way in rather than being able to disable undo
+- Read GIMP `.gpl` and Adobe `.ase` palettes, both of which the file picker already advertised while the reader only ever parsed JSON, and report why a palette was rejected instead of a bare "Invalid palette file"
 - Populate the welcome screen's Recent list, which was permanently empty because nothing ever recorded an opened document, and present the rows as the history record they are rather than as clickable shortcuts that did nothing
 
 ## [v0.22.0] - 2026-07-30
