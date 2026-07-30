@@ -5,11 +5,12 @@ All notable changes to Openshop will be documented in this file.
 ## [Unreleased]
 
 ### Security
+- Drop `https://cdn.jsdelivr.net` from `script-src`. Fabric, ag-psd and jsPDF were `<script src>` tags on that host, and CSP does not require SRI on scripts it permits by host — so an allowance covering three pinned tags also let any HTML-injection sink load an arbitrary npm package. All three are now fetched, SHA-384 verified in page, and executed from `blob:` URLs, the same path the eight lazy assets already took, leaving `script-src 'self' <hashes> 'wasm-unsafe-eval' blob:`. Substituted bytes stop the editor with a visible message instead of quietly becoming the engine
 - Judge every `href` in an exported SVG regardless of namespace, against an allowlist. The old `[xlink\:href]` selector matched nothing — attribute selectors match the local name in the null namespace, and `xlink:href` is exactly what fabric emits for images — so that branch was dead, and the plain-`href` checks were case-sensitive, letting `JAVASCRIPT:` and `Data:text/html` through a file handed to the user as sanitized
 
 ### Fixed
 - Stop recovery ownership from flapping when another tab owns the stream. Autosave switches this tab to a fresh document id, but every history snapshot embeds the old one, so each undo re-installed the contested id and the next autosave renamed again — orphaning a set of generations every time, which were then offered as unsaved work on a later launch. The surrendered ids are now tracked as a session lineage: snapshots no longer re-claim them, and Save Project clears the generations written under all of them
-- Refuse to autosave while a document load is in flight. `canvasW/H` are assigned before `loadFromJSON` resolves, so a capture landing in that window persisted the outgoing document'''s content under the incoming document'''s dimensions, stored against the outgoing id — a generation that restored at the wrong size and could evict a good one under the five-per-document retention cap. The work now stays queued and flushes once the load settles
+- Refuse to autosave while a document load is in flight. `canvasW/H` are assigned before `loadFromJSON` resolves, so a capture landing in that window persisted the outgoing document's content under the incoming document's dimensions, stored against the outgoing id — a generation that restored at the wrong size and could evict a good one under the five-per-document retention cap. The work now stays queued and flushes once the load settles
 
 ## [v0.23.0] - 2026-07-30
 

@@ -5,11 +5,19 @@ import { pathToFileURL } from 'node:url';
 
 const appUrl = pathToFileURL(join(process.cwd(), 'index.html')).toString();
 
+// The three libraries the editor needs are fetched and SHA-384 verified in page
+// now rather than loaded from <script src>, so nothing is wired up until the
+// boot promise settles.
+async function openApp(page, url = appUrl) {
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
+}
+
 test('loads the editor shell and supports core UI interactions @cross-browser', async ({ page, browserName }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.evaluate(() => {
     document.dispatchEvent(new MouseEvent('mouseenter'));
     document.dispatchEvent(new MouseEvent('click'));
@@ -45,7 +53,7 @@ test('loads the editor shell and supports core UI interactions @cross-browser', 
 });
 
 test('exposes clean, dirty, saving, and saved project states @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const unloadPrevented = () => page.evaluate(() => {
@@ -82,7 +90,7 @@ test('exposes clean, dirty, saving, and saved project states @cross-browser', as
 });
 
 test('applies a one-click pixel filter to an active image layer @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -143,7 +151,7 @@ test('applies a one-click pixel filter to an active image layer @cross-browser',
 test('cancels a running pixel filter without changing pixels or history', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const before = await page.evaluate(async () => {
@@ -203,7 +211,7 @@ test('cancels a running pixel filter without changing pixels or history', async 
 });
 
 test('creates a pixel selection from a mocked AI segment mask', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -258,7 +266,7 @@ test('creates a pixel selection from a mocked AI segment mask', async ({ page })
 test('loads legacy Fabric 5 documents without geometry or metadata drift', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
 
   const result = await page.evaluate(async () => {
     const legacyDocument = {
@@ -372,7 +380,7 @@ test('loads legacy Fabric 5 documents without geometry or metadata drift', async
 });
 
 test('keeps hostile Fabric object ids and gradient colors inert in SVG export', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
 
   const result = await page.evaluate(() => {
     const payload = 'red"><img src="x" onerror="window.__fabricGradientXss=1">';
@@ -426,7 +434,7 @@ test('keeps hostile Fabric object ids and gradient colors inert in SVG export', 
 test('decodes and bounds PSD pixels in a worker before committing the document', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -506,7 +514,7 @@ test('decodes and bounds PSD pixels in a worker before committing the document',
 test('round-trips nested PSD groups, blends, opacity, and basic text without duplicating the composite', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -700,7 +708,7 @@ test('round-trips nested PSD groups, blends, opacity, and basic text without dup
 });
 
 test('rejects hostile or cancelled PSD work without mutating the open document', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -804,7 +812,7 @@ test('stores atomic recovery generations, falls back from corruption, and forks 
     contentType: 'text/html',
     body: hostedHtml
   }));
-  await page.goto('http://localhost/index.html', { waitUntil: 'domcontentloaded' });
+  await openApp(page, 'http://localhost/index.html');
   await page.evaluate(() => OS.dismissWelcome());
   await page.waitForTimeout(100);
 
@@ -1021,7 +1029,7 @@ test('stores atomic recovery generations, falls back from corruption, and forks 
 });
 
 test('round-trips one document state through save, open, recovery, undo, and redo @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   await page.evaluate(() => {
@@ -1201,7 +1209,7 @@ test('round-trips one document state through save, open, recovery, undo, and red
 });
 
 test('keeps layer stacking, locks, visibility, and history in one canonical model @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -1347,7 +1355,7 @@ test('keeps layer stacking, locks, visibility, and history in one canonical mode
 test('records validated commands and replays mixed edits as one atomic action', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -1474,7 +1482,7 @@ test('records validated commands and replays mixed edits as one atomic action', 
 test('undoes destructive canvas and frame transactions without state loss', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -1620,7 +1628,7 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
 test('exports real alpha or matte pixels and presents format loss before download @cross-browser', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -1838,7 +1846,7 @@ test('exports real alpha or matte pixels and presents format loss before downloa
 });
 
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   await page.locator('button[title="New Layer"]').click();
@@ -1884,7 +1892,7 @@ test('keeps onboarding actions reachable across supported narrow viewports', asy
   ];
 
   await page.setViewportSize(viewports[0]);
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await expect(page.locator('#welcome-overlay')).toBeVisible();
@@ -1942,7 +1950,7 @@ test('keeps dialog actions visible and operable across narrow portrait and lands
   const dialogs = ['newImage', 'showPreferences', 'showExportSettings', 'showShortcuts', 'showRecoveryManager'];
 
   await page.setViewportSize(viewports[0]);
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.evaluate(() => OS.dismissWelcome());
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
@@ -1995,7 +2003,7 @@ test('keeps dialog actions visible and operable across narrow portrait and lands
 });
 
 test('renders persisted UI data without activating markup', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.evaluate(() => {
     const payload = '<img src=x onerror=alert(1)>';
     localStorage.setItem('openshop_recent', JSON.stringify([
@@ -2020,7 +2028,7 @@ test('renders persisted UI data without activating markup', async ({ page }) => 
 });
 
 test('keeps zoom cheap and coalesces inspector redraws after edits', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -2064,7 +2072,7 @@ test('keeps zoom cheap and coalesces inspector redraws after edits', async ({ pa
 });
 
 test('applies every theme across the studio chrome and persists the choice', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const sample = () => page.evaluate(() => {
@@ -2104,7 +2112,7 @@ test('applies every theme across the studio chrome and persists the choice', asy
 });
 
 test('exposes onboarding and layer controls to the keyboard', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
 
   // Template cards are reachable and operable without a mouse.
   const card = page.locator('#template-grid .template-card').first();
@@ -2131,7 +2139,7 @@ test('exposes onboarding and layer controls to the keyboard', async ({ page }) =
 });
 
 test('drives the whole menubar from the keyboard with clean accessible names @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const menubar = page.getByRole('menubar', { name: 'Main menu' });
@@ -2209,7 +2217,7 @@ test('drives the whole menubar from the keyboard with clean accessible names @cr
 });
 
 test('traps focus inside dialogs and returns it to whatever opened them @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   // Open New Image from the menubar so the trigger is a real focused control.
@@ -2276,7 +2284,7 @@ test('traps focus inside dialogs and returns it to whatever opened them @cross-b
 });
 
 test('keeps a decision-only dialog on screen when Escape is pressed', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await expect(page.locator('#welcome-overlay')).toBeVisible();
 
   // The recovery prompt has Restore/Copy/Discard but deliberately no cancel.
@@ -2296,7 +2304,7 @@ test('keeps a decision-only dialog on screen when Escape is pressed', async ({ p
 });
 
 test('resolves accent-derived chrome through the token scale in every theme', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const sampled = await page.evaluate(async () => {
@@ -2370,7 +2378,7 @@ test('resolves accent-derived chrome through the token scale in every theme', as
 });
 
 test('runs every migrated pixel filter off the main thread with unchanged math @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const outcome = await page.evaluate(async () => {
@@ -2514,7 +2522,7 @@ test('runs every migrated pixel filter off the main thread with unchanged math @
 });
 
 test('applies an auto adjustment through the async worker path and records history', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -2558,7 +2566,7 @@ test('applies an auto adjustment through the async worker path and records histo
 });
 
 test('lets a second AI request take over from the model load it cancels', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -2604,7 +2612,7 @@ test('lets a second AI request take over from the model load it cancels', async 
 });
 
 test('deletes the selected pixels at any zoom or pan, not the ones under the old viewport @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -2671,7 +2679,7 @@ test('deletes the selected pixels at any zoom or pan, not the ones under the old
 });
 
 test('keeps the marching-ants box over the selection when the viewport moves', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const box = await page.evaluate(async () => {
@@ -2697,7 +2705,7 @@ test('keeps the marching-ants box over the selection when the viewport moves', a
 });
 
 test('rescales a pre-document-space selection mask from an older project', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -2739,7 +2747,7 @@ test('rescales a pre-document-space selection mask from an older project', async
 });
 
 test('selects the shape a lasso encloses rather than its bounding box', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -2783,7 +2791,7 @@ test('selects the shape a lasso encloses rather than its bounding box', async ({
 });
 
 test('maps lasso points through the viewport before rasterising', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -2808,7 +2816,7 @@ test('maps lasso points through the viewport before rasterising', async ({ page 
 });
 
 test('feathers a selection into partial coverage instead of dilating it', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -2845,7 +2853,7 @@ test('feathers a selection into partial coverage instead of dilating it', async 
 });
 
 test('deletes through a downscaled layer without leaving gaps', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -2902,7 +2910,7 @@ test('deletes through a downscaled layer without leaving gaps', async ({ page })
 });
 
 test('meets WCAG 2.2 text contrast across every theme @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const audit = await page.evaluate(async () => {
@@ -2987,7 +2995,7 @@ test('meets WCAG 2.2 text contrast across every theme @cross-browser', async ({ 
 });
 
 test('gives every pointer target at least 24 by 24 CSS pixels', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const undersized = await page.evaluate(async () => {
@@ -3014,7 +3022,7 @@ test('gives every pointer target at least 24 by 24 CSS pixels', async ({ page })
 });
 
 test('offers a keyboard path for moving, resizing, and reordering', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -3063,7 +3071,7 @@ test('offers a keyboard path for moving, resizing, and reordering', async ({ pag
 });
 
 test('applies one edit-currency rule to every commit path', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -3131,7 +3139,7 @@ test('applies one edit-currency rule to every commit path', async ({ page }) => 
 });
 
 test('records opened documents in the welcome screen Recent list', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.evaluate(() => localStorage.removeItem('openshop_recent'));
   await page.reload({ waitUntil: 'domcontentloaded' });
 
@@ -3180,7 +3188,7 @@ test('records opened documents in the welcome screen Recent list', async ({ page
 });
 
 test('honours the New Image background choice instead of ignoring it', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   // Sample through the export path so the reading is in document space and
@@ -3247,7 +3255,7 @@ test('honours the New Image background choice instead of ignoring it', async ({ 
 });
 
 test('reads every palette format the file picker advertises', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -3328,7 +3336,7 @@ test('reads every palette format the file picker advertises', async ({ page }) =
 });
 
 test('persists preferences across a reload instead of only saying it did', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.evaluate(() => { localStorage.removeItem('os_prefs'); localStorage.removeItem('os_theme'); });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -3384,7 +3392,7 @@ test('persists preferences across a reload instead of only saying it did', async
 });
 
 test('previews Levels and Color Balance without a full-resolution PNG per tick', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -3483,7 +3491,7 @@ test('previews Levels and Color Balance without a full-resolution PNG per tick',
 
 test('resolves one mobile layout rather than two blocks that fight each other', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const layout = await page.evaluate(() => {
@@ -3555,7 +3563,7 @@ test('resolves one mobile layout rather than two blocks that fight each other', 
 
 test('keeps one tablet block with the winning panel width', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 1000 });
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
 
   const tablet = await page.evaluate(() => ({
     panelWidth: getComputedStyle(document.documentElement).getPropertyValue('--panel-width').trim(),
@@ -3572,7 +3580,7 @@ test('keeps one tablet block with the winning panel width', async ({ page }) => 
 });
 
 test('updates document language and direction when the locale changes @cross-browser', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -3605,7 +3613,7 @@ test('updates document language and direction when the locale changes @cross-bro
 });
 
 test('gives canvas text a direction so mixed scripts and numerals stay ordered', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -3634,7 +3642,7 @@ test('gives canvas text a direction so mixed scripts and numerals stay ordered',
 });
 
 test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const measure = () => page.evaluate(() => {
@@ -3680,7 +3688,7 @@ test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ p
 });
 
 test('flags untranslated interface strings through the pseudo-locale', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(() => {
@@ -3728,7 +3736,7 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
 });
 
 test('selects WebGPU only when an adapter resolves and falls back to WASM', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -3773,7 +3781,7 @@ test('selects WebGPU only when an adapter resolves and falls back to WASM', asyn
 });
 
 test('passes the selected device through to the model pipeline', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const options = await page.evaluate(async () => {
@@ -3800,7 +3808,7 @@ test('passes the selected device through to the model pipeline', async ({ page }
 });
 
 test('describes the enlarge command as the resample it is, outside the AI menu', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const placement = await page.evaluate(() => {
@@ -3831,7 +3839,7 @@ test('describes the enlarge command as the resample it is, outside the AI menu',
 });
 
 test('reports and clears cached model files per model', async ({ page }) => {
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async () => {
@@ -3891,4 +3899,54 @@ test('reports and clears cached model files per model', async ({ page }) => {
   expect(result.pipelineDropped).toBe(true);
   expect(result.disposed).toBe(true);
   expect(result.rmbgReset).toBe(true);
+});
+
+test('boots its libraries from verified blobs with no CDN in script-src @cross-browser', async ({ page }) => {
+  await openApp(page);
+
+  const report = await page.evaluate(() => {
+    const policy = document.querySelector('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+    const scriptSrc = policy.split(';').map(part => part.trim()).find(part => part.startsWith('script-src '));
+    return {
+      scriptSrc,
+      // Every remaining script element is either inline or a spent blob: URL.
+      remoteScriptTags: [...document.querySelectorAll('script[src]')]
+        .map(el => el.getAttribute('src'))
+        .filter(src => /^https?:/i.test(src)),
+      fabricVersion: window.fabric?.version || null,
+      hasAgPsd: typeof window.agPsd === 'object',
+      hasJsPdf: typeof window.jspdf === 'object',
+      bootState: document.documentElement.dataset.osBoot
+    };
+  });
+
+  // A whole-CDN allowance let any injection sink load an arbitrary npm package,
+  // because CSP does not require SRI on scripts it permits by host.
+  expect(report.scriptSrc).not.toMatch(/https?:\/\//);
+  expect(report.scriptSrc).toContain('blob:');
+  expect(report.remoteScriptTags).toEqual([]);
+  // ...and the libraries still arrive.
+  expect(report.fabricVersion).toBe('7.4.0');
+  expect(report.hasAgPsd).toBe(true);
+  expect(report.hasJsPdf).toBe(true);
+  expect(report.bootState).toBe('ready');
+});
+
+test('refuses to start when a boot library fails its integrity check', async ({ page }) => {
+  await page.route('**/cdn.jsdelivr.net/npm/jspdf**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/javascript',
+    body: 'window.jspdf = { tampered: true };'
+  }));
+
+  const consoleErrors = [];
+  page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'failed', null, { timeout: 30000 });
+
+  // Substituted bytes must stop the editor, not quietly become the engine.
+  await expect(page.locator('#welcome-boot-status')).toContainText('Could not load the editing engine');
+  expect(await page.evaluate(() => window.jspdf?.tampered)).toBeUndefined();
+  expect(consoleErrors.join('\n')).toMatch(/integrity check/i);
 });

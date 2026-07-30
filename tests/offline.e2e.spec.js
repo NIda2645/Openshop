@@ -38,7 +38,9 @@ test.describe('hosted offline contract', () => {
   });
 
   test('caches the complete core shell and reloads it offline', async ({ page, context, request, browserName }) => {
-    test.setTimeout(60000);
+    // Boot fetches and verifies three libraries before the app wires up; on a
+    // cold HTTP cache that lands on top of the shell install.
+    test.setTimeout(90000);
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
 

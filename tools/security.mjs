@@ -31,7 +31,6 @@ function updatePolicy(html) {
     "script-src 'self'",
     ...hashes,
     "'wasm-unsafe-eval'",
-    'https://cdn.jsdelivr.net',
     'blob:'
   ].join(' ');
   const nextPolicy = `${directives.join('; ')};`;
@@ -49,6 +48,10 @@ function check(html) {
   if (!scriptDirective?.split(/\s+/).includes("'wasm-unsafe-eval'")) {
     failures.push("script-src does not narrowly authorize verified WebAssembly");
   }
+  // A whole-CDN allowance is a bypass primitive: CSP does not require SRI on
+  // CDN scripts, so any injection sink could load an arbitrary npm package.
+  const cdnHost = scriptDirective?.split(/\s+/).find(value => /^https?:\/\//.test(value));
+  if (cdnHost) failures.push(`script-src allows a remote host: ${cdnHost}`);
 
   const expectedHashes = new Set(inlineScriptHashes(html));
   const declaredHashes = new Set(
@@ -81,6 +84,16 @@ function check(html) {
     }
   }
 
+  const bootBlock = html.match(/const OPENSHOP_BOOT_ASSETS = Object\.freeze\(\[([\s\S]*?)\n\]\);/);
+  if (!bootBlock) {
+    failures.push('verified boot asset manifest is missing');
+  } else {
+    const bootAssets = [...bootBlock[1].matchAll(
+      /url:'(https:\/\/[^']+)',\s*\n\s*integrity:'(sha384-[A-Za-z0-9+/=]+)'/g
+    )];
+    if (bootAssets.length !== 3) failures.push(`expected 3 verified boot assets, found ${bootAssets.length}`);
+  }
+
   const runtimeBlock = html.match(/_runtimeAssets:\s*Object\.freeze\(\{([\s\S]*?)\n\s*\}\),\n\s*_runtimeAssetPromises:/);
   if (!runtimeBlock) {
     failures.push('verified runtime asset manifest is missing');
@@ -107,7 +120,8 @@ function check(html) {
     inlineScripts: expectedHashes.size,
     actions: declaredActions.length,
     registryEntries: registryIds.size,
-    lazyAssets: 8
+    lazyAssets: 8,
+    bootAssets: 3
   };
 }
 
@@ -117,4 +131,4 @@ if (write) {
   writeFileSync(indexPath, html);
 }
 const result = check(html);
-console.log(`Security contract OK: ${result.inlineScripts} hashed scripts, ${result.actions} controls, ${result.registryEntries} actions, ${result.lazyAssets} verified lazy assets.`);
+console.log(`Security contract OK: ${result.inlineScripts} hashed scripts, ${result.actions} controls, ${result.registryEntries} actions, ${result.bootAssets} verified boot assets, ${result.lazyAssets} verified lazy assets.`);
