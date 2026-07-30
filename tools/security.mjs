@@ -59,8 +59,11 @@ function check(html) {
     failures.push('inline script hashes do not match the current source');
   }
 
-  if (/\son(?:click|change|input|keydown)\s*=/i.test(html)) {
-    failures.push('executable HTML event attributes remain');
+  // Any inline handler, not just the four the registry happens to use: an
+  // onerror= or onload= used to sail through the gate that claims to cover them.
+  const inlineHandler = html.match(/\son[a-z]+\s*=\s*["']/i);
+  if (inlineHandler) {
+    failures.push(`executable HTML event attribute remains: ${inlineHandler[0].trim()}`);
   }
 
   const registryIds = new Set(
