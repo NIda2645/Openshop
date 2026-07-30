@@ -2353,3 +2353,237 @@ test('resolves accent-derived chrome through the token scale in every theme', as
     expect(sampled[theme].guide).not.toContain('108, 220, 255');
   }
 });
+
+test('runs every migrated pixel filter off the main thread with unchanged math', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const outcome = await page.evaluate(async () => {
+    const W = 8, H = 8;
+    const source = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) {
+      source[i * 4] = (i * 7) % 256;
+      source[i * 4 + 1] = (i * 13 + 40) % 256;
+      source[i * 4 + 2] = (i * 29 + 90) % 256;
+      source[i * 4 + 3] = 255;
+    }
+    const fresh = () => new ImageData(new Uint8ClampedArray(source), W, H);
+
+    // Reference implementations transcribed from the pre-migration main-thread
+    // code, so a porting mistake shows up as a pixel diff rather than silence.
+    const clamp = v => Math.max(0, Math.min(255, v));
+    const references = {
+      solarize: d => { for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) if (d[i + c] > 128) d[i + c] = 255 - d[i + c]; },
+      vibrance: d => {
+        const amt = 0.5;
+        for (let i = 0; i < d.length; i += 4) {
+          const max = Math.max(d[i], d[i + 1], d[i + 2]), min = Math.min(d[i], d[i + 1], d[i + 2]);
+          const sat = max === 0 ? 0 : (max - min) / max;
+          const boost = amt * (1 - sat) * (sat < 0.5 ? 1 : 0.5);
+          const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+          for (let c = 0; c < 3; c++) d[i + c] = clamp(d[i + c] + (d[i + c] - avg) * boost);
+        }
+      },
+      exposure: d => {
+        const mult = Math.pow(2, 0.75), offset = 12, gamma = 1.4;
+        for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) {
+          let v = d[i + c] / 255;
+          v = v * mult + offset / 255;
+          v = Math.pow(Math.max(0, v), 1 / gamma);
+          d[i + c] = clamp(Math.round(v * 255));
+        }
+      },
+      shadowsHighlights: d => {
+        const shAmt = 0.6, hlAmt = 0.35;
+        for (let i = 0; i < d.length; i += 4) {
+          const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+          for (let c = 0; c < 3; c++) {
+            let v = d[i + c];
+            if (l < 0.5) { const w = 1 - l * 2; v += (255 - v) * shAmt * w * 0.5; }
+            if (l > 0.5) { const w = (l - 0.5) * 2; v -= v * hlAmt * w * 0.5; }
+            d[i + c] = clamp(Math.round(v));
+          }
+        }
+      },
+      photoFilter: d => {
+        const color = [236, 138, 0], density = 0.3;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = Math.min(255, d[i] + (color[0] - d[i]) * density);
+          d[i + 1] = Math.min(255, d[i + 1] + (color[1] - d[i + 1]) * density);
+          d[i + 2] = Math.min(255, d[i + 2] + (color[2] - d[i + 2]) * density);
+        }
+      },
+      channelMixer: d => {
+        const m = [1.1, -0.1, 0.05, 0.2, 0.9, -0.05, -0.15, 0.25, 1.0];
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          d[i] = clamp(Math.round(r * m[0] + g * m[1] + b * m[2]));
+          d[i + 1] = clamp(Math.round(r * m[3] + g * m[4] + b * m[5]));
+          d[i + 2] = clamp(Math.round(r * m[6] + g * m[7] + b * m[8]));
+        }
+      },
+      autoLevels: d => {
+        let rMin = 255, rMax = 0, gMin = 255, gMax = 0, bMin = 255, bMax = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i] < rMin) rMin = d[i]; if (d[i] > rMax) rMax = d[i];
+          if (d[i + 1] < gMin) gMin = d[i + 1]; if (d[i + 1] > gMax) gMax = d[i + 1];
+          if (d[i + 2] < bMin) bMin = d[i + 2]; if (d[i + 2] > bMax) bMax = d[i + 2];
+        }
+        const stretch = (v, mn, mx) => mx === mn ? v : Math.round((v - mn) / (mx - mn) * 255);
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = stretch(d[i], rMin, rMax); d[i + 1] = stretch(d[i + 1], gMin, gMax); d[i + 2] = stretch(d[i + 2], bMin, bMax);
+        }
+      },
+      autoContrast: d => {
+        let lMin = 255, lMax = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const l = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+          if (l < lMin) lMin = l; if (l > lMax) lMax = l;
+        }
+        const range = lMax - lMin || 1;
+        for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) d[i + c] = clamp(Math.round((d[i + c] - lMin) / range * 255));
+      },
+      autoEnhance: d => {
+        references.autoLevels(d);
+        for (let i = 0; i < d.length; i += 4) {
+          const l = (d[i] + d[i + 1] + d[i + 2]) / 3;
+          for (let c = 0; c < 3; c++) d[i + c] = clamp(Math.round(d[i + c] + (d[i + c] - l) * 0.15));
+          for (let c = 0; c < 3; c++) d[i + c] = clamp(Math.round((d[i + c] - 128) * 1.08 + 128));
+        }
+        const src = new Uint8ClampedArray(d);
+        for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+          const i = (y * W + x) * 4;
+          for (let c = 0; c < 3; c++) {
+            const s = src[i + c] * 5 - src[((y - 1) * W + x) * 4 + c] - src[((y + 1) * W + x) * 4 + c] - src[(y * W + x - 1) * 4 + c] - src[(y * W + x + 1) * 4 + c];
+            d[i + c] = clamp(Math.round(d[i + c] * 0.7 + s * 0.3));
+          }
+        }
+      },
+      curves: d => {
+        const lut = new Uint8ClampedArray(256);
+        for (let i = 0; i < 256; i++) lut[i] = clamp(Math.round(255 * Math.pow(i / 255, 0.8)));
+        for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) d[i + c] = lut[lut[d[i + c]]];
+      }
+    };
+    const curveLut = [];
+    for (let i = 0; i < 256; i++) curveLut.push(clamp(Math.round(255 * Math.pow(i / 255, 0.8))));
+    const params = {
+      solarize: {},
+      vibrance: { amount: 0.5 },
+      exposure: { ev: 0.75, offset: 12, gamma: 1.4 },
+      shadowsHighlights: { shadows: 0.6, highlights: 0.35 },
+      photoFilter: { color: [236, 138, 0], density: 0.3 },
+      channelMixer: { matrix: [1.1, -0.1, 0.05, 0.2, 0.9, -0.05, -0.15, 0.25, 1.0] },
+      autoLevels: {}, autoContrast: {}, autoEnhance: {},
+      curves: { master: curveLut, r: curveLut, g: curveLut, b: curveLut }
+    };
+
+    const mismatches = [];
+    for (const op of Object.keys(references)) {
+      const produced = await OS._runFilterInWorker(op, fresh(), W, H, params[op]);
+      const expected = new Uint8ClampedArray(source);
+      references[op](expected);
+      if (!produced) { mismatches.push(op + ': no result'); continue; }
+      for (let i = 0; i < expected.length; i++) {
+        if (produced.data[i] !== expected[i]) {
+          mismatches.push(op + '@' + i + ': ' + produced.data[i] + ' != ' + expected[i]);
+          break;
+        }
+      }
+    }
+    return { mismatches, ops: Object.keys(references).length };
+  });
+
+  expect(outcome.mismatches).toEqual([]);
+  expect(outcome.ops).toBe(10);
+});
+
+test('applies an auto adjustment through the async worker path and records history', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const oc = document.createElement('canvas');
+    oc.width = 16; oc.height = 16;
+    const ctx = oc.getContext('2d');
+    // A deliberately low-contrast source so Auto Levels has something to do.
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      ctx.fillStyle = 'rgb(' + (100 + x) + ',' + (105 + y) + ',110)';
+      ctx.fillRect(x, y, 1, 1);
+    }
+    const image = await new Promise(resolve => {
+      const el = new Image();
+      el.onload = () => resolve(new fabric.Image(el, { left: 0, top: 0 }));
+      el.src = oc.toDataURL();
+    });
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+    const before = OS.history.length;
+
+    await OS.autoLevels();
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const active = OS.canvas.getActiveObject();
+    const el = active.getElement();
+    const probe = document.createElement('canvas');
+    probe.width = el.naturalWidth || el.width;
+    probe.height = el.naturalHeight || el.height;
+    probe.getContext('2d').drawImage(el, 0, 0);
+    const pixels = probe.getContext('2d').getImageData(0, 0, probe.width, probe.height).data;
+    let min = 255, max = 0;
+    for (let i = 0; i < pixels.length; i += 4) { if (pixels[i] < min) min = pixels[i]; if (pixels[i] > max) max = pixels[i]; }
+    return { min, max, historyGrew: OS.history.length > before };
+  });
+
+  // Auto Levels stretches each channel to the full range.
+  expect(result.min).toBe(0);
+  expect(result.max).toBe(255);
+  expect(result.historyGrew).toBe(true);
+});
+
+test('lets a second AI request take over from the model load it cancels', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const toasts = [];
+    const realToast = OS.toast.bind(OS);
+    OS.toast = (msg, type) => { toasts.push(String(msg)); return realToast(msg, type); };
+
+    // Stand in for the network: the first load never settles until released.
+    let releaseFirst;
+    let loads = 0;
+    OS._loadTransformers = async () => {
+      loads++;
+      if (loads === 1) await new Promise(resolve => { releaseFirst = resolve; });
+      return {
+        pipeline: async () => ({ tag: 'pipe-' + loads })
+      };
+    };
+
+    const first = OS._loadPipeline('image-segmentation', 'test/model-a', 'A');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const busyWhileLoading = OS._aiModelLoadBusy();
+
+    // Starting a second operation cancels the first; the mutex must go with it.
+    const second = await OS._loadPipeline('image-segmentation', 'test/model-b', 'B');
+    releaseFirst?.();
+    const firstResult = await first.catch(error => ({ aborted: error?.name }));
+
+    OS.toast = realToast;
+    return {
+      busyWhileLoading,
+      second,
+      firstAborted: firstResult && firstResult.aborted ? firstResult.aborted : firstResult,
+      blockedMessage: toasts.some(msg => msg.includes('Another AI model is loading')),
+      mutexReleased: OS._aiModelLoadBusy()
+    };
+  });
+
+  expect(result.busyWhileLoading).toBe(true);
+  // The replacement request succeeds instead of both dying.
+  expect(result.second).toEqual({ tag: 'pipe-2' });
+  expect(result.blockedMessage).toBe(false);
+  expect(result.mutexReleased).toBe(false);
+});

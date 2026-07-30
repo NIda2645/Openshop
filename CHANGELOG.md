@@ -4,7 +4,13 @@ All notable changes to Openshop will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+- Run Solarize, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Curves, Channel Mixer, Auto Levels, Auto Contrast, and Auto Enhance in the filter worker instead of blocking the main thread, so they can be cancelled mid-run and the interface stays responsive on large images
+- Coalesce the Color Range preview instead of recomputing the whole mask on every fuzziness slider tick
+
 ### Fixed
+- Guard the last ten pixel adjustments against a document that changed while they ran: a result that arrives after the layer was replaced, deleted, or edited is now discarded rather than written over the new pixels
+- Let a second AI request take over from the model download it cancels — starting one while another was loading used to kill both and require a third click
 - Operate the whole menubar from the keyboard: arrow keys move between menus and rows, Enter or Space opens and activates, Home and End jump to the ends, typing a letter jumps to the next matching row, Escape closes one level at a time, and clicking a menu title now keeps it open instead of requiring the pointer to stay put
 - Announce menus correctly to screen readers: menus, rows, separators, and submenu state carry real roles, submenu arrows and nested rows no longer leak into a menu's own name (Filter announced as "Filter ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸"), shortcuts are exposed as key shortcuts rather than name text, and the "Models download on first use" note in the AI menu is no longer hidden from assistive technology
 - Keep Tab inside the open dialog instead of letting it walk into the editor behind, move focus into a dialog when it opens, and hand focus back to the control that opened it when it closes — applied to every dialog, the welcome launcher, and the command palette
