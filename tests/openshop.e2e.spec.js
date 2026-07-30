@@ -240,6 +240,13 @@ test('creates a pixel selection from a mocked AI segment mask', async ({ page })
     for (let y = 4; y <= 11; y++) {
       for (let x = 12; x <= 15; x++) data[y * 16 + x] = 255;
     }
+    // A pipeline implies a loaded runtime; stub both so this stays offline.
+    class StubRawImage {
+      constructor(pixels, width, height, channels) {
+        Object.assign(this, { data: pixels, width, height, channels });
+      }
+    }
+    OS._loadTransformers = async () => ({ RawImage: StubRawImage, env: {} });
     OS._loadPipeline = async () => async () => [
       { label: 'bright-block', score: 0.99, mask: { width: 16, height: 16, channels: 1, data } }
     ];
@@ -4094,4 +4101,305 @@ test('falls back cleanly when an optional platform capability is missing @cross-
     expect(result.present.showOpenFilePicker).toBe(false);
     expect(result.present.ImageDecoder).toBe(true);
   }
+});
+
+test('runs the Photon WASM backend for real on the operation it is allowed @slow', async ({ page }) => {
+  test.setTimeout(120000);
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const swatch = document.createElement('canvas');
+    swatch.width = 8;
+    swatch.height = 8;
+    const ctx = swatch.getContext('2d');
+    ctx.fillStyle = '#c8501e';
+    ctx.fillRect(0, 0, 8, 8);
+    const source = swatch.toDataURL('image/png');
+
+    const addImage = () => new Promise(resolve => {
+      fabric.Image.fromURL(source, image => {
+        OS.canvas.add(image);
+        OS.layers.push({
+          id: OS._newDocumentId('layer'),
+          name: 'Swatch',
+          visible: true,
+          locked: false,
+          opacity: 100,
+          blend: 'source-over',
+          objects: [image]
+        });
+        OS.activeLayerIdx = OS.layers.length - 1;
+        OS.canvas.setActiveObject(image);
+        resolve(image);
+      });
+    });
+
+    const pixelOf = image => {
+      const el = image.getElement();
+      const probe = document.createElement('canvas');
+      probe.width = el.naturalWidth || el.width;
+      probe.height = el.naturalHeight || el.height;
+      probe.getContext('2d').drawImage(el, 0, 0);
+      return [...probe.getContext('2d').getImageData(0, 0, 1, 1).data];
+    };
+
+    OS._photonFilterDisabled = false;
+    OS._filterWorkerPhotonReady = false;
+
+    // Invert is the one operation whose WASM and JavaScript results agree, so
+    // it is the one the app is allowed to accelerate.
+    const first = await addImage();
+    const coldStart = performance.now();
+    await OS.applyFilterDirect('Invert');
+    const cold = {
+      ms: Math.round(performance.now() - coldStart),
+      ready: OS._filterWorkerPhotonReady,
+      pixel: pixelOf(OS.canvas.getActiveObject() || first)
+    };
+
+    // Warm: the verified module stays resident in the filter worker.
+    const second = await addImage();
+    const warmStart = performance.now();
+    await OS.applyFilterDirect('Invert');
+    const warm = { ms: Math.round(performance.now() - warmStart), pixel: pixelOf(OS.canvas.getActiveObject() || second) };
+
+    // Cancelling mid-run leaves the layer untouched.
+    const third = await addImage();
+    const before = pixelOf(third);
+    const pending = OS.applyFilterDirect('Invert');
+    OS.cancelActiveCompute();
+    await pending;
+    const afterCancel = pixelOf(OS.canvas.getActiveObject() || third);
+
+    return { cold, warm, cancelUnchanged: before.join() === afterCancel.join() };
+  });
+
+  // The flag is only set once the worker reports the verified module loaded,
+  // so this is evidence the WASM backend actually ran.
+  expect(result.cold.ready).toBe(true);
+  // #c8501e inverted.
+  expect(result.cold.pixel.slice(0, 3)).toEqual([55, 175, 225]);
+  expect(result.warm.pixel.slice(0, 3)).toEqual([55, 175, 225]);
+  expect(result.cancelUnchanged).toBe(true);
+  console.log(`Photon invert: cold ${result.cold.ms}ms, warm ${result.warm.ms}ms`);
+});
+
+test('registers a plugin and lets it contribute a command', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    const before = OS.plugins.length;
+    let received = null;
+    let ran = 0;
+
+    OS.registerPlugin({
+      name: 'Probe',
+      init(editor) {
+        received = editor === OS;
+        editor._getCommands = ((original) => () => [
+          ...original.call(editor),
+          { label: 'Probe Command', cat: 'Plugin', fn: () => { ran++; } }
+        ])(editor._getCommands);
+      }
+    });
+
+    const rejectedNoInit = OS.registerPlugin({ name: 'Broken' });
+    const command = OS._getCommands().find(entry => entry.label === 'Probe Command');
+    command?.fn();
+
+    return {
+      added: OS.plugins.length - before,
+      receivedEditor: received,
+      registered: OS.plugins.some(plugin => plugin.name === 'Probe'),
+      brokenRegistered: OS.plugins.some(plugin => plugin.name === 'Broken'),
+      rejectedNoInit,
+      commandFound: Boolean(command),
+      ran
+    };
+  });
+
+  expect(result.added).toBe(1);
+  expect(result.receivedEditor).toBe(true);
+  expect(result.registered).toBe(true);
+  expect(result.commandFound).toBe(true);
+  expect(result.ran).toBe(1);
+  // A plugin without an init hook is refused rather than half-registered.
+  expect(result.brokenRegistered).toBe(false);
+  expect(result.rejectedNoInit).toBeUndefined();
+});
+
+test('only runs Photon for operations that match the JavaScript worker exactly', async ({ page }) => {
+  test.setTimeout(120000);
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const report = await page.evaluate(async () => {
+    const width = 16, height = 16;
+    const fixture = () => {
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let i = 0; i < width * height; i++) {
+        data[i * 4] = (i * 17) % 256;
+        data[i * 4 + 1] = (i * 41) % 256;
+        data[i * 4 + 2] = (i * 89) % 256;
+        data[i * 4 + 3] = 255;
+      }
+      return new ImageData(data, width, height);
+    };
+    const compare = (a, b) => {
+      let colour = 0;
+      let alpha = 0;
+      for (let i = 0; i < a.data.length; i += 4) {
+        for (let c = 0; c < 3; c++) colour = Math.max(colour, Math.abs(a.data[i + c] - b.data[i + c]));
+        if (a.data[i + 3] !== b.data[i + 3]) alpha++;
+      }
+      return { colour, alpha };
+    };
+
+    const ops = [['grayscale', {}], ['invert', {}], ['sepia', {}], ['threshold', { thr: 128 }], ['sharpen', {}], ['emboss', {}]];
+    const out = { parityOps: [...OS._photonParityOps], measured: {}, routed: {} };
+    for (const [op, params] of ops) {
+      OS._photonFilterDisabled = false;
+      const wasm = await OS._runPhotonFilterInWorker(op, fixture(), width, height, params);
+      const js = await OS._runFilterInWorker(op, fixture(), width, height, params);
+      out.measured[op] = compare(wasm, js);
+      // What the app actually returns for this op, whichever backend it picks.
+      const routed = await OS._runFilterWithPhoton(op, fixture(), width, height, params);
+      out.routed[op] = compare(routed, js);
+    }
+    return out;
+  });
+
+  // Whatever the app returns is the JavaScript worker's answer, for every op.
+  for (const [op, delta] of Object.entries(report.routed)) {
+    expect(`${op}:${delta.colour}:${delta.alpha}`).toBe(`${op}:0:0`);
+  }
+
+  // The allowlist is exactly the set that agrees, and it is checked here rather
+  // than trusted: an op added to it that diverges fails this test.
+  for (const op of report.parityOps) {
+    expect(report.measured[op]).toEqual({ colour: 0, alpha: 0 });
+  }
+  const agreeing = Object.entries(report.measured)
+    .filter(([, delta]) => delta.colour === 0 && delta.alpha === 0)
+    .map(([op]) => op);
+  expect(agreeing.sort()).toEqual([...report.parityOps].sort());
+
+  // The measurements behind the allowlist, so a Photon upgrade that fixes them
+  // shows up as a failure here rather than going unnoticed.
+  expect(report.measured.grayscale.colour).toBeGreaterThan(20);
+  expect(report.measured.sepia.colour).toBeGreaterThan(20);
+  expect(report.measured.threshold.colour).toBe(255);
+  // Convolutions agree in the interior but zero the alpha of the border ring.
+  expect(report.measured.sharpen.alpha).toBe(2 * 16 + 2 * 14);
+  expect(report.measured.emboss.alpha).toBe(2 * 16 + 2 * 14);
+});
+
+test('hands AI pipelines canvas pixels, and cancels or fails without touching the layer', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const swatch = document.createElement('canvas');
+    swatch.width = 12;
+    swatch.height = 9;
+    const ctx = swatch.getContext('2d');
+    ctx.fillStyle = '#2b6cb0';
+    ctx.fillRect(0, 0, 12, 9);
+    const source = swatch.toDataURL('image/png');
+
+    const image = await new Promise(resolve => {
+      fabric.Image.fromURL(source, added => {
+        OS.canvas.add(added);
+        OS.layers.push({
+          id: OS._newDocumentId('layer'),
+          name: 'Subject',
+          visible: true, locked: false, opacity: 100, blend: 'source-over',
+          objects: [added]
+        });
+        OS.activeLayerIdx = OS.layers.length - 1;
+        OS.canvas.setActiveObject(added);
+        resolve(added);
+      });
+    });
+    const originalElement = image.getElement().src;
+
+    class FakeRawImage {
+      constructor(data, width, height, channels) {
+        Object.assign(this, { data, width, height, channels });
+      }
+    }
+    let seen = null;
+    let behaviour = 'record';
+    OS._aiPipelines = {};
+    OS._aiDevice = 'wasm';
+    const fakeLib = {
+      RawImage: FakeRawImage,
+      env: {},
+      pipeline: async () => (input) => {
+        seen = input;
+        if (behaviour === 'throw') throw new Error('pipeline exploded');
+        if (behaviour === 'hang') return new Promise(() => {});
+        // A depth result the caller can consume.
+        return { depth: { width: 12, height: 9, data: new Uint8ClampedArray(12 * 9) } };
+      }
+    };
+    // _loadTransformers is what caches the runtime the pipelines read.
+    OS._loadTransformers = async () => { OS._aiLib = fakeLib; return fakeLib; };
+
+    // 1. Input contract: pixels, not a data: URL that Transformers.js would
+    //    fetch — connect-src blocks data:, which broke every AI feature.
+    await OS.aiDepthMap();
+    const input = {
+      isRawImage: seen instanceof FakeRawImage,
+      isString: typeof seen === 'string',
+      width: seen?.width,
+      height: seen?.height,
+      channels: seen?.channels,
+      bytes: seen?.data?.length
+    };
+
+    // 2. A failing pipeline leaves the layer alone and puts the progress away.
+    behaviour = 'throw';
+    OS._aiPipelines = {};
+    const threw = await OS.aiDepthMap();
+    const afterThrow = {
+      returned: threw,
+      progressVisible: document.getElementById('ai-progress').classList.contains('visible'),
+      elementUnchanged: OS.canvas.getObjects().some(object => object.getElement?.().src === originalElement)
+    };
+
+    // 3. Cancelling mid-run does the same.
+    behaviour = 'hang';
+    OS._aiPipelines = {};
+    const pending = OS.aiDepthMap();
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const cancelled = OS.cancelActiveCompute();
+    const returnedAfterCancel = await pending;
+    const afterCancel = {
+      cancelled,
+      returnedAfterCancel,
+      progressVisible: document.getElementById('ai-progress').classList.contains('visible'),
+      elementUnchanged: OS.canvas.getObjects().some(object => object.getElement?.().src === originalElement)
+    };
+
+    return { input, afterThrow, afterCancel };
+  });
+
+  expect(result.input.isString).toBe(false);
+  expect(result.input.isRawImage).toBe(true);
+  expect(result.input.width).toBe(12);
+  expect(result.input.height).toBe(9);
+  expect(result.input.channels).toBe(4);
+  expect(result.input.bytes).toBe(12 * 9 * 4);
+
+  expect(result.afterThrow.returned).toBe(false);
+  expect(result.afterThrow.progressVisible).toBe(false);
+  expect(result.afterThrow.elementUnchanged).toBe(true);
+
+  expect(result.afterCancel.cancelled).toBe(true);
+  expect(result.afterCancel.returnedAfterCancel).toBe(false);
+  expect(result.afterCancel.progressVisible).toBe(false);
+  expect(result.afterCancel.elementUnchanged).toBe(true);
 });

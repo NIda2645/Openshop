@@ -504,7 +504,9 @@ describe('OpenShop core object', () => {
     OS._showAIProgress = vi.fn();
     OS._hideAIProgress = vi.fn();
     OS._showMaskOverlay = vi.fn();
-    OS._imageToDataURL = vi.fn(() => 'data:image/png;base64,TEST');
+    // Pipelines take canvas pixels, not a data: URL — Transformers.js reads a
+    // URL with fetch(), and connect-src blocks data:.
+    OS._imageToRawImage = vi.fn(() => ({ width: 16, height: 16, channels: 4, data: new Uint8ClampedArray(16 * 16 * 4) }));
 
     const makeMask = (predicate) => {
       const data = new Uint8Array(16 * 16);
@@ -530,7 +532,7 @@ describe('OpenShop core object', () => {
       'Segment Select',
       expect.objectContaining({ kind: 'Segment Select', generation: 0, revision: 0 })
     );
-    expect(segmenter).toHaveBeenCalledWith('data:image/png;base64,TEST');
+    expect(segmenter).toHaveBeenCalledWith(expect.objectContaining({ width: 16, height: 16, channels: 4 }));
     expect(OS._selectionBounds).toEqual({ x: 13, y: 5, w: 4, h: 8 });
     expect(OS._selectionMask.mask.filter(Boolean)).toHaveLength(32);
     expect(OS._showMaskOverlay).toHaveBeenCalledWith(OS._selectionMask);
@@ -595,7 +597,9 @@ describe('OpenShop core object', () => {
     OS.canvas = canvas;
     OS.layers = [{ name: 'Photo', visible: true, locked: false, objects: [target] }];
     quietUiMethods(OS);
-    OS._imageToDataURL = vi.fn(() => 'data:image/png;base64,TEST');
+    // Pipelines take canvas pixels, not a data: URL — Transformers.js reads a
+    // URL with fetch(), and connect-src blocks data:.
+    OS._imageToRawImage = vi.fn(() => ({ width: 16, height: 16, channels: 4, data: new Uint8ClampedArray(16 * 16 * 4) }));
 
     let resolveInference;
     const inference = new Promise(resolve => { resolveInference = resolve; });
@@ -614,26 +618,37 @@ describe('OpenShop core object', () => {
     expect(OS.toast).toHaveBeenCalledWith('Segment Select result discarded because the document changed', 'info');
   });
 
-  it('prefers Photon filters and falls back to the JS worker after failure', async () => {
+  it('uses Photon only for parity-verified operations and falls back after failure', async () => {
     const OS = loadOpenShop();
     const input = { data: new Uint8ClampedArray([10, 20, 30, 255]) };
-    const photonResult = { data: new Uint8ClampedArray([255, 255, 255, 255]) };
+    const photonResult = { data: new Uint8ClampedArray([245, 235, 225, 255]) };
     const fallbackResult = { data: new Uint8ClampedArray([0, 0, 0, 255]) };
 
     OS._runPhotonFilterInWorker = vi.fn().mockResolvedValueOnce(photonResult);
     OS._runFilterInWorker = vi.fn();
 
-    await expect(OS._runFilterWithPhoton('edgeDetect', input, 1, 1)).resolves.toBe(photonResult);
-    expect(OS._runPhotonFilterInWorker).toHaveBeenCalledWith('edgeDetect', input, 1, 1, undefined);
+    await expect(OS._runFilterWithPhoton('invert', input, 1, 1)).resolves.toBe(photonResult);
+    expect(OS._runPhotonFilterInWorker).toHaveBeenCalledWith('invert', input, 1, 1, undefined);
     expect(OS._runFilterInWorker).not.toHaveBeenCalled();
+
+    // Photon's grayscale, sepia, threshold, sharpen and emboss do not compute
+    // what this app computes, so they never reach the WASM backend — the result
+    // must not depend on whether the optional download succeeded.
+    OS._runPhotonFilterInWorker = vi.fn();
+    OS._runFilterInWorker = vi.fn().mockResolvedValue(fallbackResult);
+    for (const op of ['grayscale', 'sepia', 'threshold', 'sharpen', 'emboss']) {
+      await expect(OS._runFilterWithPhoton(op, input, 1, 1, {})).resolves.toBe(fallbackResult);
+    }
+    expect(OS._runPhotonFilterInWorker).not.toHaveBeenCalled();
+    expect(OS._photonFilterDisabled).toBe(false);
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     OS._runPhotonFilterInWorker = vi.fn().mockRejectedValueOnce(new Error('WASM blocked'));
     OS._runFilterInWorker = vi.fn().mockResolvedValueOnce(fallbackResult);
 
-    await expect(OS._runFilterWithPhoton('threshold', input, 1, 1, { thr: 128 })).resolves.toBe(fallbackResult);
+    await expect(OS._runFilterWithPhoton('invert', input, 1, 1, {})).resolves.toBe(fallbackResult);
     expect(OS._photonFilterDisabled).toBe(true);
-    expect(OS._runFilterInWorker).toHaveBeenCalledWith('threshold', input, 1, 1, { thr: 128 });
+    expect(OS._runFilterInWorker).toHaveBeenCalledWith('invert', input, 1, 1, {});
     warn.mockRestore();
   });
 

@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-pq45ScoeaHGsV7khcJv2C1TRmeOIYcNQ51tqQ3JpwuA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-Nx8k0MZQYCfOUolsO/Oz9GQ02J0tx4Ykm+M+XhJY0oM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -9563,7 +9563,7 @@ self.onmessage = function(event) {
             revision,
             matches:0,
             bytes:0,
-            loaded:Object.keys(this._aiPipelines || {}).some(key => key.endsWith(':' + model))
+            loaded:this._isModelLoaded(model)
         }));
         if (!('caches' in window)) return models;
         try {
@@ -12395,8 +12395,17 @@ self.onmessage = async function(e) {
             throw error;
         }
     },
+    // Photon does not compute what this app computes. Measured against the JS
+    // worker on a 16x16 fixture: grayscale differs by up to 58 levels (it does
+    // not use the Rec.601 weights every other filter and the histogram here
+    // use), sepia by 192, threshold flips pixels outright, and the sharpen and
+    // emboss convolutions zero the alpha of the outermost pixel ring — a
+    // transparent one-pixel frame. Only operations that match byte for byte may
+    // run on the WASM backend, so the result never depends on whether the
+    // optional download happened to succeed.
+    _photonParityOps: Object.freeze(['invert']),
     async _runFilterWithPhoton(op, imgData, width, height, params) {
-        if (!this._photonFilterDisabled) {
+        if (!this._photonFilterDisabled && this._photonParityOps.includes(op)) {
             try {
                 return await this._runPhotonFilterInWorker(op, imgData, width, height, params);
             } catch (err) {
@@ -15271,10 +15280,18 @@ self.onmessage = async function(e) {
         }
         return this._aiDevicePromise;
     },
+    _isModelLoaded(model) {
+        // Background removal keeps its handles outside _aiPipelines.
+        if (model === 'Xenova/modnet' && this._aiRmbgModel) return true;
+        return Object.keys(this._aiPipelines || {}).some(key => key.endsWith(':' + model));
+    },
     aiBackendReport() {
         return {
             device: this._aiDevice || 'not yet selected',
-            cachedModels: Object.keys(this._aiPipelines || {}),
+            // Background removal keeps its handles outside _aiPipelines, so
+            // reading that map alone reported "nothing loaded" while a model
+            // was resident.
+            cachedModels: Object.keys(this._modelRevisions).filter(model => this._isModelLoaded(model)),
             pinnedRevisions: { ...this._modelRevisions }
         };
     },
@@ -15467,6 +15484,27 @@ self.onmessage = async function(e) {
         oc.height = el.naturalHeight || el.height;
         oc.getContext('2d').drawImage(el, 0, 0);
         return oc.toDataURL('image/png');
+    },
+    // Every pipeline used to be handed a data: URL, which Transformers.js reads
+    // with fetch() — and connect-src does not list data:, so the request was
+    // blocked and every AI feature failed the moment its model had finished
+    // downloading. Passing pixels straight from the canvas also skips a PNG
+    // encode and decode of the whole image.
+    async _imageToRawImage(target, lib = null) {
+        // Reading _aiLib alone coupled this to whoever happened to have loaded
+        // the runtime first; ask for it instead.
+        const runtime = lib || this._aiLib || await this._loadTransformers();
+        if (!runtime?.RawImage) throw new Error('Transformers runtime is not loaded');
+        const el = target.getElement();
+        const width = el.naturalWidth || el.width;
+        const height = el.naturalHeight || el.height;
+        const oc = document.createElement('canvas');
+        oc.width = width;
+        oc.height = height;
+        const ctx = oc.getContext('2d');
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, width, height);
+        return new runtime.RawImage(new Uint8ClampedArray(data), width, height, 4);
     },
 
     activateSegmentSelect() {
@@ -15705,8 +15743,8 @@ self.onmessage = async function(e) {
             );
             if (!pipe) return false;
             this._showAIProgress('Segment Select', 'Analyzing image...', job);
-            const dataUrl = this._imageToDataURL(hit.target);
-            const results = await this._raceComputeJob(pipe(dataUrl), job);
+            const input = await this._raceComputeJob(this._imageToRawImage(hit.target), job);
+            const results = await this._raceComputeJob(pipe(input), job);
             const segment = this._selectSegmentFromResults(results, hit.clickX, hit.clickY, hit.imageW, hit.imageH);
             if (!segment) {
                 this.toast('No segment found at click point', 'info');
@@ -15772,8 +15810,7 @@ self.onmessage = async function(e) {
             const el = target.getElement();
             const origW = el.naturalWidth || el.width;
             const origH = el.naturalHeight || el.height;
-            const dataUrl = this._imageToDataURL(target);
-            const image = await this._raceComputeJob(lib.RawImage.fromURL(dataUrl), job);
+            const image = await this._raceComputeJob(this._imageToRawImage(target, lib), job);
             const { pixel_values } = await this._raceComputeJob(this._aiRmbgProcessor(image), job);
             const { output } = await this._raceComputeJob(this._aiRmbgModel({ input: pixel_values }), job);
             // output is a tensor — convert to mask and resize to original dimensions
@@ -15835,8 +15872,8 @@ self.onmessage = async function(e) {
             );
             if (!pipe) return false;
             this._showAIProgress('Generating Depth Map', 'Processing image...', job);
-            const dataUrl = this._imageToDataURL(target);
-            const result = await this._raceComputeJob(pipe(dataUrl), job);
+            const depthInput = await this._raceComputeJob(this._imageToRawImage(target), job);
+            const result = await this._raceComputeJob(pipe(depthInput), job);
             // result.depth is a RawImage
             const depth = result.depth;
             const w = depth.width, h = depth.height;
@@ -15915,8 +15952,8 @@ self.onmessage = async function(e) {
             );
             if (!pipe) return false;
             this._showAIProgress('Detecting Objects', 'Analyzing image...', job);
-            const dataUrl = this._imageToDataURL(target);
-            const results = await this._raceComputeJob(pipe(dataUrl, { threshold: 0.7, percentage: true }), job);
+            const detectInput = await this._raceComputeJob(this._imageToRawImage(target), job);
+            const results = await this._raceComputeJob(pipe(detectInput, { threshold: 0.7, percentage: true }), job);
             if (!results || results.length === 0) {
                 this.toast('No objects detected', 'info'); return false;
             }

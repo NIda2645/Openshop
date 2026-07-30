@@ -40,12 +40,15 @@ test.describe('hosted offline contract', () => {
   test('caches the complete core shell and reloads it offline', async ({ page, context, request, browserName }) => {
     // Cold-cache worst case: the shell install and the page boot both pull the
     // same three libraries over the network while the rest of the suite runs in
-    // parallel. Network-bound, not slow code.
-    test.setTimeout(180000);
+    // parallel.
+    test.setTimeout(90000);
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
 
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    // Libraries are verified and executed asynchronously, so there is no OS
+    // object to talk to until the boot promise settles.
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
     await expect(page.locator('#editor-canvas')).toBeVisible();
     await page.getByRole('button', { name: 'Enter Studio' }).click();
     await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
@@ -70,6 +73,9 @@ test.describe('hosted offline contract', () => {
 
   test('versions the runtime cache, prunes stale ones, and refuses opaque error responses', async ({ page }) => {
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    // Libraries are verified and executed asynchronously, so there is no OS
+    // object to talk to until the boot promise settles.
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
     await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
     await page.getByRole('button', { name: 'Enter Studio' }).click();
     await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
@@ -126,6 +132,9 @@ test.describe('hosted offline contract', () => {
     expect(manifest.file_handlers[0].accept['application/vnd.openshop+json']).toContain('.openshop');
 
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    // Libraries are verified and executed asynchronously, so there is no OS
+    // object to talk to until the boot promise settles.
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
     await expect(page.locator('#editor-canvas')).toBeVisible();
     const result = await page.evaluate(async () => {
       const project = OS._captureDocumentState();
@@ -166,6 +175,9 @@ test.describe('hosted offline contract', () => {
   test('returns to the last verified shell when an update cannot confirm boot', async ({ page, request }) => {
     test.setTimeout(90000);
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    // Libraries are verified and executed asynchronously, so there is no OS
+    // object to talk to until the boot promise settles.
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
     await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
 
