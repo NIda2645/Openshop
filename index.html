@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-+fBNwgNYe5UWUFLcKtKM1/8W7LWOSiXrR823p1ieOe0=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-IJJS7HR1/2IQ/45f7eYCv5NhQmWdQhsn/5h6D6Ghc4c=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -294,7 +294,7 @@ animation:marchAnts .4s linear infinite}
 /* === STATUS BAR === */
 #statusbar{position:absolute;left:0;right:0;bottom:0;height:var(--statusbar-h);background:var(--bg-depth-1);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:18px;z-index:100;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-muted)}
 #statusbar .sep{width:1px;height:14px;background:var(--border);opacity:.6}
-#zoom-display{cursor:pointer;transition:color .15s}#zoom-display:hover{color:var(--accent)}
+#zoom-display{cursor:pointer;transition:color .15s;background:none;border:0;font:inherit;color:inherit;padding:0}#zoom-display:hover{color:var(--accent)}
 
 /* === MODAL === */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden;overscroll-behavior:contain;touch-action:pan-y;z-index:10000;backdrop-filter:blur(8px);opacity:0;transition:opacity .2s var(--ease-out)}
@@ -1406,6 +1406,11 @@ body{
   border-color:var(--border);
   border-radius:8px;
   background:var(--bg-depth-2);
+  /* Button reset: these are <button> for keyboard access. */
+  font:inherit;
+  color:inherit;
+  display:block;
+  width:100%;
 }
 .template-card:hover{
   border-color:color-mix(in srgb, var(--accent) 88%, #fff);
@@ -2435,7 +2440,7 @@ body{
 <!-- ===== STATUS BAR ===== -->
 <div id="statusbar" role="status" aria-label="Status bar" aria-live="off">
     <span id="canvas-dims">1920 x 1080</span><span class="sep"></span>
-    <span id="zoom-display" data-os-click="click-103">100%</span><span class="sep"></span>
+    <button type="button" id="zoom-display" title="Fit canvas to view" aria-label="Zoom level, activate to fit canvas to view" data-os-click="click-103">100%</button><span class="sep"></span>
     <span id="cursor-pos" aria-hidden="true">X: 0 Y: 0</span><span class="sep"></span>
     <span id="tool-display">Select</span><span style="flex:1"></span>
     <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" data-os-click="click-193"><i></i><span id="offline-state-label">Checking offline support</span></button><span class="sep"></span>
@@ -3678,12 +3683,12 @@ const OS = {
         const o = document.createElement('div'); o.className = 'modal-overlay';
         o.innerHTML = `<div class="modal"><h3>New Image</h3>
             <div class="preset-grid">
-                <div class="preset-btn" data-pw="1920" data-ph="1080">1920x1080</div>
-                <div class="preset-btn" data-pw="1280" data-ph="720">1280x720</div>
-                <div class="preset-btn" data-pw="1080" data-ph="1080">1080x1080</div>
-                <div class="preset-btn" data-pw="800" data-ph="600">800x600</div>
-                <div class="preset-btn" data-pw="3840" data-ph="2160">4K</div>
-                <div class="preset-btn" data-pw="2480" data-ph="3508">A4 300dpi</div>
+                <button type="button" class="preset-btn" data-pw="1920" data-ph="1080">1920x1080</button>
+                <button type="button" class="preset-btn" data-pw="1280" data-ph="720">1280x720</button>
+                <button type="button" class="preset-btn" data-pw="1080" data-ph="1080">1080x1080</button>
+                <button type="button" class="preset-btn" data-pw="800" data-ph="600">800x600</button>
+                <button type="button" class="preset-btn" data-pw="3840" data-ph="2160">4K</button>
+                <button type="button" class="preset-btn" data-pw="2480" data-ph="3508">A4 300dpi</button>
             </div>
             <div class="modal-row"><label>Width</label><input id="ni-w" type="number" value="1920" min="1" max="8000"></div>
             <div class="modal-row"><label>Height</label><input id="ni-h" type="number" value="1080" min="1" max="8000"></div>
@@ -6089,8 +6094,8 @@ self.onmessage = function(event) {
             const isBg = l.objects.some(o => o.name === '__boundary__');
             const thumbStyle = isBg ? 'layer-thumb-checker' : '';
             d.innerHTML = `<div class="layer-drag-handle" title="Drag to reorder">&#9776;</div>
-                <button class="layer-vis ${l.visible?'':'hidden'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${eyeSvg}</svg></button>
-                <button class="layer-lock ${l.locked?'locked':''}" title="${l.locked?'Unlock layer':'Lock layer'}">${lockSvg}</button>
+                <button class="layer-vis ${l.visible?'':'hidden'}" title="${l.visible?'Hide layer':'Show layer'}" aria-label="${l.visible?'Hide layer':'Show layer'}" aria-pressed="${l.visible?'false':'true'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${eyeSvg}</svg></button>
+                <button class="layer-lock ${l.locked?'locked':''}" title="${l.locked?'Unlock layer':'Lock layer'}" aria-label="${l.locked?'Unlock layer':'Lock layer'}">${lockSvg}</button>
                 <div class="layer-thumb"><div class="${thumbStyle}" style="width:32px;height:32px;${isBg?'':'background:var(--bg-depth-4);'}border-radius:2px"></div></div>
                 <div class="layer-info"><div class="layer-name">${this._esc(l.name)}</div><div class="layer-type">${l.locked?'Locked &middot; ':''}${l.blend!=='source-over'?this._esc(l.blend)+' &middot; ':''}${l.objects.filter(o=>o.name!=='__boundary__').length} obj${hasMask?' &middot; M':''}</div></div>`;
             d.querySelector('.layer-vis').addEventListener('click', e => { e.stopPropagation(); this.toggleLayerVisibility(i); });
@@ -8706,8 +8711,12 @@ self.onmessage = function(event) {
         };
     },
     _createTemplateCard(t, onSelect) {
-        const card = document.createElement('div');
+        // A real button so the welcome screen and Templates dialog are usable
+        // from the keyboard, not only with a mouse.
+        const card = document.createElement('button');
+        card.type = 'button';
         card.className = 'template-card';
+        card.setAttribute('aria-label', `${this._safeText(t.name, 80)}, ${t.w} by ${t.h} pixels`);
         const preview = document.createElement('div');
         preview.className = 'tpl-preview';
         preview.style.background = 'linear-gradient(135deg,var(--bg-depth-3),var(--bg-depth-4))';

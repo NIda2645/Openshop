@@ -44,6 +44,7 @@ All notable changes to Openshop will be documented in this file.
 - Export eraser strokes as erased pixels rather than solid black in PSD layers
 - Release sticky-note drag listeners when a note is deleted instead of leaving document-level handlers behind for the session
 - Retry a lazily loaded runtime library once bypassing the HTTP cache when its integrity check fails, so a poisoned cache entry no longer disables that feature until the cache expires
+- Make template cards, New Image size presets, and the zoom indicator real buttons so they can be reached and activated from the keyboard, and give the layer visibility and lock controls accessible names
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden

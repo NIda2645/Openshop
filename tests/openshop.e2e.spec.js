@@ -2089,3 +2089,30 @@ test('applies every theme across the studio chrome and persists the choice', asy
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('html')).toHaveClass(/theme-oled/);
 });
+
+test('exposes onboarding and layer controls to the keyboard', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+
+  // Template cards are reachable and operable without a mouse.
+  const card = page.locator('#template-grid .template-card').first();
+  await expect(card).toHaveJSProperty('tagName', 'BUTTON');
+  await expect(card).toHaveAttribute('aria-label', /\d+ by \d+ pixels/);
+  await card.focus();
+  await expect(card).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#welcome-overlay')).toBeHidden();
+
+  // Icon-only layer controls carry accessible names.
+  const visibility = page.locator('#layers-list .layer-vis').first();
+  await expect(visibility).toHaveAttribute('aria-label', /(Hide|Show) layer/);
+  const lock = page.locator('#layers-list .layer-lock').first();
+  await expect(lock).toHaveAttribute('aria-label', /(Lock|Unlock) layer/);
+
+  // New Image size presets are buttons, not click-only divs.
+  await page.evaluate(() => OS.newImage());
+  const preset = page.locator('.modal-overlay .preset-btn').first();
+  await expect(preset).toHaveJSProperty('tagName', 'BUTTON');
+  await preset.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#ni-w')).toHaveValue('1920');
+});
