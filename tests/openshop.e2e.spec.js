@@ -3829,3 +3829,66 @@ test('describes the enlarge command as the resample it is, outside the AI menu',
     'Image:Enlarge 4x (resample)'
   ]);
 });
+
+test('reports and clears cached model files per model', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const model = 'Xenova/modnet';
+    const revision = OS._modelRevisions[model];
+
+    // Stand in for CacheStorage: file:// pages have none.
+    const store = new Map();
+    const makeResponse = (bytes) => ({
+      headers: { get: (name) => (name.toLowerCase() === 'content-length' ? String(bytes) : null) },
+      clone() { return this; },
+      blob: async () => ({ size: bytes })
+    });
+    store.set(`https://huggingface.co/${model}/resolve/${revision}/onnx/model.onnx`, makeResponse(5_000_000));
+    store.set(`https://huggingface.co/${model}/resolve/${revision}/config.json`, makeResponse(1_024));
+    store.set('https://example.test/unrelated.bin', makeResponse(99));
+
+    const fakeCache = {
+      keys: async () => [...store.keys()].map(url => ({ url })),
+      match: async (request) => store.get(request.url),
+      delete: async (request) => store.delete(request.url)
+    };
+    Object.defineProperty(window, 'caches', {
+      configurable: true,
+      value: { keys: async () => ['fake'], open: async () => fakeCache }
+    });
+
+    OS._aiPipelines = { [`image-segmentation:${model}`]: { dispose: () => { window.__disposed = true; } } };
+
+    const before = (await OS._inspectAIAssetCache()).find(entry => entry.model === model);
+    const removed = await OS.clearModelCache(model);
+    const after = (await OS._inspectAIAssetCache()).find(entry => entry.model === model);
+    const untouched = store.has('https://example.test/unrelated.bin');
+
+    return {
+      beforeMatches: before.matches,
+      beforeBytes: before.bytes,
+      beforeLoaded: before.loaded,
+      removed,
+      afterMatches: after.matches,
+      afterBytes: after.bytes,
+      untouched,
+      pipelineDropped: !OS._aiPipelines[`image-segmentation:${model}`],
+      disposed: window.__disposed === true,
+      rmbgReset: OS._aiRmbgModel === null
+    };
+  });
+
+  expect(result.beforeMatches).toBe(2);
+  expect(result.beforeBytes).toBe(5_001_024);
+  expect(result.beforeLoaded).toBe(true);
+  expect(result.removed).toBe(2);
+  expect(result.afterMatches).toBe(0);
+  expect(result.afterBytes).toBe(0);
+  // Only that model's files go; an unrelated cache entry is left alone.
+  expect(result.untouched).toBe(true);
+  expect(result.pipelineDropped).toBe(true);
+  expect(result.disposed).toBe(true);
+  expect(result.rmbgReset).toBe(true);
+});

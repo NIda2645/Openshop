@@ -12,6 +12,7 @@ All notable changes to Openshop will be documented in this file.
 - A pseudo-locale that accents and brackets every translated string, so any interface text that never went through the localisation machinery is obvious at a glance; the Chinese map is now gated at parity with English apart from format names and single-letter typographic controls
 
 ### Fixed
+- Report each cached model's size and whether it is loaded, and let a model's cached files be cleared individually rather than only by wiping all site data
 - Probe for a usable WebGPU adapter and fall back to WASM, instead of pinning both model pipelines to WASM while the README promised WebGPU; the chosen backend is shown with the download progress
 - Rename Smart Upscale to Enlarge (resample) and move it out of the AI menu into Image, because it is stepped canvas resampling with a sharpening pass and no model is involved
 - Set the document's language and direction when the locale changes, which assistive technology, hyphenation, and bidirectional text all depend on and which the locale switch never touched

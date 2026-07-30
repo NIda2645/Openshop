@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Et2mzaL2SGctPcc98BYTkNgad5Jm+IV7sWy0cBzNmpI=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Uo9omc8GabkqlAd9QNEgSeD4g/hmDZ2dbfP0jgoTun4=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.22.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -9353,28 +9353,61 @@ self.onmessage = function(event) {
         if (choice.outcome !== 'accepted') this._setOfflineState({ installAvailable:false });
         return choice.outcome === 'accepted';
     },
+    _matchesModel(url, model, revision) {
+        const haystack = decodeURIComponent(url).toLowerCase();
+        return haystack.includes(model.toLowerCase()) && haystack.includes(revision.toLowerCase());
+    },
     async _inspectAIAssetCache() {
         const models = Object.entries(this._modelRevisions).map(([model, revision]) => ({
             model,
             revision,
-            matches:0
+            matches:0,
+            bytes:0,
+            loaded:Object.keys(this._aiPipelines || {}).some(key => key.endsWith(':' + model))
         }));
         if (!('caches' in window)) return models;
         try {
-            const urls = [];
             for (const name of await caches.keys()) {
                 const cache = await caches.open(name);
-                for (const request of await cache.keys()) urls.push(decodeURIComponent(request.url).toLowerCase());
+                for (const request of await cache.keys()) {
+                    const entry = models.find(candidate => this._matchesModel(request.url, candidate.model, candidate.revision));
+                    if (!entry) continue;
+                    entry.matches++;
+                    // Content-Length is present on Hugging Face responses; fall
+                    // back to reading the body only when it is not.
+                    const response = await cache.match(request);
+                    const declared = Number(response?.headers?.get?.('content-length'));
+                    if (Number.isFinite(declared) && declared > 0) { entry.bytes += declared; continue; }
+                    try { entry.bytes += (await response.clone().blob()).size; } catch (e) { /* opaque */ }
+                }
             }
-            models.forEach(entry => {
-                const modelNeedle = entry.model.toLowerCase();
-                const revisionNeedle = entry.revision.toLowerCase();
-                entry.matches = urls.filter(url => url.includes(modelNeedle) && url.includes(revisionNeedle)).length;
-            });
         } catch(error) {
             console.debug('AI cache inventory unavailable:', error.message);
         }
         return models;
+    },
+    // Lets a user reclaim a multi-hundred-megabyte model without clearing every
+    // site datum, and drops the live pipeline so the next run refetches.
+    async clearModelCache(model) {
+        const revision = this._modelRevisions[model];
+        if (!revision) return 0;
+        let removed = 0;
+        if ('caches' in window) {
+            for (const name of await caches.keys()) {
+                const cache = await caches.open(name);
+                for (const request of await cache.keys()) {
+                    if (!this._matchesModel(request.url, model, revision)) continue;
+                    if (await cache.delete(request)) removed++;
+                }
+            }
+        }
+        Object.keys(this._aiPipelines || {}).forEach(key => {
+            if (!key.endsWith(':' + model)) return;
+            void Promise.resolve(this._aiPipelines[key]).then(pipe => pipe?.dispose?.()).catch(() => {});
+            delete this._aiPipelines[key];
+        });
+        if (model === 'Xenova/modnet') { this._aiRmbgModel = null; this._aiRmbgProcessor = null; }
+        return removed;
     },
     async showOfflineManager() {
         await this._refreshOfflineStatus();
@@ -9427,7 +9460,7 @@ self.onmessage = function(event) {
         aiTitle.style.marginBottom = '4px';
         const aiNote = document.createElement('p');
         aiNote.className = 'offline-manager-note';
-        aiNote.textContent = 'AI models are not part of the core offline shell. Each pinned model must be used online once; this inventory reports only model responses visible in CacheStorage.';
+        aiNote.textContent = `AI models are not part of the core offline shell. Each pinned model must be used online once; this inventory reports only model responses visible in CacheStorage. Inference backend: ${this._aiDevice || 'selected on first use'}.`;
         const aiList = document.createElement('div');
         aiList.className = 'offline-model-list';
         aiModels.forEach(entry => {
@@ -9436,10 +9469,25 @@ self.onmessage = function(event) {
             const name = document.createElement('strong');
             name.textContent = entry.model.replace('Xenova/', '');
             const cacheState = document.createElement('span');
+            const size = entry.bytes ? ` · ${(entry.bytes / 1024 / 1024).toFixed(1)} MB` : '';
             cacheState.textContent = entry.matches
-                ? `${entry.matches} cached response${entry.matches === 1 ? '' : 's'}`
+                ? `${entry.matches} cached response${entry.matches === 1 ? '' : 's'}${size}${entry.loaded ? ' · loaded' : ''}`
                 : 'No cached model responses';
             row.append(name, cacheState);
+            if (entry.matches) {
+                const clear = document.createElement('button');
+                clear.className = 'btn';
+                clear.type = 'button';
+                clear.textContent = 'Clear';
+                clear.setAttribute('aria-label', `Clear cached files for ${entry.model}`);
+                clear.addEventListener('click', async () => {
+                    clear.disabled = true;
+                    const removed = await this.clearModelCache(entry.model);
+                    this.toast(`Cleared ${removed} cached file${removed === 1 ? '' : 's'} for ${entry.model}`, 'success');
+                    row.remove();
+                });
+                row.append(clear);
+            }
             aiList.appendChild(row);
         });
         modal.append(aiTitle, aiNote, aiList);
