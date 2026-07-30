@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-w3CEcbIdvsaIJVal9lSAEXUtya0aVyvYnumZ2sVoYVM=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-2rGeIE2kfs2jH7dyemLY5ChUG5IBPUDEljvwwvt++Zk=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -299,6 +299,8 @@ animation:marchAnts .4s linear infinite}
 /* === MODAL === */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden;overscroll-behavior:contain;touch-action:pan-y;z-index:10000;backdrop-filter:blur(8px);opacity:0;transition:opacity .2s var(--ease-out)}
 .modal-overlay.show{opacity:1}
+/* Recovery is offered during startup, while the welcome launcher (30000) is up. */
+.modal-overlay.recovery-overlay{z-index:30500}
 .modal{background:var(--bg-depth-2);border:1px solid var(--border);border-radius:12px;padding:24px;min-width:min(360px,100%);max-width:min(520px,100%);box-shadow:0 24px 64px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset;transform:translateY(12px) scale(.98);transition:transform .25s var(--ease-out);max-height:min(80vh,100%);overflow:auto;overscroll-behavior:contain}
 .modal-overlay.show .modal{transform:translateY(0) scale(1)}
 .filter-panel{position:fixed;z-index:10001;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:12px;padding:0;min-width:270px;max-width:310px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset;opacity:0;transform:translateY(6px) scale(.98);transition:opacity .2s var(--ease-out),transform .2s var(--ease-out)}
@@ -3675,7 +3677,13 @@ const OS = {
         o.querySelector('[data-modal-create]').addEventListener('click', () => this.doNewImage(o));
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
     },
-    doNewImage(o) { const w=+o.querySelector('#ni-w').value||1920, h=+o.querySelector('#ni-h').value||1080; this.createNewDocument(w,h,{resetProject:true}); o.remove(); this.toast(`Created ${w} × ${h} canvas`, 'success'); },
+    async doNewImage(o) {
+        const w=+o.querySelector('#ni-w').value||1920, h=+o.querySelector('#ni-h').value||1080;
+        if (!await this._confirmDiscardUnsaved('Creating a new document')) return;
+        this.createNewDocument(w,h,{resetProject:true});
+        o.remove();
+        this.toast(`Created ${w} × ${h} canvas`, 'success');
+    },
 
     // ====================== FILE I/O ======================
     _assertJsonFileBudget(file, label = 'JSON') {
@@ -4157,9 +4165,50 @@ const OS = {
         const presets = Array.isArray(data) ? data : [data];
         return presets.map(p => this._safePreset(p)).filter(Boolean).slice(0, this._importLimits.maxPresets);
     },
-    _addDecodedImageToCanvas(img, { name, mode }) {
+    _confirmDiscardUnsaved(action = 'Replacing this document') {
+        if (!this._isDirty) return Promise.resolve(true);
+        return new Promise(resolve => {
+            let settled = false;
+            const finish = value => { if (settled) return; settled = true; o.remove(); resolve(value); };
+            const o = document.createElement('div');
+            o.className = 'modal-overlay';
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            const title = document.createElement('h3');
+            title.textContent = 'Discard unsaved changes?';
+            const message = document.createElement('p');
+            message.style.cssText = 'font-size:12px;color:var(--text-secondary);margin:8px 0 16px';
+            message.textContent = `${action} will discard edits you have not saved. This cannot be undone.`;
+            const buttons = document.createElement('div');
+            buttons.className = 'modal-btns';
+            const cancel = document.createElement('button');
+            cancel.className = 'btn';
+            cancel.dataset.modalCancel = '';
+            cancel.textContent = 'Cancel';
+            cancel.addEventListener('click', () => finish(false));
+            const save = document.createElement('button');
+            save.className = 'btn';
+            save.textContent = 'Save first';
+            save.addEventListener('click', async () => {
+                save.disabled = true;
+                const saved = await this.saveProject();
+                if (saved) finish(true); else save.disabled = false;
+            });
+            const discard = document.createElement('button');
+            discard.className = 'btn btn-danger';
+            discard.textContent = 'Discard';
+            discard.addEventListener('click', () => finish(true));
+            buttons.append(cancel, save, discard);
+            modal.append(title, message, buttons);
+            o.appendChild(modal);
+            document.body.appendChild(o);
+            requestAnimationFrame(() => { o.classList.add('show'); cancel.focus(); });
+        });
+    },
+    async _addDecodedImageToCanvas(img, { name, mode }) {
         const { width } = this._validateDecodedImage(img);
         if (mode === 'open') {
+            if (!await this._confirmDiscardUnsaved('Opening an image')) return;
             this.createNewDocument(img.width, img.height, { resetProject:true });
             this._docName = this._safeText(String(name || '').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
             this._setPersistenceState('dirty');
@@ -4197,8 +4246,7 @@ const OS = {
         }
         const r = new FileReader(); r.onload = ev => {
             fabric.Image.fromURL(ev.target.result, img => {
-                try { this._addDecodedImageToCanvas(img, { name:file.name, mode:'open' }); }
-                catch(err) { this.toast(err.message, 'error'); }
+                void Promise.resolve(this._addDecodedImageToCanvas(img, { name:file.name, mode:'open' })).catch(err => this.toast(err.message, 'error'));
             });
         }; r.readAsDataURL(file);
     },
@@ -4210,8 +4258,7 @@ const OS = {
             if (count < 2) {
                 const r = new FileReader(); r.onload = ev => {
                     fabric.Image.fromURL(ev.target.result, img => {
-                        try { this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' }); }
-                        catch (err) { this.toast(err.message, 'error'); }
+                        void Promise.resolve(this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' })).catch(err => this.toast(err.message, 'error'));
                     });
                 }; r.readAsDataURL(file);
                 return;
@@ -4231,7 +4278,7 @@ const OS = {
             }
             if (decodedFrames.length > 0) {
                 const img = await fabric.Image.fromURL(decodedFrames[0]);
-                this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' });
+                await this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' });
             }
             this._animFrames = decodedFrames;
             this._animIdx = 0;
@@ -4243,8 +4290,7 @@ const OS = {
             console.warn('GIF frame import failed, loading as static:', e.message);
             const r = new FileReader(); r.onload = ev => {
                 fabric.Image.fromURL(ev.target.result, img => {
-                    try { this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' }); }
-                    catch (err) { this.toast(err.message, 'error'); }
+                    void Promise.resolve(this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' })).catch(err => this.toast(err.message, 'error'));
                 });
             }; r.readAsDataURL(file);
         }
@@ -4257,12 +4303,14 @@ const OS = {
     handleDrop(e) {
         const file = e.dataTransfer.files[0];
         if (!file) return;
-        if (file.name.toLowerCase().endsWith('.psd')) { this._loadPSDFile(file); return; }
+        if (file.name.toLowerCase().endsWith('.psd')) {
+            void this._confirmDiscardUnsaved('Opening a PSD').then(ok => ok && this._loadPSDFile(file));
+            return;
+        }
         try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }
         const r = new FileReader(); r.onload = ev => {
             fabric.Image.fromURL(ev.target.result, img => {
-                try { this._addDecodedImageToCanvas(img, { name:file.name, mode:'drop' }); }
-                catch(err) { this.toast(err.message, 'error'); }
+                void Promise.resolve(this._addDecodedImageToCanvas(img, { name:file.name, mode:'drop' })).catch(err => this.toast(err.message, 'error'));
             });
         }; r.readAsDataURL(file);
     },
@@ -4587,11 +4635,17 @@ const OS = {
         this.toast(this._t('Project saved'),'success');
         return true;
     },
-    openProject() { document.getElementById('project-input').click(); },
+    // The loaders below stay unguarded primitives; every user-initiated entry
+    // point confirms first so unsaved work is never replaced silently.
+    async openProject() {
+        if (!await this._confirmDiscardUnsaved('Opening a project')) return;
+        document.getElementById('project-input').click();
+    },
     handleProjectOpen(e) {
         const file = e.target.files[0]; if (!file) return;
-        void this._loadProjectFile(file);
         e.target.value='';
+        void this._confirmDiscardUnsaved('Opening a project')
+            .then(ok => ok && this._loadProjectFile(file));
     },
     async _loadProjectFile(file, { handle = null } = {}) {
         try {
@@ -4623,8 +4677,17 @@ const OS = {
         supportedDepths: [8, 16],
         supportedColorModes: [3]
     },
-    openPSD() { document.getElementById('psd-input').click(); },
-    handlePSDOpen(e) { const file = e.target.files[0]; if (file) this._loadPSDFile(file); e.target.value=''; },
+    async openPSD() {
+        if (!await this._confirmDiscardUnsaved('Opening a PSD')) return;
+        document.getElementById('psd-input').click();
+    },
+    handlePSDOpen(e) {
+        const file = e.target.files[0];
+        e.target.value='';
+        if (!file) return;
+        void this._confirmDiscardUnsaved('Opening a PSD')
+            .then(ok => ok && this._loadPSDFile(file));
+    },
     _normalizePSDOpacity(value, fallback = 1) {
         const number = Number(value);
         if (!Number.isFinite(number)) return fallback;
@@ -8485,7 +8548,8 @@ self.onmessage = function(event) {
             const grid = document.createElement('div');
             grid.className = 'template-grid';
             tpls.forEach(t => {
-                grid.appendChild(this._createTemplateCard(t, () => {
+                grid.appendChild(this._createTemplateCard(t, async () => {
+                    if (!await this._confirmDiscardUnsaved('Creating a new document')) return;
                     this.createNewDocument(t.w, t.h, { resetProject:true });
                     o.remove();
                     this.toast(`Created: ${t.name}`, 'success');
@@ -9027,9 +9091,9 @@ self.onmessage = function(event) {
     },
     _initFileLaunchQueue() {
         if (typeof window.launchQueue?.setConsumer !== 'function') return false;
-        window.launchQueue.setConsumer(params => {
-            void this._consumeLaunchParams(params);
-        });
+        // Returning the promise keeps the launch flow awaitable; the browser
+        // ignores the value and _handleLaunchedFile never rejects.
+        window.launchQueue.setConsumer(params => this._consumeLaunchParams(params));
         return true;
     },
     async _consumeLaunchParams(params) {
@@ -9042,6 +9106,7 @@ self.onmessage = function(event) {
         try {
             const file = await handle.getFile();
             const name = String(file.name || '').toLowerCase();
+            if (!await this._confirmDiscardUnsaved('Opening a launched file')) return false;
             let loaded = false;
             if (name.endsWith('.psd') || file.type === 'image/vnd.adobe.photoshop') {
                 loaded = await this._loadPSDFile(file);
@@ -9771,7 +9836,7 @@ self.onmessage = function(event) {
             ? { valid:true, legacy:true, payloadText:recordOrText, rawText:recordOrText, name:'Unsaved project', createdAt:new Date().toISOString() }
             : recordOrText;
         const o = document.createElement('div');
-        o.className = 'modal-overlay';
+        o.className = 'modal-overlay recovery-overlay';
         const modal = document.createElement('div');
         modal.className = 'modal';
         const title = document.createElement('h3');
@@ -12406,8 +12471,7 @@ self.onmessage = async function(e) {
                 const reader = new FileReader();
                 reader.onload = ev => {
                     fabric.Image.fromURL(ev.target.result, img => {
-                        try { this._addDecodedImageToCanvas(img, { name:file.name, mode:'drop' }); }
-                        catch(err) { this.toast(err.message, 'error'); }
+                        void Promise.resolve(this._addDecodedImageToCanvas(img, { name:file.name, mode:'drop' })).catch(err => this.toast(err.message, 'error'));
                     });
                 }; reader.readAsDataURL(file);
             }
@@ -12427,8 +12491,7 @@ self.onmessage = async function(e) {
                     const reader = new FileReader();
                     reader.onload = ev => {
                         fabric.Image.fromURL(ev.target.result, img => {
-                            try { this._addDecodedImageToCanvas(img, { name:blob.name || 'Pasted Image', mode:'paste' }); }
-                            catch(err) { this.toast(err.message, 'error'); }
+                            void Promise.resolve(this._addDecodedImageToCanvas(img, { name:blob.name || 'Pasted Image', mode:'paste' })).catch(err => this.toast(err.message, 'error'));
                         });
                     }; reader.readAsDataURL(blob);
                     return;

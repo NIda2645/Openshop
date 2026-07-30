@@ -9,6 +9,8 @@ All notable changes to Openshop will be documented in this file.
 - Keep selection overlays out of PNG, JPEG, WebP, PDF, PSD, flatten, crop, and before/after captures; the tint no longer bakes into exported or flattened pixels at any zoom level
 - Stop a second command started during an in-flight asynchronous command from rolling back the first command's work
 - Keep the document marked unsaved when an edit lands while a project save is clearing recovery generations
+- Confirm before replacing a document that has unsaved changes, from New Image, templates, Open Image, Open Project, Open PSD, drag and drop, and installed-app launches, with a Save first option
+- Show the crash-recovery offer above the welcome launcher instead of behind it, so it is visible on the first run after a crash
 
 ### Changed
 - Reimagine the editor as a high-contrast precision studio with a floating tool dock, structured inspector cards, technical canvas workspace, local-only trust indicator, and compact ready state

@@ -863,6 +863,59 @@ describe('OpenShop core object', () => {
     )).toThrow(/exceeds import limits/);
   });
 
+  it('guards document-replacing actions when the document is dirty', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    installModalDelegation();
+
+    // A clean document never prompts.
+    OS._isDirty = false;
+    await expect(OS._confirmDiscardUnsaved()).resolves.toBe(true);
+    expect(document.querySelector('.modal-overlay')).toBeNull();
+
+    OS._isDirty = true;
+    const cancelled = OS._confirmDiscardUnsaved('Creating a new document');
+    const overlay = document.querySelector('.modal-overlay');
+    expect(overlay.textContent).toMatch(/Discard unsaved changes\?/);
+    expect([...overlay.querySelectorAll('button')].map((b) => b.textContent))
+      .toEqual(['Cancel', 'Save first', 'Discard']);
+    overlay.querySelector('[data-modal-cancel]').click();
+    await expect(cancelled).resolves.toBe(false);
+    expect(document.querySelector('.modal-overlay')).toBeNull();
+
+    const discarded = OS._confirmDiscardUnsaved();
+    const second = document.querySelector('.modal-overlay');
+    [...second.querySelectorAll('button')].find((b) => b.textContent === 'Discard').click();
+    await expect(discarded).resolves.toBe(true);
+
+    // "Save first" only proceeds when the save actually succeeds.
+    OS.saveProject = vi.fn().mockResolvedValue(false);
+    const failed = OS._confirmDiscardUnsaved();
+    const third = document.querySelector('.modal-overlay');
+    [...third.querySelectorAll('button')].find((b) => b.textContent === 'Save first').click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+    OS.saveProject = vi.fn().mockResolvedValue(true);
+    [...document.querySelectorAll('.modal-overlay button')].find((b) => b.textContent === 'Save first').click();
+    await expect(failed).resolves.toBe(true);
+  });
+
+  it('offers recovery above the welcome launcher', () => {
+    const OS = loadOpenShop();
+    quietUiMethods(OS);
+    const overlay = OS._offerRecovery({
+      valid: true,
+      payloadText: '{}',
+      name: 'Untitled',
+      createdAt: new Date(0).toISOString()
+    });
+    // The welcome overlay is z-index 30000 and is still up during startup.
+    expect(overlay.classList.contains('recovery-overlay')).toBe(true);
+    overlay.remove();
+  });
+
   it('hides selection overlays during raster capture and restores them after', () => {
     const OS = loadOpenShop();
     const boundary = { name: '__boundary__', visible: true, opacity: 1, set(key, value) { this[key] = value; } };

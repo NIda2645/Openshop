@@ -1138,6 +1138,8 @@ test('round-trips one document state through save, open, recovery, undo, and red
     mimeType: 'application/json',
     buffer: Buffer.from(projectText)
   });
+  // The new document above left unsaved changes, so opening prompts first.
+  await page.locator('.modal-overlay:has-text("Discard unsaved changes?") button:text-is("Discard")').click();
   await expect(page.locator('#toast-container')).toContainText('Project loaded');
   const opened = await summarize();
 
