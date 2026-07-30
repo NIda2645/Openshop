@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-BrWWdILAomlgwnvkp2e6Gog7oVz++Cx5nbPRkXftR0Q=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-8iBksFqFP+p4vYMQ1tr7zqtl1SiNL6P3gAOn8QrJbGE=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -7438,7 +7438,20 @@ self.onmessage = function(event) {
         // Cancel/Apply
         panel.querySelector('[data-fp-cancel]').addEventListener('click', () => { if(onCancel) onCancel(); });
         panel.querySelector('.fp-close').addEventListener('click', () => { if(onCancel) onCancel(); });
-        panel.querySelector('[data-fp-apply]').addEventListener('click', () => { if(onApply) onApply(); });
+        // Apply handlers are async; without a catch a worker crash produced no
+        // toast and left the panel open, violating "never fail silently".
+        panel.querySelector('[data-fp-apply]').addEventListener('click', () => {
+            if (!onApply) return;
+            try {
+                Promise.resolve(onApply()).catch(error => {
+                    console.error('Filter apply failed:', error);
+                    this.toast('Filter failed: ' + (error?.message || error), 'error');
+                });
+            } catch (error) {
+                console.error('Filter apply failed:', error);
+                this.toast('Filter failed: ' + (error?.message || error), 'error');
+            }
+        });
         // Draggable
         this._makePanelDraggable(panel);
         return panel;
@@ -8046,25 +8059,44 @@ self.onmessage = function(event) {
             });
         }
     },
+    // loadFromJSON is async, so overlapping restores (Ctrl+Z key repeat or fast
+    // history clicks) would interleave and map one snapshot's layer structure
+    // onto another's objects. Queue them, and resolve each step's target when
+    // it actually runs so a held key walks the history instead of repeating it.
+    _enqueueRestore(plan) {
+        const run = async () => {
+            const step = plan();
+            if (!step) return false;
+            return this._restoreHistoryNow(step.targetIndex, step.snapshot);
+        };
+        this._restoreChain = (this._restoreChain || Promise.resolve()).then(run, run);
+        return this._restoreChain;
+    },
     undo() {
-        if (this.historyIdx < 0) {
-            this.toast(this._t('Nothing to undo'), 'info');
-            return Promise.resolve(false);
-        }
-        const entry = this.history[this.historyIdx];
-        const priorSnapshot = entry.beforeSnapshot
-            || (this.historyIdx > 0 ? this.history[this.historyIdx - 1].snapshot : this._historyBaseSnapshot);
-        return this._restoreHistory(this.historyIdx - 1, priorSnapshot);
+        return this._enqueueRestore(() => {
+            if (this.historyIdx < 0) {
+                this.toast(this._t('Nothing to undo'), 'info');
+                return null;
+            }
+            const entry = this.history[this.historyIdx];
+            const priorSnapshot = entry.beforeSnapshot
+                || (this.historyIdx > 0 ? this.history[this.historyIdx - 1].snapshot : this._historyBaseSnapshot);
+            return { targetIndex: this.historyIdx - 1, snapshot: priorSnapshot };
+        });
     },
     redo() {
-        if (this.historyIdx >= this.history.length - 1) {
-            this.toast(this._t('Nothing to redo'), 'info');
-            return Promise.resolve(false);
-        }
-        const entry = this.history[this.historyIdx + 1];
-        return this._restoreHistory(this.historyIdx + 1, entry.snapshot);
+        return this._enqueueRestore(() => {
+            if (this.historyIdx >= this.history.length - 1) {
+                this.toast(this._t('Nothing to redo'), 'info');
+                return null;
+            }
+            return { targetIndex: this.historyIdx + 1, snapshot: this.history[this.historyIdx + 1].snapshot };
+        });
     },
-    async _restoreHistory(targetIndex = this.historyIdx, snapshotOverride = null) {
+    _restoreHistory(targetIndex = this.historyIdx, snapshotOverride = null) {
+        return this._enqueueRestore(() => ({ targetIndex, snapshot: snapshotOverride }));
+    },
+    async _restoreHistoryNow(targetIndex = this.historyIdx, snapshotOverride = null) {
         const snapshot = snapshotOverride || (targetIndex >= 0
             ? this.history[targetIndex]?.snapshot
             : this.history[0]?.beforeSnapshot || this._historyBaseSnapshot);
@@ -10676,7 +10708,25 @@ self.onmessage = async function(event) {
                 this.toast('Edit cancelled because the document or target layer changed', 'info');
                 return false;
             }
-            newImg.set({ left: active.left, top: active.top, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle, flipX: active.flipX, flipY: active.flipY, originX: active.originX, originY: active.originY, selectable: true, name: histName });
+            // Carry the full appearance across, not just the transform: masks
+            // (clipPath), per-object opacity and blend mode are set elsewhere
+            // and were silently dropped by every filter and AI operation.
+            newImg.set({
+                left: active.left, top: active.top,
+                scaleX: active.scaleX, scaleY: active.scaleY,
+                angle: active.angle, flipX: active.flipX, flipY: active.flipY,
+                skewX: active.skewX, skewY: active.skewY,
+                originX: active.originX, originY: active.originY,
+                opacity: active.opacity,
+                globalCompositeOperation: active.globalCompositeOperation,
+                shadow: active.shadow,
+                visible: active.visible,
+                clipPath: active.clipPath,
+                selectable: true,
+                name: active.name || histName
+            });
+            if (active._hasMask) newImg._hasMask = true;
+            if (active.psd) newImg.psd = active.psd;
             const li = this.layers.findIndex(l => l.objects.includes(active));
             if (li >= 0) { const idx = this.layers[li].objects.indexOf(active); this.layers[li].objects[idx] = newImg; }
             this.canvas.remove(active); this.canvas.add(newImg); this.canvas.setActiveObject(newImg);

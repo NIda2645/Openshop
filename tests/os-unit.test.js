@@ -863,6 +863,76 @@ describe('OpenShop core object', () => {
     )).toThrow(/exceeds import limits/);
   });
 
+  it('walks history one step per undo when restores overlap', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._historyBaseSnapshot = 'base';
+    OS.history = [
+      { action: 'a', snapshot: 's1' },
+      { action: 'b', snapshot: 's2' },
+      { action: 'c', snapshot: 's3' }
+    ];
+    OS.historyIdx = 2;
+
+    const applied = [];
+    OS._loadDocumentState = async (state) => {
+      // A real load yields; overlapping calls used to read a stale historyIdx.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      applied.push(state.tag);
+    };
+    OS._restorePersistenceForSnapshot = vi.fn();
+    const parse = JSON.parse;
+    JSON.parse = (text) => ({ tag: text });
+
+    try {
+      const all = Promise.all([OS.undo(), OS.undo(), OS.undo()]);
+      await all;
+    } finally {
+      JSON.parse = parse;
+    }
+
+    expect(applied).toEqual(['s2', 's1', 'base']);
+    expect(OS.historyIdx).toBe(-1);
+  });
+
+  it('preserves mask, blend, and opacity when committing a pixel edit', async () => {
+    const OS = loadOpenShop();
+    const clipPath = { type: 'rect' };
+    const active = {
+      left: 10, top: 20, scaleX: 2, scaleY: 3, angle: 15,
+      flipX: true, flipY: false, skewX: 4, skewY: 5,
+      originX: 'left', originY: 'top',
+      opacity: 0.5, globalCompositeOperation: 'multiply',
+      shadow: null, visible: true, clipPath, _hasMask: true,
+      name: 'Photo', type: 'image'
+    };
+    OS.canvas = createCanvasMock([active]);
+    quietUiMethods(OS);
+    OS.layers = [{ name: 'Layer 1', objects: [active] }];
+    OS._guardObjectEdit = () => true;
+    OS._isObjectEditable = () => true;
+    OS.saveHistory = vi.fn();
+
+    const created = {};
+    installFabricMock();
+    globalThis.fabric.Image = {
+      fromURL: async () => ({
+        set(props) { Object.assign(created, props); },
+        type: 'image'
+      })
+    };
+
+    const ok = await OS._replaceActiveImage(active, 'data:image/png;base64,AAAA', 'Filter: Posterize');
+    expect(ok).toBe(true);
+    expect(created.clipPath).toBe(clipPath);
+    expect(created.opacity).toBe(0.5);
+    expect(created.globalCompositeOperation).toBe('multiply');
+    expect(created.skewX).toBe(4);
+    // The object keeps its own name; the history label is not its identity.
+    expect(created.name).toBe('Photo');
+  });
+
   it('clamps numeric dialog input instead of substituting defaults', () => {
     const OS = loadOpenShop();
     const input = (value) => ({ value });

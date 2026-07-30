@@ -131,7 +131,8 @@ test('applies a one-click pixel filter to an active image layer', async ({ page 
   });
 
   expect(result.historyAction).toBe('Filter: Sharpen');
-  expect(result.activeName).toBe('Filter: Sharpen');
+  // The history entry carries the label; the object keeps its own identity.
+  expect(result.activeName).toBe('Filter Smoke');
   expect(result.photonDisabled).toBe(false);
 });
 

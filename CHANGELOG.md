@@ -29,6 +29,9 @@ All notable changes to Openshop will be documented in this file.
 - Bound animated GIF import by frame count and decoded size, close the decoder on every path, and discard a slow import if the document changed meanwhile
 - Accept PSD and `.openshop` files dropped anywhere in the window, not only over the canvas, and say when extra dropped files are ignored
 - Allow SVG in the Open Image picker, which previously advertised SVG but greyed it out
+- Walk one step per undo when undo or redo is triggered faster than a restore completes; overlapping restores no longer interleave or mis-map layer membership
+- Preserve layer masks, per-object opacity, blend mode, skew, shadow, and the object's own name when a filter or AI operation commits pixels
+- Report filter failures instead of leaving the dialog open with no feedback when a worker errors
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
