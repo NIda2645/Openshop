@@ -2279,3 +2279,77 @@ test('keeps a decision-only dialog on screen when Escape is pressed', async ({ p
   await recovery.getByRole('button', { name: 'Discard' }).click();
   await expect(recovery).toHaveCount(0);
 });
+
+test('resolves accent-derived chrome through the token scale in every theme', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const sampled = await page.evaluate(async () => {
+    const read = () => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('class', 'lasso-path');
+      svg.appendChild(path);
+      document.body.appendChild(svg);
+      const guide = document.createElement('div');
+      guide.className = 'guide-line horizontal';
+      const smart = document.createElement('div');
+      smart.className = 'smart-guide vertical';
+      const checker = document.createElement('div');
+      checker.className = 'layer-thumb-checker';
+      const holder = document.createElement('div');
+      holder.className = 'layer-item';
+      holder.append(checker);
+      document.body.append(guide, smart, holder);
+      const primary = document.querySelector('.welcome-actions .btn-primary');
+      const values = {
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+        lassoFill: getComputedStyle(path).fill,
+        primaryShadow: primary ? getComputedStyle(primary).boxShadow : null,
+        guide: getComputedStyle(guide).backgroundColor,
+        smartGuide: getComputedStyle(smart).backgroundColor,
+        checkerBase: getComputedStyle(checker).backgroundColor,
+        checkerSquares: getComputedStyle(checker).backgroundImage
+      };
+      svg.remove();
+      guide.remove();
+      smart.remove();
+      holder.remove();
+      return values;
+    };
+    const out = {};
+    for (const theme of ['default', 'midnight', 'oled']) {
+      OS.setTheme(theme, { silent: true, persist: false });
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      out[theme] = read();
+    }
+    // Free Transform handles are painted onto the canvas, so the CSS-variable
+    // string this used to carry was simply an invalid fillStyle and the theme
+    // never reached them.
+    OS.setTheme('default', { silent: true, persist: false });
+    const rect = new fabric.Rect({ width: 40, height: 40, left: 10, top: 10 });
+    OS.canvas.add(rect);
+    OS.canvas.setActiveObject(rect);
+    OS.freeTransform();
+    out.cornerColor = OS.canvas.getActiveObject().cornerColor;
+    return out;
+  });
+
+  expect(sampled.cornerColor).toBe(sampled.default.accent);
+  expect(sampled.cornerColor.startsWith('var(')).toBe(false);
+
+  const themes = ['default', 'midnight', 'oled'];
+  expect(new Set(themes.map(theme => sampled[theme].accent)).size).toBe(3);
+  expect(new Set(themes.map(theme => sampled[theme].lassoFill)).size).toBe(3);
+  expect(new Set(themes.map(theme => sampled[theme].primaryShadow)).size).toBe(3);
+  // Checkerboards and guides used to sit outside the token scale entirely.
+  for (const key of ['guide', 'smartGuide', 'checkerBase', 'checkerSquares']) {
+    expect(new Set(themes.map(theme => sampled[theme][key])).size, key).toBe(3);
+  }
+  for (const theme of themes) {
+    expect(sampled[theme].lassoFill).not.toContain('108, 140, 255');
+    expect(sampled[theme].primaryShadow).not.toContain('108, 140, 255');
+    expect(sampled[theme].checkerBase).not.toBe('rgb(102, 102, 102)');
+    expect(sampled[theme].guide).not.toContain('108, 220, 255');
+  }
+});

@@ -9,6 +9,8 @@ All notable changes to Openshop will be documented in this file.
 - Announce menus correctly to screen readers: menus, rows, separators, and submenu state carry real roles, submenu arrows and nested rows no longer leak into a menu's own name (Filter announced as "Filter ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸"), shortcuts are exposed as key shortcuts rather than name text, and the "Models download on first use" note in the AI menu is no longer hidden from assistive technology
 - Keep Tab inside the open dialog instead of letting it walk into the editor behind, move focus into a dialog when it opens, and hand focus back to the control that opened it when it closes — applied to every dialog, the welcome launcher, and the command palette
 - Name every dialog to assistive technology from its own heading and mark it modal, without publishing the same dialog twice for panels that already declared themselves
+- Follow the selected theme in the last chrome that ignored it: lasso fill, welcome glow and primary-button glow, template-card hover, layer-thumbnail transparency checkerboards, ruler guides, and smart guides now come from the token scale
+- Paint Free Transform handles in the accent colour — the handle colour was a CSS variable string handed to the canvas, which is not a valid fill and was silently discarded
 - Stop Escape from falling through a dialog that has no cancel button: pressing it during the crash-recovery prompt no longer dismisses the welcome screen underneath and reaches the canvas shortcut handler
 
 ## [v0.21.0] - 2026-07-30
