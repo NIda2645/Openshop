@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-11U4rNtK4XPk5QBwTOgjaAo4JG5264VkjKKCVJQWfRY=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-65TwdUs/+DIVyN9dUHqgmE3RYgUdPhEaAOtNndz5N2Y=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -5061,12 +5061,45 @@ self.onmessage = function(event) {
         if (typeof OffscreenCanvas !== 'undefined' && lib.initializeCanvas) {
             lib.initializeCanvas(function(width, height) { return new OffscreenCanvas(width, height); });
         }
+        self.postMessage({ id: id, type: 'progress', message: 'Checking layer budget…' });
+        // ag-psd has no decode-time memory option, so bound the work before any
+        // pixels are allocated: parse structure only, then add up layer areas.
+        var limits = event.data.limits;
+        var structure = lib.readPsd(new Uint8Array(event.data.buffer), {
+            skipLayerImageData: true,
+            skipCompositeImageData: true,
+            skipThumbnail: true,
+            skipLinkedFilesData: true
+        });
+        var plannedLayers = 0;
+        var plannedPixels = 0;
+        (function walk(node) {
+            var children = node && node.children;
+            if (!children) return;
+            for (var i = 0; i < children.length; i++) {
+                var child = children[i];
+                plannedLayers++;
+                if (plannedLayers > limits.maxLayers) {
+                    throw new Error('PSD declares more than ' + limits.maxLayers + ' layers');
+                }
+                var w = Math.max(0, (child.right || 0) - (child.left || 0));
+                var h = Math.max(0, (child.bottom || 0) - (child.top || 0));
+                if (w * h > limits.maxLayerPixels) {
+                    throw new Error('A PSD layer exceeds the per-layer pixel limit');
+                }
+                plannedPixels += w * h;
+                if (plannedPixels * 4 > limits.maxDecodedBytes) {
+                    throw new Error('PSD layer pixels exceed the decode budget');
+                }
+                walk(child);
+            }
+        })(structure);
+        structure = null;
         self.postMessage({ id: id, type: 'progress', message: 'Decoding pixels off the UI thread…' });
         const psd = lib.readPsd(new Uint8Array(event.data.buffer), {
             useImageData: true,
             skipThumbnail: true,
-            skipLinkedFilesData: true,
-            totalMemoryLimit: event.data.limits.maxDecodedBytes
+            skipLinkedFilesData: true
         });
         let layerCount = 0;
         let decodedBytes = 0;
@@ -8469,6 +8502,10 @@ self.onmessage = function(event) {
             try {
                 object.visible = true;
                 object.excludeFromExport = false;
+                // Eraser strokes are black paths drawn with destination-out.
+                // Forcing source-over on the object and compositing normally
+                // painted them as solid black instead of erasing.
+                const objectComposite = state.globalCompositeOperation || 'source-over';
                 object.globalCompositeOperation = 'source-over';
                 if (canSeparateLayerOpacity) object.opacity = 1;
                 const objectCanvas = object.toCanvasElement ? object.toCanvasElement({
@@ -8483,7 +8520,10 @@ self.onmessage = function(event) {
                 const bounds = object.getBoundingRect?.();
                 const left = Number.isFinite(bounds?.left) ? bounds.left : Number(object.left || 0);
                 const top = Number.isFinite(bounds?.top) ? bounds.top : Number(object.top || 0);
+                context.save();
+                context.globalCompositeOperation = objectComposite;
                 context.drawImage(objectCanvas, Math.round(left), Math.round(top));
+                context.restore();
             } finally {
                 object.visible = state.visible;
                 object.opacity = state.opacity;

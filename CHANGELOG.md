@@ -40,6 +40,8 @@ All notable changes to Openshop will be documented in this file.
 - Warn once that animation frames are flattened snapshots before the timeline replaces a multi-layer stack
 - Translate the renamed Save Project menu item in Simplified Chinese
 - Restore the previous document when opening a project or recovery generation fails partway through, instead of leaving a half-replaced canvas whose layers panel, history, and save state disagree
+- Enforce the PSD decode budget before any pixels are allocated by reading the layer structure first; the previous `totalMemoryLimit` option does not exist in ag-psd and was silently ignored, so a small crafted file could exhaust memory during decode
+- Export eraser strokes as erased pixels rather than solid black in PSD layers
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
