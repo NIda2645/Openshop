@@ -2,6 +2,12 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Operate the whole menubar from the keyboard: arrow keys move between menus and rows, Enter or Space opens and activates, Home and End jump to the ends, typing a letter jumps to the next matching row, Escape closes one level at a time, and clicking a menu title now keeps it open instead of requiring the pointer to stay put
+- Announce menus correctly to screen readers: menus, rows, separators, and submenu state carry real roles, submenu arrows and nested rows no longer leak into a menu's own name (Filter announced as "Filter ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸"), shortcuts are exposed as key shortcuts rather than name text, and the "Models download on first use" note in the AI menu is no longer hidden from assistive technology
+
 ## [v0.21.0] - 2026-07-30
 
 ### Fixed

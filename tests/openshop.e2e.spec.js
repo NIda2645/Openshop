@@ -2116,3 +2116,81 @@ test('exposes onboarding and layer controls to the keyboard', async ({ page }) =
   await page.keyboard.press('Enter');
   await expect(page.locator('#ni-w')).toHaveValue('1920');
 });
+
+test('drives the whole menubar from the keyboard with clean accessible names', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const menubar = page.getByRole('menubar', { name: 'Main menu' });
+  await expect(menubar).toBeVisible();
+
+  // The submenu arrows and every nested row used to leak into the top-level
+  // name, so "Filter" announced as "Filter ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸".
+  const rootNames = await page.evaluate(() =>
+    [...document.querySelectorAll('.menu-bar > .menu-item')].map(item => item.getAttribute('aria-label')));
+  expect(rootNames).toEqual(['File', 'Edit', 'Select', 'Image', 'Filter', 'AI', 'View']);
+
+  // Only the first root is in the tab order; the rest are reached with arrows.
+  const tabindexes = await page.evaluate(() =>
+    [...document.querySelectorAll('.menu-bar > .menu-item')].map(item => item.getAttribute('tabindex')));
+  expect(tabindexes).toEqual(['0', '-1', '-1', '-1', '-1', '-1', '-1']);
+
+  const focused = () => page.evaluate(() => ({
+    label: document.activeElement?.getAttribute('aria-label'),
+    role: document.activeElement?.getAttribute('role'),
+    expanded: document.activeElement?.getAttribute('aria-expanded')
+  }));
+
+  await page.locator('.menu-bar > .menu-item').first().focus();
+  await page.keyboard.press('ArrowRight');
+  expect(await focused()).toMatchObject({ label: 'Edit', role: 'menuitem' });
+  await page.keyboard.press('ArrowLeft');
+  expect(await focused()).toMatchObject({ label: 'File' });
+
+  // Down opens the menu and lands on its first row.
+  await page.keyboard.press('ArrowDown');
+  expect(await focused()).toMatchObject({ label: 'New', role: 'menuitem' });
+  await expect(page.locator('.menu-bar > .menu-item').first()).toHaveAttribute('aria-expanded', 'true');
+
+  // Arrow into the submenu, then back out of it.
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  expect(await focused()).toMatchObject({ label: 'Export As', expanded: 'false' });
+  await page.keyboard.press('ArrowRight');
+  expect(await focused()).toMatchObject({ label: 'PNG' });
+  await page.keyboard.press('ArrowLeft');
+  expect(await focused()).toMatchObject({ label: 'Export As', expanded: 'false' });
+
+  // Type-ahead inside an open menu.
+  await page.keyboard.press('t');
+  expect(await focused()).toMatchObject({ label: 'Templates...' });
+
+  // Escape closes the menu and returns focus to its root.
+  await page.keyboard.press('Escape');
+  expect(await focused()).toMatchObject({ label: 'File', expanded: 'false' });
+  await expect(page.locator('.menu-bar .menu-dropdown').first()).toBeHidden();
+
+  // Enter on a leaf runs the command and collapses the tree.
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  expect(await focused()).toMatchObject({ label: 'View' });
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('End');
+  expect(await focused()).toMatchObject({ label: 'Keyboard Shortcuts...' });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.modal-overlay')).toBeVisible();
+  expect(await page.evaluate(() => document.querySelectorAll('.menu-bar .open').length)).toBe(0);
+  await page.getByRole('button', { name: 'Close' }).first().click();
+
+  // The AI note was role="note" and aria-hidden at the same time.
+  const note = page.locator('.dd-note').first();
+  await expect(note).not.toHaveAttribute('aria-hidden', 'true');
+  const shortcut = await page.evaluate(() =>
+    document.querySelector('[data-os-click="click-027"]')?.getAttribute('aria-keyshortcuts'));
+  expect(shortcut).toBe('Ctrl+A');
+});

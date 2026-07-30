@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-9KGvVSAeeV/on+U4dhwsQdUn2QcuKB6vhJFH1zdx71U=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-WTMM+8v5qpUxMlnHVs6EK5AFZl5ybcxoKZAweFY8eck=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.21.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -124,14 +124,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 .menu-item{position:relative;padding:6px 11px;border-radius:5px;cursor:pointer;color:var(--text-secondary);font-size:12.5px;transition:all .15s var(--ease-out)}
 .menu-item:hover{background:var(--bg-depth-3);color:var(--text-primary)}
 .menu-dropdown{display:none;position:absolute;top:calc(100% + 2px);left:0;min-width:220px;background:var(--bg-depth-2);border:1px solid var(--border);border-radius:8px;padding:4px;z-index:1000;box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset}
-.menu-item:hover>.menu-dropdown{display:block}
+.menu-bar{display:flex;align-items:center;gap:1px}
+.menu-item:hover>.menu-dropdown,.menu-item.open>.menu-dropdown{display:block}
 .dd-item{padding:7px 12px;border-radius:5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;color:var(--text-secondary);transition:all .1s var(--ease-out);white-space:nowrap;font-size:12.5px}
 .dd-item:hover{background:var(--accent-dim);color:var(--text-primary)}
 .dd-shortcut{float:right;color:var(--text-muted);font-size:10px;font-family:'JetBrains Mono',monospace;opacity:.7;margin-left:16px}
 .dd-note{padding:6px 12px;font-size:10.5px;color:var(--text-muted);pointer-events:none;user-select:none;font-style:italic}
 .dd-sep{height:1px;background:var(--border);margin:4px 8px}
 .dd-sub{position:relative}.dd-sub>.menu-dropdown{display:none;left:100%;top:-4px}
-.dd-sub:hover>.menu-dropdown{display:block}
+.dd-sub:hover>.menu-dropdown,.dd-sub.open>.menu-dropdown{display:block}
 .dd-sub.flip-left>.menu-dropdown{left:auto;right:100%}
 .dd-sub::after{content:'\25B8';float:right;margin-left:12px;font-size:9px;color:var(--text-muted)}
 .ctx-sub{position:relative}.ctx-sub>.ctx-submenu{display:none;position:absolute;left:100%;top:-4px;min-width:180px;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);padding:4px;z-index:30001}
@@ -758,6 +759,11 @@ body{
   font-size:12px;
 }
 .dd-item:hover{background:color-mix(in srgb, var(--accent) 15%, transparent)}
+/* Menu rows only ever take focus from the keyboard, so the focus treatment has
+   to be as loud as the hover treatment or the caret is invisible while moving. */
+.menu-item:focus-visible,.dd-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.menu-item.open,.menu-item:focus{background:var(--bg-depth-3);color:var(--text-primary)}
+.dd-item:focus,.dd-sub.open{background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--text-primary)}
 .local-badge{
   display:flex;
   align-items:center;
@@ -1675,12 +1681,13 @@ body{
 <body>
 
 <!-- ===== TOP MENU ===== -->
-<div id="topbar" role="menubar" aria-label="Main menu">
+<div id="topbar">
     <div class="logo" aria-label="OpenShop version 0.21.0">
         <span class="logo-mark">OS</span>
         <span class="logo-word">OpenShop</span>
         <span class="logo-version">v0.21</span>
     </div>
+    <div class="menu-bar" role="menubar" aria-label="Main menu">
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
         <div class="menu-dropdown">
             <div class="dd-item" data-os-click="click-001">New</div>
@@ -1939,6 +1946,7 @@ body{
             <div class="dd-item" data-os-click="click-122">Fullscreen Mode</div>
             <div class="dd-item" data-os-click="click-123">Keyboard Shortcuts...</div>
         </div>
+    </div>
     </div>
     <div class="local-badge" title="Your files and edits stay on this device" aria-label="Local-only editing">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l7 3v5c0 4.7-2.8 8-7 10-4.2-2-7-5.3-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -3438,9 +3446,7 @@ const OS = {
             btn.setAttribute('tabindex', '0');
             btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); } });
         });
-        document.querySelectorAll('.dd-item').forEach(item => {
-            item.setAttribute('role', 'menuitem');
-        });
+        this._initMenuAccessibility();
         document.querySelectorAll('.panel-tab').forEach(tab => {
             tab.setAttribute('role', 'tab');
         });
@@ -12748,6 +12754,211 @@ self.onmessage = async function(e) {
                 child.style.top = Math.max(-(childH - sub.offsetHeight - 8), -(subTop - 40)) + 'px';
             }
         }, true);
+    },
+
+    // ====================== MENU ACCESSIBILITY ======================
+    // The menubar renders as nested divs and used to open on :hover only, so it
+    // was unreachable by keyboard and announced every descendant's text as part
+    // of its own name ("Filter ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸").
+    _menuOwnText(el) {
+        if (!el) return '';
+        return [...el.childNodes]
+            .filter(node => node.nodeType === 3)
+            .map(node => node.textContent)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    },
+    _menuRoots() {
+        const bar = document.querySelector('#topbar .menu-bar');
+        return bar ? [...bar.querySelectorAll(':scope > .menu-item')] : [];
+    },
+    // Direct children only — a submenu's rows belong to the submenu, not here.
+    _menuEntries(menu) {
+        if (!menu) return [];
+        return [...menu.children].filter(el => el.classList.contains('dd-item'));
+    },
+    _menuPopup(item) {
+        return item?.querySelector?.(':scope > .menu-dropdown') || null;
+    },
+    _openMenuPopup(item) {
+        const popup = this._menuPopup(item);
+        if (!popup) return null;
+        // Siblings at this level close, so only one branch is ever open.
+        [...(item.parentElement?.children || [])].forEach(sibling => {
+            if (sibling !== item) this._closeMenuPopup(sibling);
+        });
+        item.classList.add('open');
+        if (item.hasAttribute('aria-expanded')) item.setAttribute('aria-expanded', 'true');
+        return popup;
+    },
+    _closeMenuPopup(item) {
+        if (!item?.classList?.contains?.('open')) return;
+        item.querySelectorAll('.open').forEach(child => {
+            child.classList.remove('open');
+            if (child.hasAttribute('aria-expanded')) child.setAttribute('aria-expanded', 'false');
+        });
+        item.classList.remove('open');
+        if (item.hasAttribute('aria-expanded')) item.setAttribute('aria-expanded', 'false');
+    },
+    _closeAllMenus() {
+        this._menuRoots().forEach(root => this._closeMenuPopup(root));
+    },
+    _focusMenuRoot(root, { open = false, last = false } = {}) {
+        if (!root) return;
+        this._menuRoots().forEach(item => item.setAttribute('tabindex', item === root ? '0' : '-1'));
+        if (!open) { root.focus(); return; }
+        const entries = this._menuEntries(this._openMenuPopup(root));
+        const entry = last ? entries.at(-1) : entries[0];
+        (entry || root).focus();
+    },
+    _initMenuAccessibility() {
+        const bar = document.querySelector('#topbar .menu-bar');
+        if (!bar) return;
+        const roots = this._menuRoots();
+        if (!roots.length) return;
+
+        bar.querySelectorAll('.menu-dropdown').forEach(menu => {
+            menu.setAttribute('role', 'menu');
+            const label = this._menuOwnText(menu.parentElement);
+            if (label) menu.setAttribute('aria-label', label);
+        });
+        bar.querySelectorAll('.dd-sep').forEach(sep => sep.setAttribute('role', 'separator'));
+        // The AI note said role="note" and aria-hidden="true" at once, which hid
+        // "Models download on first use" from exactly the users who need telling.
+        bar.querySelectorAll('.dd-note').forEach(note => {
+            note.removeAttribute('aria-hidden');
+            note.setAttribute('role', 'note');
+        });
+        bar.querySelectorAll('.dd-item').forEach(item => {
+            item.setAttribute('role', 'menuitem');
+            item.setAttribute('tabindex', '-1');
+            const label = this._menuOwnText(item);
+            if (label) item.setAttribute('aria-label', label);
+            // Keep the shortcut out of the name but still announced.
+            const shortcut = item.querySelector(':scope > .dd-shortcut');
+            if (shortcut?.textContent.trim()) item.setAttribute('aria-keyshortcuts', shortcut.textContent.trim());
+            if (item.classList.contains('dd-sub')) {
+                item.setAttribute('aria-haspopup', 'true');
+                item.setAttribute('aria-expanded', 'false');
+            }
+        });
+        roots.forEach((root, index) => {
+            root.setAttribute('role', 'menuitem');
+            root.setAttribute('aria-haspopup', 'true');
+            root.setAttribute('aria-expanded', 'false');
+            root.setAttribute('tabindex', index === 0 ? '0' : '-1');
+            const label = this._menuOwnText(root);
+            if (label) root.setAttribute('aria-label', label);
+        });
+
+        bar.addEventListener('keydown', event => this._onMenuKeydown(event));
+        bar.addEventListener('click', event => {
+            const root = event.target?.closest?.('.menu-bar > .menu-item');
+            if (root && event.target === root) {
+                if (root.classList.contains('open')) this._closeMenuPopup(root);
+                else this._openMenuPopup(root);
+                this._focusMenuRoot(root);
+                return;
+            }
+            // Resolve the innermost row first: a leaf inside "Export As" is a
+            // descendant of that .dd-sub, so a closest('.dd-sub') test alone
+            // would toggle the parent instead of running the command.
+            const entry = event.target?.closest?.('.dd-item');
+            if (!entry) return;
+            if (entry.classList.contains('dd-sub')) {
+                if (entry.classList.contains('open')) this._closeMenuPopup(entry);
+                else this._openMenuPopup(entry);
+                return;
+            }
+            // A real command ran, so the whole tree collapses.
+            this._closeAllMenus();
+        });
+        bar.addEventListener('focusout', event => {
+            if (!bar.contains(event.relatedTarget)) this._closeAllMenus();
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!bar.contains(event.target)) this._closeAllMenus();
+        });
+    },
+    _onMenuKeydown(event) {
+        if (event.altKey || event.ctrlKey || event.metaKey) return;
+        const roots = this._menuRoots();
+        const root = event.target?.closest?.('.menu-bar > .menu-item');
+        if (!root || !roots.includes(root)) return;
+        const entry = event.target.closest('.dd-item');
+        const key = event.key;
+        const stop = () => { event.preventDefault(); event.stopPropagation(); };
+        const moveRoot = delta => {
+            const wasOpen = root.classList.contains('open');
+            this._closeMenuPopup(root);
+            this._focusMenuRoot(roots[(roots.indexOf(root) + delta + roots.length) % roots.length], { open: wasOpen });
+        };
+
+        if (!entry) {
+            switch (key) {
+                case 'ArrowRight': stop(); moveRoot(1); return;
+                case 'ArrowLeft': stop(); moveRoot(-1); return;
+                case 'ArrowDown': case 'Enter': case ' ': stop(); this._focusMenuRoot(root, { open: true }); return;
+                case 'ArrowUp': stop(); this._focusMenuRoot(root, { open: true, last: true }); return;
+                case 'Home': stop(); this._focusMenuRoot(roots[0]); return;
+                case 'End': stop(); this._focusMenuRoot(roots.at(-1)); return;
+                case 'Escape':
+                    if (root.classList.contains('open')) { stop(); this._closeMenuPopup(root); root.focus(); }
+                    return;
+                default: break;
+            }
+        } else {
+            const menu = entry.parentElement;
+            const owner = menu.parentElement;
+            const entries = this._menuEntries(menu);
+            const index = entries.indexOf(entry);
+            const move = delta => entries[(index + delta + entries.length) % entries.length]?.focus();
+            const openSubmenu = () => {
+                const popup = this._openMenuPopup(entry);
+                (this._menuEntries(popup)[0] || entry).focus();
+            };
+            const leaveLevel = () => {
+                if (owner === root) { moveRoot(-1); return; }
+                this._closeMenuPopup(owner);
+                owner.focus();
+            };
+            switch (key) {
+                case 'ArrowDown': stop(); move(1); return;
+                case 'ArrowUp': stop(); move(-1); return;
+                case 'Home': stop(); entries[0]?.focus(); return;
+                case 'End': stop(); entries.at(-1)?.focus(); return;
+                case 'ArrowRight': stop(); if (entry.classList.contains('dd-sub')) openSubmenu(); else moveRoot(1); return;
+                case 'ArrowLeft': stop(); leaveLevel(); return;
+                case 'Escape':
+                    stop();
+                    if (owner === root) { this._closeMenuPopup(root); root.focus(); } else leaveLevel();
+                    return;
+                case 'Enter': case ' ':
+                    stop();
+                    if (entry.classList.contains('dd-sub')) { openSubmenu(); return; }
+                    this._closeAllMenus();
+                    root.focus();
+                    entry.click();
+                    return;
+                case 'Tab': this._closeAllMenus(); return;
+                default: break;
+            }
+        }
+
+        // Type-ahead: jump to the next row whose own text starts with the key.
+        if (key.length !== 1 || !/\S/.test(key)) return;
+        const scope = entry ? this._menuEntries(entry.parentElement) : roots;
+        const from = scope.indexOf(entry || root);
+        const needle = key.toLowerCase();
+        for (let step = 1; step <= scope.length; step++) {
+            const candidate = scope[(from + step + scope.length) % scope.length];
+            if (this._menuOwnText(candidate).toLowerCase().startsWith(needle)) {
+                event.preventDefault();
+                candidate.focus();
+                return;
+            }
+        }
     },
 
     // ====================== DROPZONE ======================
