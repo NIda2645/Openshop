@@ -2751,23 +2751,30 @@ test('selects the shape a lasso encloses rather than its bounding box', async ({
     OS._lassoDoubleClick();
 
     const mask = OS._selectionMask;
-    const at = (x, y) => mask.mask[y * mask.w + x] === 1;
+    // Mask values are 0-255 coverage; the interior is fully selected and the
+    // antialiased hypotenuse carries partial coverage.
+    const at = (x, y) => mask.mask[y * mask.w + x];
     let selected = 0;
-    for (let i = 0; i < mask.mask.length; i++) if (mask.mask[i]) selected++;
+    for (let i = 0; i < mask.mask.length; i++) if (mask.mask[i] === 255) selected++;
     return {
       dims: [mask.w, mask.h],
       docDims: [Math.round(OS.canvasW), Math.round(OS.canvasH)],
       bounds: { ...OS._selectionBounds },
-      insideTriangle: at(20, 20),
+      insideTriangle: at(20, 20) === 255,
       // Just inside the bounding box but outside the hypotenuse.
-      outsideHypotenuse: at(100, 100),
+      outsideHypotenuse: at(100, 100) === 0,
+      // The diagonal edge is soft rather than a hard staircase.
+      // The antialiased hypotenuse leaves partially-covered pixels rather than
+      // a hard staircase; a binary mask would have none at all.
+      softEdgeValues: mask.mask.reduce((total, v) => total + (v > 0 && v < 255 ? 1 : 0), 0),
       selected
     };
   });
 
   expect(result.dims).toEqual(result.docDims);
   expect(result.insideTriangle).toBe(true);
-  expect(result.outsideHypotenuse).toBe(false);
+  expect(result.outsideHypotenuse).toBe(true);
+  expect(result.softEdgeValues).toBeGreaterThan(0);
   // Roughly half the 100x100 bounding box, not all of it.
   expect(result.selected).toBeGreaterThan(4200);
   expect(result.selected).toBeLessThan(5800);
@@ -2786,16 +2793,110 @@ test('maps lasso points through the viewport before rasterising', async ({ page 
     OS._lassoPoints = ['60,80', '160,80', '160,180', '60,180'];
     OS._lassoDoubleClick();
     const mask = OS._selectionMask;
-    const at = (x, y) => mask.mask[y * mask.w + x] === 1;
+    const at = (x, y) => mask.mask[y * mask.w + x];
     return {
       bounds: { ...OS._selectionBounds },
       // Screen (60,80) is document (10,10); screen (160,180) is document (60,60).
-      insideDoc: at(30, 30),
-      outsideDoc: at(80, 80)
+      insideDoc: at(30, 30) === 255,
+      outsideDoc: at(80, 80) === 0
     };
   });
 
   expect(result.bounds).toEqual({ x: 10, y: 10, w: 50, h: 50 });
   expect(result.insideDoc).toBe(true);
-  expect(result.outsideDoc).toBe(false);
+  expect(result.outsideDoc).toBe(true);
+});
+
+test('feathers a selection into partial coverage instead of dilating it', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    const dw = Math.round(OS.canvasW), dh = Math.round(OS.canvasH);
+    const mask = new Uint8Array(dw * dh);
+    for (let y = 40; y < 80; y++) for (let x = 40; x < 80; x++) mask[y * dw + x] = 1;
+    OS._setPixelSelectionMask(mask, dw, dh);
+
+    const before = OS._selectionMask.mask.reduce((t, v) => t + (v > 0 && v < 255 ? 1 : 0), 0);
+    OS._doModifySelection('feather', 6);
+    const after = OS._selectionMask;
+    const at = (x, y) => after.mask[y * after.w + x];
+
+    let partial = 0;
+    for (let i = 0; i < after.mask.length; i++) if (after.mask[i] > 0 && after.mask[i] < 255) partial++;
+    return {
+      before,
+      partial,
+      core: at(60, 60),
+      justOutside: at(40, 60),
+      farOutside: at(20, 60)
+    };
+  });
+
+  expect(result.before).toBe(0);
+  // The gradient the blur computes is kept rather than thresholded back to a
+  // hard edge one pixel wider than it started.
+  expect(result.partial).toBeGreaterThan(100);
+  expect(result.core).toBe(255);
+  expect(result.justOutside).toBeGreaterThan(0);
+  expect(result.justOutside).toBeLessThan(255);
+  expect(result.farOutside).toBe(0);
+});
+
+test('deletes through a downscaled layer without leaving gaps', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    const oc = document.createElement('canvas');
+    oc.width = 300; oc.height = 300;
+    const ctx = oc.getContext('2d');
+    ctx.fillStyle = 'rgb(30,140,220)';
+    ctx.fillRect(0, 0, 300, 300);
+    const image = await new Promise(resolve => {
+      const el = new Image();
+      el.onload = () => resolve(new fabric.Image(el, {
+        left: 0, top: 0, originX: 'left', originY: 'top', scaleX: 1 / 3, scaleY: 1 / 3
+      }));
+      el.src = oc.toDataURL();
+    });
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+
+    // 30x30 document pixels covers 90x90 image pixels at 1/3 scale — the case
+    // where stamping mask pixels onto the image left two out of three untouched.
+    const dw = Math.round(OS.canvasW), dh = Math.round(OS.canvasH);
+    const mask = new Uint8Array(dw * dh);
+    for (let y = 10; y < 40; y++) for (let x = 10; x < 40; x++) mask[y * dw + x] = 1;
+    OS._setPixelSelectionMask(mask, dw, dh);
+
+    OS._deleteSelectionPixels();
+    await new Promise(resolve => setTimeout(resolve, 700));
+
+    const active = OS.canvas.getObjects().find(o => o.type === 'image' && !o._wandOverlay);
+    const el = active.getElement();
+    const probe = document.createElement('canvas');
+    probe.width = el.naturalWidth || el.width;
+    probe.height = el.naturalHeight || el.height;
+    probe.getContext('2d').drawImage(el, 0, 0);
+    const data = probe.getContext('2d').getImageData(0, 0, probe.width, probe.height).data;
+
+    let survivors = 0, clearedOutside = 0;
+    for (let y = 0; y < probe.height; y++) {
+      for (let x = 0; x < probe.width; x++) {
+        const alpha = data[(y * probe.width + x) * 4 + 3];
+        const inside = x >= 30 && x < 120 && y >= 30 && y < 120;
+        if (inside && alpha !== 0) survivors++;
+        if (!inside && alpha === 0) clearedOutside++;
+      }
+    }
+    return { size: probe.width, survivors, clearedOutside };
+  });
+
+  expect(result.size).toBe(300);
+  expect(result.survivors).toBe(0);
+  expect(result.clearedOutside).toBe(0);
 });

@@ -14,7 +14,10 @@ All notable changes to Openshop will be documented in this file.
 
 ### Fixed
 - Store pixel selections in document space instead of screen space: zooming or panning between selecting and deleting no longer erases a different part of the image, and deleting below 100% zoom no longer leaves a sparse grid of surviving pixels
-- Make the Lasso select the shape it encloses instead of its bounding box, mapped through the current zoom and pan
+- Make the Lasso select the shape it encloses instead of its bounding box, mapped through the current zoom and pan, with a soft antialiased edge
+- Give selections real partial coverage: Feather now keeps the gradient it computes instead of throwing it away and widening the hard edge by a pixel, deleting fades pixels by how selected they are, and the selection tint shows the falloff
+- Delete every pixel under the selection on a layer scaled below 100%, which previously kept two out of three because the mask was stamped onto the image rather than sampled by it
+- Preserve partial selection coverage in saved projects; projects written with the older one-bit format still open
 - Keep the marching-ants box over the selection when the viewport moves
 - Rescale selection masks saved by earlier versions into the document when a project is opened, rather than leaving them addressing pixels the document does not have
 - Correct the browser-support table to say what is actually verified on each engine rather than claiming blanket full support

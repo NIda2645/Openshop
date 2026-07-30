@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-yB2qCBBUkthEX6WGuNZqIYuayfClvCGQyZv/NO+cNHM=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-cFE4UFyME0lXKTi9kdlHfmEWoqmPyGTXI+riJ77fQm0=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.21.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3859,10 +3859,8 @@ const OS = {
         if (!selection?.mask || !Number.isInteger(selection.w) || !Number.isInteger(selection.h)) return null;
         const pixelCount = selection.w * selection.h;
         if (pixelCount < 1 || pixelCount > this._importLimits.maxImagePixels || selection.mask.length < pixelCount) return null;
-        const bytes = new Uint8Array(Math.ceil(pixelCount / 8));
-        for (let i = 0; i < pixelCount; i++) {
-            if (selection.mask[i]) bytes[i >> 3] |= 1 << (i & 7);
-        }
+        const bytes = new Uint8Array(pixelCount);
+        for (let i = 0; i < pixelCount; i++) bytes[i] = selection.mask[i];
         let binary = '';
         for (let offset = 0; offset < bytes.length; offset += 0x8000) {
             binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
@@ -3870,7 +3868,7 @@ const OS = {
         return {
             width: selection.w,
             height: selection.h,
-            encoding: 'bitset-v1',
+            encoding: 'coverage-v1',
             data: `data:application/vnd.openshop.selection;base64,${btoa(binary)}`
         };
     },
@@ -3879,16 +3877,19 @@ const OS = {
         const w = Math.round(Number(encoded.width || 0));
         const h = Math.round(Number(encoded.height || 0));
         const pixelCount = w * h;
-        if (encoded.encoding !== 'bitset-v1' || w < 1 || h < 1 || pixelCount > this._importLimits.maxImagePixels) {
+        const bitset = encoded.encoding === 'bitset-v1';
+        if ((!bitset && encoded.encoding !== 'coverage-v1') || w < 1 || h < 1 || pixelCount > this._importLimits.maxImagePixels) {
             throw new Error('Project selection mask is invalid');
         }
         const prefix = 'data:application/vnd.openshop.selection;base64,';
         if (typeof encoded.data !== 'string' || !encoded.data.startsWith(prefix)) throw new Error('Project selection data is invalid');
         const binary = atob(encoded.data.slice(prefix.length));
-        const expectedBytes = Math.ceil(pixelCount / 8);
+        const expectedBytes = bitset ? Math.ceil(pixelCount / 8) : pixelCount;
         if (binary.length !== expectedBytes) throw new Error('Project selection data is truncated');
         const mask = new Uint8Array(pixelCount);
-        for (let i = 0; i < pixelCount; i++) mask[i] = (binary.charCodeAt(i >> 3) >> (i & 7)) & 1;
+        // Projects written before coverage existed stored one bit per pixel.
+        if (bitset) for (let i = 0; i < pixelCount; i++) mask[i] = ((binary.charCodeAt(i >> 3) >> (i & 7)) & 1) ? 255 : 0;
+        else for (let i = 0; i < pixelCount; i++) mask[i] = binary.charCodeAt(i) & 0xff;
         return { w, h, mask };
     },
     _captureDocumentState() {
@@ -6750,28 +6751,36 @@ self.onmessage = function(event) {
         this.toast('Selection restored', 'info');
     },
 
+    // The rectangular marquee still keeps only a box, and its bounds are in
+    // screen pixels; promote it to a document-space mask before any operation
+    // that needs per-pixel coverage.
+    _maskFromMarqueeBounds() {
+        const b = this._selectionBounds;
+        if (!b) return null;
+        const vpt = this.canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+        const dw = Math.max(1, Math.round(this.canvasW));
+        const dh = Math.max(1, Math.round(this.canvasH));
+        const x0 = Math.round((b.x - vpt[4]) / (vpt[0] || 1));
+        const y0 = Math.round((b.y - vpt[5]) / (vpt[3] || 1));
+        const x1 = x0 + Math.round(b.w / (vpt[0] || 1));
+        const y1 = y0 + Math.round(b.h / (vpt[3] || 1));
+        const mask = new Uint8Array(dw * dh);
+        for (let y = Math.max(0, y0); y < Math.min(dh, y1); y++) {
+            for (let x = Math.max(0, x0); x < Math.min(dw, x1); x++) mask[y * dw + x] = 255;
+        }
+        return { mask, w:dw, h:dh };
+    },
     // Inverse selection: flip the mask
     invertSelection() {
         if (!this._selectionMask) {
-            // If we have a marquee but no mask, create mask from canvas bounds
-            const vpt = this.canvas.viewportTransform;
-            const cw = this.canvas.width, ch = this.canvas.height;
-            const mask = new Uint8Array(cw * ch);
-            if (this._selectionBounds) {
-                const b = this._selectionBounds;
-                for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
-                    if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) mask[y * cw + x] = 1;
-                }
-                this._selectionMask = { mask, w: cw, h: ch };
-            } else {
-                this.toast('No selection to invert', 'info');
-                return;
-            }
+            const promoted = this._maskFromMarqueeBounds();
+            if (!promoted) { this.toast('No selection to invert', 'info'); return; }
+            this._selectionMask = promoted;
         }
         const m = this._selectionMask;
         let minX = m.w, minY = m.h, maxX = 0, maxY = 0, count = 0;
         for (let i = 0; i < m.mask.length; i++) {
-            m.mask[i] = m.mask[i] ? 0 : 1;
+            m.mask[i] = m.mask[i] ? 0 : 255;
             if (m.mask[i]) {
                 const x = i % m.w, y = Math.floor(i / m.w);
                 if (x < minX) minX = x; if (x > maxX) maxX = x;
@@ -6871,15 +6880,7 @@ self.onmessage = function(event) {
     },
     _doModifySelection(type, px) {
         // Ensure we have a pixel mask
-        if (!this._selectionMask && this._selectionBounds) {
-            const cw = this.canvas.width, ch = this.canvas.height;
-            const mask = new Uint8Array(cw * ch);
-            const b = this._selectionBounds;
-            for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
-                if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) mask[y * cw + x] = 1;
-            }
-            this._selectionMask = { mask, w: cw, h: ch };
-        }
+        if (!this._selectionMask) this._selectionMask = this._maskFromMarqueeBounds();
         if (!this._selectionMask) return;
         const m = this._selectionMask;
         const w = m.w, h = m.h;
@@ -6890,7 +6891,7 @@ self.onmessage = function(event) {
                     if (m.mask[y * w + x]) {
                         for (let dy = -px; dy <= px; dy++) for (let dx = -px; dx <= px; dx++) {
                             const nx = x + dx, ny = y + dy;
-                            if (nx >= 0 && ny >= 0 && nx < w && ny < h && dx*dx + dy*dy <= px*px) newMask[ny * w + nx] = 1;
+                            if (nx >= 0 && ny >= 0 && nx < w && ny < h && dx*dx + dy*dy <= px*px) newMask[ny * w + nx] = 255;
                         }
                     }
                 }
@@ -6905,7 +6906,7 @@ self.onmessage = function(event) {
                         const nx = x + dx, ny = y + dy;
                         if (nx < 0 || ny < 0 || nx >= w || ny >= h || !m.mask[ny * w + nx]) keep = false;
                     }
-                    if (keep) newMask[y * w + x] = 1;
+                    if (keep) newMask[y * w + x] = 255;
                 }
                 break;
             case 'feather':
@@ -6928,7 +6929,7 @@ self.onmessage = function(event) {
                     }
                     tempA.set(tempB);
                 }
-                for (let i = 0; i < w * h; i++) newMask[i] = tempA[i] > 0.01 ? 1 : 0;
+                for (let i = 0; i < w * h; i++) newMask[i] = Math.max(0, Math.min(255, Math.round(tempA[i])));
                 break;
             case 'border':
                 // Select only the border pixels (edge of current selection)
@@ -6940,7 +6941,7 @@ self.onmessage = function(event) {
                         const nx = x + dx, ny = y + dy;
                         if (nx < 0 || ny < 0 || nx >= w || ny >= h || !m.mask[ny * w + nx]) isEdge = true;
                     }
-                    if (isEdge) newMask[y * w + x] = 1;
+                    if (isEdge) newMask[y * w + x] = 255;
                 }
                 break;
             case 'smooth':
@@ -6949,9 +6950,9 @@ self.onmessage = function(event) {
                     let sum = 0;
                     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
                         const nx = x + dx, ny = y + dy;
-                        if (nx >= 0 && ny >= 0 && nx < w && ny < h) sum += m.mask[ny * w + nx];
+                        if (nx >= 0 && ny >= 0 && nx < w && ny < h && m.mask[ny * w + nx]) sum++;
                     }
-                    newMask[y * w + x] = sum >= 5 ? 1 : 0;
+                    newMask[y * w + x] = sum >= 5 ? 255 : 0;
                 }
                 break;
         }
@@ -7006,7 +7007,9 @@ self.onmessage = function(event) {
         const ovCtx = ov.getContext('2d');
         const ovData = ovCtx.createImageData(m.w, m.h); const od = ovData.data;
         for (let i = 0; i < m.mask.length; i++) {
-            if (m.mask[i]) { od[i*4] = 80; od[i*4+1] = 140; od[i*4+2] = 255; od[i*4+3] = 50; }
+            if (!m.mask[i]) continue;
+            od[i*4] = 80; od[i*4+1] = 140; od[i*4+2] = 255;
+            od[i*4+3] = Math.round(50 * m.mask[i] / 255);
         }
         ovCtx.putImageData(ovData, 0, 0);
         this.canvas.getObjects().filter(o => o._wandOverlay).forEach(o => this.canvas.remove(o));
@@ -10390,7 +10393,8 @@ self.onmessage = async function(event) {
         ctx.fill();
         const data = ctx.getImageData(0, 0, dw, dh).data;
         const mask = new Uint8Array(dw * dh);
-        for (let i = 0; i < mask.length; i++) if (data[i * 4 + 3] > 127) mask[i] = 1;
+        // The rasteriser antialiases the polygon edge; keep that as coverage.
+        for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3];
         return { mask, w:dw, h:dh };
     },
     _lassoDoubleClick() {
@@ -10404,7 +10408,7 @@ self.onmessage = async function(event) {
             return { x:(x - vpt[4]) / (vpt[0] || 1), y:(y - vpt[5]) / (vpt[3] || 1) };
         });
         const raster = this._rasterizePolygonMask(points);
-        const count = this._setPixelSelectionMask(raster.mask, raster.w, raster.h);
+        const count = this._setPixelSelectionMask(raster.mask, raster.w, raster.h, { coverage:true });
         if (!count) { this.toast('Lasso selection is outside the document', 'info'); return; }
         this._placeSelectionBox({ borderRadius:'0' });
         this.toast('Lasso selection: ' + count.toLocaleString() + ' px', 'info');
@@ -13693,20 +13697,24 @@ self.onmessage = async function(e) {
             // Magic wand: use pixel mask
             const mask = this._selectionMask;
             const matrix = target.calcTransformMatrix();
-            const inv = fabric.util.invertTransform(matrix);
             const imgData = ctx.getImageData(0, 0, oc.width, oc.height);
             const d = imgData.data;
-            for (let sy = 0; sy < mask.h; sy++) {
-                for (let sx = 0; sx < mask.w; sx++) {
-                    if (!mask.mask[sy * mask.w + sx]) continue;
-                    // Document pixel to image-local; the mask is already in
-                    // document space, so no viewport conversion belongs here.
-                    const local = fabric.util.transformPoint({ x: sx, y: sy }, inv);
-                    const ix = Math.round(local.x + oc.width / 2), iy = Math.round(local.y + oc.height / 2);
-                    if (ix >= 0 && iy >= 0 && ix < oc.width && iy < oc.height) {
-                        const i = (iy * oc.width + ix) * 4;
-                        d[i + 3] = 0; // Set alpha to 0
-                    }
+            // Walk image pixels and ask the mask, rather than walking the mask
+            // and stamping image pixels: a layer scaled below 100% has more
+            // image pixels than document pixels, and stamping left gaps.
+            // The mask is document-space, so the viewport plays no part here.
+            for (let iy = 0; iy < oc.height; iy++) {
+                for (let ix = 0; ix < oc.width; ix++) {
+                    const doc = fabric.util.transformPoint(
+                        { x:ix + 0.5 - oc.width / 2, y:iy + 0.5 - oc.height / 2 },
+                        matrix
+                    );
+                    const dx = Math.floor(doc.x), dy = Math.floor(doc.y);
+                    if (dx < 0 || dy < 0 || dx >= mask.w || dy >= mask.h) continue;
+                    const coverage = mask.mask[dy * mask.w + dx];
+                    if (!coverage) continue;
+                    const alphaIndex = (iy * oc.width + ix) * 4 + 3;
+                    d[alphaIndex] = Math.round(d[alphaIndex] * (1 - coverage / 255));
                 }
             }
             ctx.putImageData(imgData, 0, 0);
@@ -14903,7 +14911,7 @@ self.onmessage = async function(e) {
             for (let dx = 0; dx < dw; dx++) {
                 const sx = Math.round(dx * scaleX + vpt[4]);
                 if (sx < 0 || sx >= sw) continue;
-                if (mask[sy * sw + sx]) out[dy * dw + dx] = 1;
+                out[dy * dw + dx] = mask[sy * sw + sx];
             }
         }
         return { mask:out, w:dw, h:dh };
@@ -14922,15 +14930,23 @@ self.onmessage = async function(e) {
             const sy = Math.min(selection.h - 1, Math.floor(y * selection.h / dh));
             for (let x = 0; x < dw; x++) {
                 const sx = Math.min(selection.w - 1, Math.floor(x * selection.w / dw));
-                if (selection.mask[sy * selection.w + sx]) out[y * dw + x] = 1;
+                out[y * dw + x] = selection.mask[sy * selection.w + sx];
             }
         }
         return { mask:out, w:dw, h:dh };
     },
-    _setPixelSelectionMask(mask, w, h, { space = 'document' } = {}) {
+    // Mask values are 0-255 coverage, not flags. Every producer except feather
+    // and the antialiased lasso edge selects whole pixels and writes 1, so
+    // normalise here instead of asking each of them to remember to write 255.
+    _setPixelSelectionMask(mask, w, h, { space = 'document', coverage = false } = {}) {
         if (space === 'screen') {
             const converted = this._screenMaskToDocument(mask, w, h);
             mask = converted.mask; w = converted.w; h = converted.h;
+        }
+        if (!coverage) {
+            const normalized = new Uint8Array(mask.length);
+            for (let i = 0; i < mask.length; i++) normalized[i] = mask[i] ? 255 : 0;
+            mask = normalized;
         }
         let count = 0;
         for (let i = 0; i < mask.length; i++) if (mask[i]) count++;
