@@ -1132,7 +1132,7 @@ describe('OpenShop core object', () => {
     expect(OS._isDirty).toBe(true);
     expect(OS._autoSaveDirty).toBe(true);
     expect(OS._clearAutoSave).not.toHaveBeenCalled();
-    expect(document.getElementById('persistence-state-label').textContent).toBe('Saving');
+    expect(document.getElementById('persistence-state-label').textContent).toBe('Saving…');
 
     finishClose();
     await expect(pending).resolves.toBe(true);
@@ -1142,7 +1142,7 @@ describe('OpenShop core object', () => {
     expect(OS._isDirty).toBe(false);
     expect(OS._autoSaveDirty).toBe(false);
     expect(OS._persistenceState).toBe('saved');
-    expect(document.getElementById('persistence-state-label').textContent).toBe('Saved');
+    expect(document.getElementById('persistence-state-label').textContent).toBe('All changes saved');
     expect(document.title).not.toMatch(/^\*/);
   });
 

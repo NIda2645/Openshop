@@ -51,12 +51,12 @@ test('exposes clean, dirty, saving, and saved project states', async ({ page }) 
   });
 
   await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'clean');
-  await expect(page.locator('#persistence-state-label')).toHaveText('Clean');
+  await expect(page.locator('#persistence-state-label')).toHaveText('All changes saved');
   expect(await unloadPrevented()).toBe(false);
 
   await page.locator('button[title="New Layer"]').click();
   await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'dirty');
-  await expect(page.locator('#persistence-state-label')).toHaveText('Unsaved');
+  await expect(page.locator('#persistence-state-label')).toHaveText('Unsaved changes');
   await expect(page).toHaveTitle(/^\* /);
   expect(await unloadPrevented()).toBe(true);
 
@@ -72,7 +72,7 @@ test('exposes clean, dirty, saving, and saved project states', async ({ page }) 
   await expect(savePromise).resolves.toBe(true);
 
   await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'saved');
-  await expect(page.locator('#persistence-state-label')).toHaveText('Saved');
+  await expect(page.locator('#persistence-state-label')).toHaveText('All changes saved');
   await expect(page).not.toHaveTitle(/^\* /);
   expect(await unloadPrevented()).toBe(false);
 });

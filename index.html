@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-nStvKpRas/t3oC+ADVJDzUdaZK4BeSiY4bUz5++Sqc4=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-RhZKy1PRbapPh1Pg7NZYh3hOJqO8X5GbZ5GLZF0Sesg=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -303,7 +303,7 @@ animation:marchAnts .4s linear infinite}
 .modal-overlay.recovery-overlay{z-index:30500}
 .modal{background:var(--bg-depth-2);border:1px solid var(--border);border-radius:12px;padding:24px;min-width:min(360px,100%);max-width:min(520px,100%);box-shadow:0 24px 64px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset;transform:translateY(12px) scale(.98);transition:transform .25s var(--ease-out);max-height:min(80vh,100%);overflow:auto;overscroll-behavior:contain}
 .modal-overlay.show .modal{transform:translateY(0) scale(1)}
-.filter-panel{position:fixed;z-index:10001;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:12px;padding:0;min-width:270px;max-width:310px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset;opacity:0;transform:translateY(6px) scale(.98);transition:opacity .2s var(--ease-out),transform .2s var(--ease-out)}
+.filter-panel{position:fixed;z-index:9800;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:12px;padding:0;min-width:270px;max-width:310px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset;opacity:0;transform:translateY(6px) scale(.98);transition:opacity .2s var(--ease-out),transform .2s var(--ease-out)}
 .filter-panel.show{opacity:1;transform:translateY(0) scale(1)}
 .filter-panel-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 8px;cursor:move;user-select:none;border-bottom:1px solid var(--border)}
 .filter-panel-header h3{font-size:13px;font-weight:600;color:var(--text-primary);margin:0}
@@ -331,7 +331,7 @@ animation:marchAnts .4s linear infinite}
 .preset-btn:hover{border-color:var(--accent);color:var(--text-primary);background:var(--accent-dim)}
 
 /* Toast */
-#toast-container{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:20000;display:flex;flex-direction:column;gap:6px;align-items:center}
+#toast-container{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:32500;display:flex;flex-direction:column;gap:6px;align-items:center}
 
 /* Color Range Dialog */
 .cr-dialog{display:flex;gap:16px;min-width:520px}
@@ -356,7 +356,7 @@ animation:marchAnts .4s linear infinite}
 .cr-eyedrop-btn:hover,.cr-eyedrop-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
 .cr-invert-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary)}
 .cr-invert-row input[type="checkbox"]{accent-color:var(--accent)}
-.toast{padding:10px 18px;border-radius:8px;font-size:12.5px;color:var(--text-primary);background:var(--bg-depth-2);border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.45);opacity:0;transform:translateY(8px) scale(.96);transition:all .25s var(--ease-out);white-space:nowrap;backdrop-filter:blur(12px)}
+.toast{padding:10px 18px;border-radius:8px;font-size:12.5px;color:var(--text-primary);background:var(--bg-depth-2);border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.45);opacity:0;transform:translateY(8px) scale(.96);transition:opacity .25s var(--ease-out),transform .25s var(--ease-out);max-width:min(520px,92vw);white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;backdrop-filter:blur(12px)}
 .toast.show{opacity:1;transform:translateY(0) scale(1)}.toast.success{border-left:3px solid var(--success)}.toast.error{border-left:3px solid var(--danger)}.toast.info{border-left:3px solid var(--accent)}
 
 /* === WELCOME SCREEN === */
@@ -628,7 +628,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 #liquify-canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
 
 /* === TIMELINE / ANIMATION === */
-#timeline-panel{position:fixed;bottom:var(--statusbar-h);left:var(--toolbar-w);right:var(--panel-width);height:140px;background:var(--bg-depth-1);border-top:1px solid var(--border);border-radius:8px 8px 0 0;z-index:20000;display:none;flex-direction:column;box-shadow:0 -4px 16px rgba(0,0,0,.3)}
+#timeline-panel{position:fixed;bottom:var(--statusbar-h);left:var(--toolbar-w);right:var(--panel-width);height:140px;background:var(--bg-depth-1);border-top:1px solid var(--border);border-radius:8px 8px 0 0;z-index:9600;display:none;flex-direction:column;box-shadow:0 -4px 16px rgba(0,0,0,.3)}
 #timeline-panel.visible{display:flex}
 #timeline-header{height:32px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}
 #timeline-header .btn{padding:2px 8px;font-size:11px}
@@ -646,7 +646,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .frame-thumb:hover .frame-del{opacity:1}
 
 /* === ACTION / MACRO PANEL === */
-#macro-panel{position:fixed;right:var(--panel-width);bottom:170px;width:260px;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:8px;z-index:20001;display:none;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+#macro-panel{position:fixed;right:var(--panel-width);bottom:170px;width:260px;background:var(--bg-depth-1);border:1px solid var(--border);border-radius:8px;z-index:9700;display:none;box-shadow:0 4px 20px rgba(0,0,0,.4)}
 #macro-panel.visible{display:block}
 #macro-header{height:30px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid var(--border)}
 #macro-header span{font-size:11px;color:var(--text-secondary);flex:1}
@@ -2429,14 +2429,14 @@ body{
 </div>
 
 <!-- ===== STATUS BAR ===== -->
-<div id="statusbar" role="status" aria-label="Status bar" aria-live="polite">
+<div id="statusbar" role="status" aria-label="Status bar" aria-live="off">
     <span id="canvas-dims">1920 x 1080</span><span class="sep"></span>
     <span id="zoom-display" data-os-click="click-103">100%</span><span class="sep"></span>
-    <span id="cursor-pos">X: 0 Y: 0</span><span class="sep"></span>
+    <span id="cursor-pos" aria-hidden="true">X: 0 Y: 0</span><span class="sep"></span>
     <span id="tool-display">Select</span><span style="flex:1"></span>
-    <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" data-os-click="click-193"><i></i><span id="offline-state-label">Network-first</span></button><span class="sep"></span>
+    <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" data-os-click="click-193"><i></i><span id="offline-state-label">Checking offline support</span></button><span class="sep"></span>
     <span id="object-count">0 objects</span><span class="sep"></span>
-    <span class="ready-state" id="persistence-state" data-state="clean"><i></i><span id="persistence-state-label">Clean</span></span>
+    <span class="ready-state" id="persistence-state" data-state="clean" aria-live="polite"><i></i><span id="persistence-state-label">All changes saved</span></span>
 </div>
 <div id="ai-progress" role="dialog" aria-modal="true" aria-label="Background processing" aria-live="polite">
     <div class="ai-box">
@@ -2447,7 +2447,7 @@ body{
         <div class="ai-actions" id="compute-actions" hidden><button type="button" class="btn btn-danger" id="compute-cancel">Cancel</button></div>
     </div>
 </div>
-<div id="toast-container" role="alert" aria-live="assertive" aria-atomic="true"></div>
+<div id="toast-container" aria-hidden="true"></div>
 <!-- ===== COMMAND PALETTE ===== -->
 <div id="cmd-palette" role="dialog" aria-label="Command palette" data-os-click="click-194">
     <div id="cmd-box">
@@ -3568,7 +3568,13 @@ const OS = {
         return this._documentGeneration;
     },
     _setPersistenceState(state, error = null) {
-        const labels = { clean:'Clean', dirty:'Unsaved', saving:'Saving', saved:'Saved', error:'Save failed' };
+        const labels = {
+            clean:'All changes saved',
+            dirty:'Unsaved changes',
+            saving:'Saving…',
+            saved:'All changes saved',
+            error:'Save failed'
+        };
         this._persistenceState = labels[state] ? state : 'error';
         this._lastSaveError = error || null;
         const indicator = document.getElementById('persistence-state');
@@ -14924,8 +14930,23 @@ self.onmessage = async function(e) {
         const el=document.getElementById('toast-container');
         const t=document.createElement('div'); t.className=`toast ${type}`; t.textContent=msg;
         el.appendChild(t); requestAnimationFrame(()=>t.classList.add('show'));
+        // The visible container is aria-hidden; the canvas mirror is the single
+        // announcement channel so each message is read exactly once.
         this._announceAccessibility(msg);
-        setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},2500);
+        let dismissed = false;
+        const dismiss = () => {
+            if (dismissed) return;
+            dismissed = true;
+            t.classList.remove('show');
+            setTimeout(() => t.remove(), 300);
+        };
+        // Errors need long enough to read and a way to keep them on screen.
+        const base = type === 'error' ? 9000 : 2500;
+        const duration = Math.min(20000, base + Math.max(0, String(msg).length - 40) * 45);
+        const timer = setTimeout(dismiss, duration);
+        t.addEventListener('click', () => { clearTimeout(timer); dismiss(); });
+        t.addEventListener('mouseenter', () => clearTimeout(timer));
+        t.title = 'Click to dismiss';
     },
 };
 
@@ -14935,20 +14956,33 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
+    const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
     const overlays = [...document.querySelectorAll('.modal-overlay')];
     const overlay = overlays.at(-1);
     if (overlay) {
         const dismiss = overlay.querySelector('[data-modal-cancel],[data-modal-close]');
         if (!dismiss) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        stop();
         dismiss.click();
+        return;
+    }
+    // Modeless surfaces are dismissible too; without this Escape fell through
+    // to the canvas and cleared the selection while the panel stayed open.
+    const liquify = document.getElementById('liquify-overlay');
+    if (liquify?.classList.contains('visible')) { stop(); OS.closeLiquify(); return; }
+    const compare = document.getElementById('ba-overlay');
+    if (compare?.classList.contains('visible')) { stop(); OS.closeBeforeAfter(); return; }
+    const panels = [...document.querySelectorAll('.filter-panel')];
+    const panel = panels.at(-1);
+    if (panel) {
+        const cancel = panel.querySelector('[data-fp-cancel],[data-modal-cancel]');
+        stop();
+        if (cancel) cancel.click(); else panel.remove();
         return;
     }
     const welcome = document.getElementById('welcome-overlay');
     if (welcome && !welcome.classList.contains('hidden') && welcome.style.display !== 'none') {
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        stop();
         OS.dismissWelcome();
     }
 });

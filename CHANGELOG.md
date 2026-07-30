@@ -20,6 +20,11 @@ All notable changes to Openshop will be documented in this file.
 - Validate numeric dialog input instead of silently substituting defaults: New Image, Resize Canvas, and Preferences now clamp to their declared ranges, so a negative or empty value can no longer create an invalid canvas or disable undo by setting a non-positive history limit
 - Reject invalid amounts in Expand, Contract, and Border Selection, and keep the existing selection when the operation would clear it, instead of wiping it and reporting "expanded by NaNpx"
 - Show the accent colour currently in effect when Preferences opens, so applying an unrelated preference no longer resets a customised accent
+- Keep toasts readable: errors stay on screen long enough to read, long messages wrap instead of overflowing, hovering pauses dismissal, clicking dismisses, and toasts are no longer hidden behind the timeline, macro, Liquify, or before/after surfaces
+- Close filter panels, Liquify, and before/after with Escape instead of falling through to the canvas and clearing the selection while the panel stays open
+- Keep modeless workspace panels below modal dialogs so a dialog is never overlapped by an un-dimmed panel
+- Stop the status bar from re-announcing on every pointer move, and announce each toast once instead of twice
+- Replace version-control jargon in the save-state and offline chips with plain language
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
