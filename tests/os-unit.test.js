@@ -1603,3 +1603,168 @@ describe('release metadata', () => {
     expect(offlineRevision, 'offline spec productionRevision mirrors sw.js').toBe(shellRevision);
   });
 });
+
+describe('history eviction, coalescing, and commit guards', () => {
+  const primeHistory = (OS) => {
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS._captureDocumentState = vi.fn(() => ({ state: OS.__state ?? 'base' }));
+    OS._initializeHistory('Baseline');
+    return OS;
+  };
+
+  it('keeps the baseline snapshot correct when the history cap evicts entries', () => {
+    const OS = primeHistory(loadOpenShop());
+    OS.maxHistory = 3;
+
+    for (let step = 1; step <= 5; step++) {
+      OS.__state = `step-${step}`;
+      OS.saveHistory(`Step ${step}`);
+    }
+
+    expect(OS.history).toHaveLength(3);
+    expect(OS.history.map(entry => entry.action)).toEqual(['Step 3', 'Step 4', 'Step 5']);
+    expect(OS.historyIdx).toBe(2);
+    // The dropped entry's own snapshot becomes the new baseline, so undoing
+    // all the way back still lands on a real document rather than null.
+    expect(JSON.parse(OS._historyBaseSnapshot)).toEqual({ state: 'step-2' });
+    expect(OS._historyBaseLabel).toBe('Step 2');
+  });
+
+  it('prefers a retained entry beforeSnapshot over the dropped snapshot as the new baseline', () => {
+    const OS = primeHistory(loadOpenShop());
+    OS.maxHistory = 2;
+
+    OS.__state = 'a';
+    OS.saveHistory('A');
+    OS.__state = 'b';
+    // A transaction records where it started, which is the truthful baseline
+    // once the entry in front of it is evicted.
+    OS._pushHistoryEntry('B', JSON.stringify({ state: 'b' }), { beforeSnapshot: JSON.stringify({ state: 'before-b' }) });
+    OS.__state = 'c';
+    OS.saveHistory('C');
+
+    expect(OS.history.map(entry => entry.action)).toEqual(['B', 'C']);
+    expect(JSON.parse(OS._historyBaseSnapshot)).toEqual({ state: 'before-b' });
+  });
+
+  it('coalesces same-key entries while keeping the original pre-coalesce state', () => {
+    const OS = primeHistory(loadOpenShop());
+
+    // Give the first entry a real pre-drag snapshot so its survival through
+    // the coalesce is observable rather than vacuously null.
+    const preDrag = JSON.stringify({ state: 'before-drag' });
+    OS._pushHistoryEntry('Opacity', JSON.stringify({ state: 'slider-1' }), {
+      coalesceKey: 'opacity:layer-1', beforeSnapshot: preDrag
+    });
+    const firstBefore = OS.history[0].beforeSnapshot;
+    expect(firstBefore).toBe(preDrag);
+    OS.__state = 'slider-2';
+    OS.saveHistory('Opacity', { coalesceKey: 'opacity:layer-1' });
+    OS.__state = 'slider-3';
+    OS.saveHistory('Opacity', { coalesceKey: 'opacity:layer-1' });
+
+    // Three drags of one slider are one undo step, not three.
+    expect(OS.history).toHaveLength(1);
+    expect(JSON.parse(OS.history[0].snapshot)).toEqual({ state: 'slider-3' });
+    expect(OS.history[0].beforeSnapshot).toBe(firstBefore);
+
+    // A different key starts a new entry rather than folding in.
+    OS.__state = 'other';
+    OS.saveHistory('Opacity', { coalesceKey: 'opacity:layer-2' });
+    expect(OS.history).toHaveLength(2);
+  });
+
+  it('discards a filter result when the document moved on, without touching the canvas', () => {
+    const OS = loadOpenShop();
+    const active = { name: 'Photo', type: 'image' };
+    const canvas = createCanvasMock([active]);
+    canvas.setActiveObject(active);
+    OS.canvas = canvas;
+    quietUiMethods(OS);
+    OS.toast = vi.fn();
+    OS._replaceActiveImage = vi.fn();
+
+    const info = {
+      active,
+      canvas: { width: 1, height: 1, toDataURL: () => 'data:image/png;base64,AA' },
+      ctx: { putImageData: vi.fn() },
+      imgData: { data: new Uint8ClampedArray(4), width: 1, height: 1 },
+      editGuard: {
+        generation: OS._documentGeneration,
+        revision: OS._documentRevision,
+        targetId: OS._ensureObjectId(active)
+      }
+    };
+
+    OS._documentRevision += 1;
+    const committed = OS._commitImageData(info, 'Posterize');
+
+    return Promise.resolve(committed).then(result => {
+      expect(result).toBe(false);
+      expect(OS._replaceActiveImage).not.toHaveBeenCalled();
+      expect(info.ctx.putImageData).not.toHaveBeenCalled();
+      expect(canvas.getObjects()).toEqual([active]);
+      expect(OS.toast).toHaveBeenCalledWith(
+        'Filter result discarded because the document or target layer changed',
+        'info'
+      );
+    });
+  });
+
+  it('rejects a commit whose target was removed from the canvas', async () => {
+    const OS = loadOpenShop();
+    const active = { name: 'Photo', type: 'image' };
+    const canvas = createCanvasMock([active]);
+    canvas.setActiveObject(active);
+    OS.canvas = canvas;
+    quietUiMethods(OS);
+    OS.toast = vi.fn();
+    OS._replaceActiveImage = vi.fn();
+
+    const guard = {
+      generation: OS._documentGeneration,
+      revision: OS._documentRevision,
+      targetId: OS._ensureObjectId(active)
+    };
+    canvas.remove(active);
+
+    const result = await OS._commitImageData({
+      active,
+      canvas: { width: 1, height: 1, toDataURL: () => 'data:image/png;base64,AA' },
+      ctx: { putImageData: vi.fn() },
+      imgData: { data: new Uint8ClampedArray(4), width: 1, height: 1 },
+      editGuard: guard
+    }, 'Posterize');
+
+    // The weaker of the three old guards let this through and left the next
+    // stage to reject it with a different message.
+    expect(result).toBe(false);
+    expect(OS._replaceActiveImage).not.toHaveBeenCalled();
+  });
+
+  it('rejects every pending filter job and reports it when the worker crashes', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    OS.toast = vi.fn();
+
+    const listeners = {};
+    const worker = {
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      addEventListener: (type, handler) => { listeners[type] = handler; }
+    };
+    OS._getFilterWorker = () => worker;
+
+    const imgData = { data: new Uint8ClampedArray(4), width: 1, height: 1 };
+    const pending = OS._runFilterJob({ backend: 'worker', op: 'sharpen' }, imgData, 1, 1, {});
+
+    expect(typeof listeners.error).toBe('function');
+    listeners.error({ message: 'worker exploded' });
+
+    await expect(pending).rejects.toBeDefined();
+    // The callback registry must not leak the dead job.
+    expect(OS._filterJobCallbacks).toEqual({});
+  });
+});
