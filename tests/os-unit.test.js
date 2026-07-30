@@ -12,6 +12,8 @@ import {
 describe('OpenShop core object', () => {
   beforeEach(() => {
     localStorage.clear();
+    window.showSaveFilePicker = undefined;
+    Object.defineProperty(navigator, 'storage', { configurable: true, value: undefined });
     installFabricMock();
     installModalDelegation();
     mountEditorDom();
@@ -570,6 +572,145 @@ describe('OpenShop core object', () => {
     expect(hostile._openShop.w).toBe(640);
     expect(hostile.objects[0].name).not.toContain('onerror=');
     expect(hostile.objects[0].src).not.toContain('javascript:');
+  });
+
+  it('clears dirty and recovery state only after an acknowledged project write', async () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    quietUiMethods(OS);
+    OS._clearAutoSave = vi.fn().mockResolvedValue(true);
+    OS.saveHistory('Edit subject');
+
+    let finishClose;
+    const writable = {
+      write: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn(() => new Promise((resolve) => { finishClose = resolve; })),
+      abort: vi.fn()
+    };
+    OS._projectFileHandle = { createWritable: vi.fn().mockResolvedValue(writable) };
+
+    const pending = OS.saveProject();
+    await vi.waitFor(() => expect(writable.close).toHaveBeenCalled());
+    expect(OS._isDirty).toBe(true);
+    expect(OS._autoSaveDirty).toBe(true);
+    expect(OS._clearAutoSave).not.toHaveBeenCalled();
+    expect(document.getElementById('persistence-state-label').textContent).toBe('Saving');
+
+    finishClose();
+    await expect(pending).resolves.toBe(true);
+
+    expect(writable.write).toHaveBeenCalledWith(expect.stringContaining('"kind":"openshop-document"'));
+    expect(OS._clearAutoSave).toHaveBeenCalledTimes(1);
+    expect(OS._isDirty).toBe(false);
+    expect(OS._autoSaveDirty).toBe(false);
+    expect(OS._persistenceState).toBe('saved');
+    expect(document.getElementById('persistence-state-label').textContent).toBe('Saved');
+    expect(document.title).not.toMatch(/^\*/);
+  });
+
+  it('preserves dirty recovery state when a project write fails or is cancelled', async () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    quietUiMethods(OS);
+    OS._clearAutoSave = vi.fn().mockResolvedValue(true);
+    OS.saveHistory('Edit subject');
+
+    const writable = {
+      write: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockRejectedValue(new Error('Disk full')),
+      abort: vi.fn().mockResolvedValue(undefined)
+    };
+    OS._projectFileHandle = { createWritable: vi.fn().mockResolvedValue(writable) };
+
+    await expect(OS.saveProject()).resolves.toBe(false);
+    expect(writable.abort).toHaveBeenCalled();
+    expect(OS._projectFileHandle).toBeNull();
+    expect(OS._clearAutoSave).not.toHaveBeenCalled();
+    expect(OS._isDirty).toBe(true);
+    expect(OS._autoSaveDirty).toBe(true);
+    expect(OS._persistenceState).toBe('error');
+    expect(OS.toast).toHaveBeenCalledWith('Project save failed: Disk full', 'error');
+
+    const cancelled = Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+    window.showSaveFilePicker = vi.fn().mockRejectedValue(cancelled);
+    await expect(OS.saveProject()).resolves.toBe(false);
+    expect(OS._isDirty).toBe(true);
+    expect(OS._persistenceState).toBe('dirty');
+    expect(OS._clearAutoSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps edits made during a project write dirty after the older snapshot commits', async () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    quietUiMethods(OS);
+    OS._clearAutoSave = vi.fn().mockResolvedValue(true);
+    OS.saveHistory('First edit');
+
+    let finishClose;
+    const close = vi.fn(() => new Promise((resolve) => { finishClose = resolve; }));
+    OS._projectFileHandle = {
+      createWritable: vi.fn().mockResolvedValue({
+        write: vi.fn().mockResolvedValue(undefined),
+        close,
+        abort: vi.fn()
+      })
+    };
+
+    const pending = OS.saveProject();
+    await vi.waitFor(() => expect(close).toHaveBeenCalled());
+    OS.saveHistory('Newer edit');
+    finishClose();
+    await expect(pending).resolves.toBe(true);
+
+    expect(OS._isDirty).toBe(true);
+    expect(OS._autoSaveDirty).toBe(true);
+    expect(OS._persistenceState).toBe('dirty');
+    expect(OS._clearAutoSave).not.toHaveBeenCalled();
+    expect(OS.toast).toHaveBeenCalledWith('Saved snapshot; newer edits remain unsaved', 'info');
+  });
+
+  it('waits for the worker acknowledgement before clearing autosave work', async () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    quietUiMethods(OS);
+    OS.saveHistory('Autosave edit');
+
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: {
+        getDirectory: vi.fn().mockResolvedValue({
+          getFileHandle: vi.fn().mockRejectedValue(new Error('Main-thread writable unavailable'))
+        })
+      }
+    });
+    let acknowledge;
+    OS._writeAutoSaveWithWorker = vi.fn(() => new Promise((resolve) => { acknowledge = resolve; }));
+
+    const pending = OS._autoSave();
+    await vi.waitFor(() => expect(OS._writeAutoSaveWithWorker).toHaveBeenCalled());
+    expect(OS._persistenceState).toBe('saving');
+    expect(OS._autoSaveDirty).toBe(true);
+
+    acknowledge(true);
+    await expect(pending).resolves.toBe(true);
+    expect(OS._autoSaveDirty).toBe(false);
+    expect(OS._isDirty).toBe(true);
+    expect(OS._persistenceState).toBe('dirty');
+
+    OS._markDocumentDirty();
+    OS._writeAutoSaveWithWorker = vi.fn().mockRejectedValue(new Error('Worker write failed'));
+    await expect(OS._autoSave()).resolves.toBe(false);
+    expect(OS._autoSaveDirty).toBe(true);
+    expect(OS._isDirty).toBe(true);
+    expect(OS._persistenceState).toBe('error');
   });
 
   it('offers recovery with event-delegated buttons and restores or discards', async () => {

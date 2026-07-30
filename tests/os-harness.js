@@ -183,6 +183,7 @@ export function mountEditorDom() {
     <select id="layer-blend"><option value="source-over"></option></select>
     <div id="history-list"></div>
     <div id="object-count"></div>
+    <span id="persistence-state" data-state="clean"><i></i><span id="persistence-state-label">Clean</span></span>
     <div id="toast-container"></div>
     <div id="recent-files-area"></div>
     <div id="palette-default"></div>

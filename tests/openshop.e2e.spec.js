@@ -36,6 +36,43 @@ test('loads the editor shell and supports core UI interactions', async ({ page }
   expect(pageErrors).toEqual([]);
 });
 
+test('exposes clean, dirty, saving, and saved project states', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const unloadPrevented = () => page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+
+  await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'clean');
+  await expect(page.locator('#persistence-state-label')).toHaveText('Clean');
+  expect(await unloadPrevented()).toBe(false);
+
+  await page.locator('button[title="New Layer"]').click();
+  await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'dirty');
+  await expect(page.locator('#persistence-state-label')).toHaveText('Unsaved');
+  await expect(page).toHaveTitle(/^\* /);
+  expect(await unloadPrevented()).toBe(true);
+
+  await page.evaluate(() => {
+    window.showSaveFilePicker = undefined;
+    OS._clearAutoSave = () => new Promise((resolve) => { window.__finishRecoveryClear = resolve; });
+  });
+  const downloadPromise = page.waitForEvent('download');
+  const savePromise = page.evaluate(() => OS.saveProject());
+  await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'saving');
+  await downloadPromise;
+  await page.evaluate(() => window.__finishRecoveryClear(true));
+  await expect(savePromise).resolves.toBe(true);
+
+  await expect(page.locator('#persistence-state')).toHaveAttribute('data-state', 'saved');
+  await expect(page.locator('#persistence-state-label')).toHaveText('Saved');
+  await expect(page).not.toHaveTitle(/^\* /);
+  expect(await unloadPrevented()).toBe(false);
+});
+
 test('applies a one-click pixel filter to an active image layer', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -422,10 +459,17 @@ test('round-trips one document state through save, open, recovery, undo, and red
     },
     activeLayer: OS.layers[OS.activeLayerIdx]?.name,
     activeObject: OS.canvas.getActiveObject()?.name || null,
-    animation: [OS._animFrames.length, OS._animIdx]
+    animation: [OS._animFrames.length, OS._animIdx],
+    projectHandleCleared: OS._projectFileHandle === null
   }));
 
-  await page.evaluate(() => OS.createNewDocument(64, 64));
+  const newDocumentClearedHandle = await page.evaluate(() => {
+    OS._projectFileHandle = { stale: true };
+    OS.createNewDocument(64, 64, { resetProject: true });
+    return OS._projectFileHandle === null;
+  });
+  expect(newDocumentClearedHandle).toBe(true);
+  await page.evaluate(() => { OS._projectFileHandle = { stale: true }; });
   await page.locator('#project-input').setInputFiles({
     name: 'golden.openshop.json',
     mimeType: 'application/json',
@@ -435,6 +479,7 @@ test('round-trips one document state through save, open, recovery, undo, and red
   const opened = await summarize();
 
   await page.evaluate(async (text) => {
+    OS._projectFileHandle = { stale: true };
     OS.createNewDocument(80, 80);
     await OS._restoreRecoveryText(text);
   }, projectText);
@@ -468,7 +513,8 @@ test('round-trips one document state through save, open, recovery, undo, and red
     selection: { bounds: { x: 1, y: 1, w: 2, h: 2 }, selected: 4 },
     activeLayer: 'Labels',
     activeObject: 'Top label',
-    animation: [2, 1]
+    animation: [2, 1],
+    projectHandleCleared: true
   };
   expect(opened).toEqual(golden);
   expect(recovered).toEqual(golden);

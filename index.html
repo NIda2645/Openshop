@@ -998,6 +998,12 @@ body{
   background:var(--success);
   box-shadow:0 0 10px rgba(65,215,160,.55);
 }
+.ready-state[data-state="dirty"]{color:var(--warning)}
+.ready-state[data-state="dirty"] i{background:var(--warning);box-shadow:0 0 10px rgba(255,190,92,.5)}
+.ready-state[data-state="saving"]{color:var(--accent)}
+.ready-state[data-state="saving"] i{background:var(--accent);box-shadow:0 0 10px rgba(78,140,255,.55);animation:recBlink 1s ease-in-out infinite}
+.ready-state[data-state="error"]{color:var(--danger)}
+.ready-state[data-state="error"] i{background:var(--danger);box-shadow:0 0 10px rgba(255,99,125,.55)}
 
 .btn{
   border-color:#31445e;
@@ -2299,7 +2305,7 @@ body{
     <span id="cursor-pos">X: 0 Y: 0</span><span class="sep"></span>
     <span id="tool-display">Select</span><span style="flex:1"></span>
     <span id="object-count">0 objects</span><span class="sep"></span>
-    <span class="ready-state"><i></i>Ready</span>
+    <span class="ready-state" id="persistence-state" data-state="clean"><i></i><span id="persistence-state-label">Clean</span></span>
 </div>
 <div id="ai-progress" role="dialog" aria-label="AI processing" aria-live="polite">
     <div class="ai-box">
@@ -2404,6 +2410,7 @@ const OS = {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.download = filename; a.href = url; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return true;
     },
     _locales: { en: {}, zh: {
         "Actions / Macros": "动作 / 宏",
@@ -2681,6 +2688,13 @@ const OS = {
     _documentSchemaVersion: 1,
     _idSequence: 0,
     _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow'],
+    _isDirty: false,
+    _persistenceState: 'clean',
+    _documentRevision: 0,
+    _documentGeneration: 0,
+    _savedSnapshot: null,
+    _savePromise: null,
+    _lastSaveError: null,
     history: [], historyIdx: -1, maxHistory: 60,
     zoom: 1, canvasW: 1920, canvasH: 1080,
     _shapeStart: null, _tempShape: null,
@@ -2761,7 +2775,7 @@ const OS = {
             preserveObjectStacking: true, enableRetinaScaling: true,
             stopContextMenu: true, fireRightClick: true,
         });
-        this.createNewDocument(this.canvasW, this.canvasH);
+        this.createNewDocument(this.canvasW, this.canvasH, { resetProject:true, clean:true });
         this.canvas.on('mouse:move', e => this.onMouseMove(e));
         this.canvas.on('mouse:down', e => this.onMouseDown(e));
         this.canvas.on('mouse:up', e => this.onMouseUp(e));
@@ -2780,7 +2794,7 @@ const OS = {
         });
         window.addEventListener('resize', () => { this.resizeCanvas(); this.drawGrid(); this.drawRulers(); });
         window.addEventListener('beforeunload', e => {
-            if (this.historyIdx > 0) { e.preventDefault(); e.returnValue = ''; }
+            if (this._isDirty) { e.preventDefault(); e.returnValue = ''; }
         });
         this.initSwatches();
         this.setTool('select');
@@ -2826,7 +2840,50 @@ const OS = {
     },
 
     // ====================== DOCUMENT ======================
-    createNewDocument(w, h) {
+    _setPersistenceState(state, error = null) {
+        const labels = { clean:'Clean', dirty:'Unsaved', saving:'Saving', saved:'Saved', error:'Save failed' };
+        this._persistenceState = labels[state] ? state : 'error';
+        this._lastSaveError = error || null;
+        const indicator = document.getElementById('persistence-state');
+        const label = document.getElementById('persistence-state-label');
+        if (indicator) {
+            indicator.dataset.state = this._persistenceState;
+            indicator.title = error ? this._safeText(error.message || error, 180) : labels[this._persistenceState];
+        }
+        if (label) label.textContent = labels[this._persistenceState];
+        const dirtyPrefix = this._isDirty ? '* ' : '';
+        const stateSuffix = this._persistenceState === 'saving' ? ' (Saving)' : this._persistenceState === 'error' ? ' (Save failed)' : '';
+        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.20.0`;
+    },
+    _markDocumentDirty() {
+        this._documentRevision += 1;
+        this._isDirty = true;
+        this._autoSaveDirty = true;
+        this._setPersistenceState('dirty');
+    },
+    _markDocumentClean(snapshot, state = 'clean') {
+        this._isDirty = false;
+        this._autoSaveDirty = false;
+        this._savedSnapshot = snapshot || this.history[this.historyIdx]?.snapshot || null;
+        this._setPersistenceState(state);
+    },
+    _restorePersistenceForSnapshot(snapshot) {
+        this._documentRevision += 1;
+        if (this._savedSnapshot && snapshot === this._savedSnapshot) {
+            this._markDocumentClean(snapshot, 'clean');
+            void this._clearAutoSave();
+        } else {
+            this._isDirty = true;
+            this._autoSaveDirty = true;
+            this._setPersistenceState('dirty');
+        }
+    },
+    createNewDocument(w, h, { resetProject = false, clean = false } = {}) {
+        if (resetProject) {
+            this._documentGeneration += 1;
+            this._projectFileHandle = null;
+            this._docName = 'Untitled';
+        }
         this.canvasW = w; this.canvasH = h; this.layers = []; this.canvas.clear();
         this.canvas.setBackgroundColor(null, this.canvas.renderAll.bind(this.canvas));
         const boundary = this._createCheckerBoundary(w, h);
@@ -2841,9 +2898,10 @@ const OS = {
         this._animFrames = [];
         this._animIdx = 0;
         this._renderFrames();
-        this._docName = 'Untitled';
         this.zoomFit();
-        this.history=[]; this.historyIdx=-1; this.saveHistory('New Document'); this.updateLayersPanel();
+        this.history=[]; this.historyIdx=-1; this.saveHistory('New Document', { markDirty:!clean });
+        if (clean) this._markDocumentClean(this.history[this.historyIdx]?.snapshot, 'clean');
+        this.updateLayersPanel();
         document.getElementById('canvas-dims').textContent = `${w} x ${h}`;
         this._captureBA();
     },
@@ -2879,7 +2937,7 @@ const OS = {
         o.querySelector('[data-modal-create]').addEventListener('click', () => this.doNewImage(o));
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
     },
-    doNewImage(o) { const w=+o.querySelector('#ni-w').value||1920, h=+o.querySelector('#ni-h').value||1080; this.createNewDocument(w,h); o.remove(); this.toast(`Created ${w} × ${h} canvas`, 'success'); },
+    doNewImage(o) { const w=+o.querySelector('#ni-w').value||1920, h=+o.querySelector('#ni-h').value||1080; this.createNewDocument(w,h,{resetProject:true}); o.remove(); this.toast(`Created ${w} × ${h} canvas`, 'success'); },
 
     // ====================== FILE I/O ======================
     _assertJsonFileBudget(file, label = 'JSON') {
@@ -3331,7 +3389,9 @@ const OS = {
     _addDecodedImageToCanvas(img, { name, mode }) {
         const { width } = this._validateDecodedImage(img);
         if (mode === 'open') {
-            this.createNewDocument(img.width, img.height);
+            this.createNewDocument(img.width, img.height, { resetProject:true });
+            this._docName = this._safeText(String(name || '').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
+            this._setPersistenceState('dirty');
             img.set({ left:0, top:0, selectable:true, name:this._safeText(name, 120) });
             this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img);
             this.zoomFit(); this.saveHistory('Open Image'); this.updateLayersPanel();
@@ -3386,7 +3446,7 @@ const OS = {
                 return;
             }
             this.toast(`Importing ${count} GIF frames...`, 'info');
-            this._animFrames = [];
+            const decodedFrames = [];
             for (let i = 0; i < count; i++) {
                 const result = await decoder.decode({ frameIndex: i });
                 const frame = result.image;
@@ -3396,16 +3456,13 @@ const OS = {
                 const ctx = cv.getContext('2d');
                 ctx.drawImage(frame, 0, 0);
                 frame.close();
-                this._animFrames.push(cv.toDataURL('image/png'));
+                decodedFrames.push(cv.toDataURL('image/png'));
             }
-            if (this._animFrames.length > 0) {
-                const first = this._animFrames[0];
-                this.createNewDocument(decoder.tracks.selectedTrack.frameWidth || this.canvasW, decoder.tracks.selectedTrack.frameHeight || this.canvasH);
-                fabric.Image.fromURL(first, img => {
-                    try { this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' }); }
-                    catch (err) { this.toast(err.message, 'error'); }
-                });
+            if (decodedFrames.length > 0) {
+                const img = await fabric.Image.fromURL(decodedFrames[0]);
+                this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' });
             }
+            this._animFrames = decodedFrames;
             this._animIdx = 0;
             this._renderFrames();
             document.getElementById('timeline-panel')?.classList.add('visible');
@@ -3512,34 +3569,92 @@ const OS = {
     },
     _projectFileHandle: null,
     async saveProject() {
-        const data = JSON.stringify(this._captureDocumentState());
-        if (this._projectFileHandle) {
-            try {
-                const writable = await this._projectFileHandle.createWritable();
-                await writable.write(data);
-                await writable.close();
-                this.toast(this._t('Project saved'),'success');
-                return;
-            } catch(e) { console.warn('File handle save failed, falling back:', e.message); }
+        if (this._savePromise) return this._savePromise;
+        if (this._autoSaveInFlight) await this._autoSaveInFlight;
+        if (this._savePromise) return this._savePromise;
+        this._savePromise = this._saveProjectTransaction();
+        try {
+            return await this._savePromise;
+        } finally {
+            this._savePromise = null;
         }
-        if (window.showSaveFilePicker) {
-            try {
-                this._projectFileHandle = await window.showSaveFilePicker({
-                    suggestedName: (this._docName || 'openshop-project') + '.json',
-                    types: [{ description: 'OpenShop Project', accept: { 'application/json': ['.json'] } }]
-                });
-                const writable = await this._projectFileHandle.createWritable();
-                await writable.write(data);
-                await writable.close();
-                this.toast(this._t('Project saved'),'success');
-                return;
-            } catch(e) { if (e.name === 'AbortError') return; console.warn('Save picker failed:', e.message); }
+    },
+    async _writeProjectHandle(handle, data) {
+        const writable = await handle.createWritable();
+        try {
+            await writable.write(data);
+            await writable.close();
+        } catch (error) {
+            try { await writable.abort?.(); } catch {}
+            throw error;
         }
-        const blob = new Blob([data],{type:'application/json'});
-        this._downloadBlob(blob, 'openshop-project.json');
+    },
+    async _saveProjectTransaction() {
+        const revision = this._documentRevision;
+        const generation = this._documentGeneration;
+        let data;
+        try {
+            data = JSON.stringify(this._captureDocumentState());
+        } catch (error) {
+            this._setPersistenceState('error', error);
+            this.toast('Project save failed: ' + error.message, 'error');
+            return false;
+        }
+        this._setPersistenceState('saving');
+
+        try {
+            if (this._projectFileHandle) {
+                const handle = this._projectFileHandle;
+                try {
+                    await this._writeProjectHandle(handle, data);
+                } catch (error) {
+                    this._projectFileHandle = null;
+                    throw error;
+                }
+            } else if (typeof window.showSaveFilePicker === 'function') {
+                let handle;
+                try {
+                    handle = await window.showSaveFilePicker({
+                        suggestedName: (this._docName || 'openshop-project') + '.json',
+                        types: [{ description: 'OpenShop Project', accept: { 'application/json': ['.json'] } }]
+                    });
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        if (this._documentGeneration === generation) this._setPersistenceState(this._isDirty ? 'dirty' : 'clean');
+                        return false;
+                    }
+                    throw error;
+                }
+                await this._writeProjectHandle(handle, data);
+                if (this._documentGeneration === generation) this._projectFileHandle = handle;
+            } else {
+                const blob = new Blob([data], { type:'application/json' });
+                if (!this._downloadBlob(blob, 'openshop-project.json')) throw new Error('Browser rejected the project download');
+            }
+        } catch (error) {
+            if (this._documentGeneration !== generation) {
+                console.warn('Save for replaced document failed:', error);
+                return false;
+            }
+            this._isDirty = true;
+            this._autoSaveDirty = true;
+            this._setPersistenceState('error', error);
+            this.toast('Project save failed: ' + error.message, 'error');
+            return false;
+        }
+
+        if (this._documentGeneration !== generation) return true;
+        if (this._documentRevision !== revision) {
+            this._isDirty = true;
+            this._autoSaveDirty = true;
+            this._setPersistenceState('dirty');
+            this.toast('Saved snapshot; newer edits remain unsaved', 'info');
+            return true;
+        }
+        await this._clearAutoSave();
+        this._markDocumentClean(data, 'saved');
         this.toast(this._t('Project saved'),'success');
-        this._autoSaveDirty = false;
-        this._clearAutoSave();
+        return true;
     },
     openProject() { document.getElementById('project-input').click(); },
     handleProjectOpen(e) {
@@ -3548,10 +3663,15 @@ const OS = {
         const r = new FileReader(); r.onload = async ev => {
             try {
                 const json = JSON.parse(ev.target.result);
+                if (this._autoSaveInFlight) await this._autoSaveInFlight;
                 await this._loadDocumentState(json, { fitToViewport:true });
+                this._documentGeneration += 1;
                 this.history = [];
                 this.historyIdx = -1;
-                this.saveHistory('Open Project');
+                this._projectFileHandle = null;
+                this.saveHistory('Open Project', { markDirty:false });
+                this._markDocumentClean(this.history[this.historyIdx]?.snapshot, 'clean');
+                await this._clearAutoSave();
                 this.toast(this._t('Project loaded'),'success');
             } catch(err) { this.toast('Invalid project: ' + err.message,'error'); }
         }; r.readAsText(file); e.target.value='';
@@ -3705,7 +3825,9 @@ self.onmessage = function(e) {
                 this.toast(`PSD preflight passed: ${header.width} x ${header.height}`, 'info');
                 const psd = lib.readPsd(bytes);
                 this._validatePSDStructure(psd);
-                this.createNewDocument(psd.width, psd.height);
+                this.createNewDocument(psd.width, psd.height, { resetProject:true });
+                this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
+                this._setPersistenceState('dirty');
                 // Add composite image as base
                 if (psd.canvas) {
                     const dataUrl = this._dataUrlFromPSDCanvas(psd.canvas);
@@ -5377,13 +5499,15 @@ self.onmessage = function(e) {
     pasteObj() { this._pasteSelection(); },
 
     // ====================== HISTORY ======================
-    saveHistory(action) {
+    saveHistory(action, { markDirty = true } = {}) {
         if(this.historyIdx<this.history.length-1) this.history=this.history.slice(0,this.historyIdx+1);
         const snap=JSON.stringify(this._captureDocumentState());
         this.history.push({action,snapshot:snap});
         if(this.history.length>this.maxHistory) this.history.shift();
         this._lastAction = action;
-        this.historyIdx=this.history.length-1; this._autoSaveDirty=true; this.updateHistoryPanel(); this.updateStatus(); this.updateMinimap();
+        this.historyIdx=this.history.length-1;
+        if (markDirty) this._markDocumentDirty();
+        this.updateHistoryPanel(); this.updateStatus(); this.updateMinimap();
         this.recordMacroStep(action);
         this.updateHistogram();
     },
@@ -5393,6 +5517,7 @@ self.onmessage = function(e) {
         const e=this.history[this.historyIdx];
         try {
             await this._loadDocumentState(JSON.parse(e.snapshot));
+            this._restorePersistenceForSnapshot(e.snapshot);
             this.updateHistoryPanel();
             this.updateStatus();
             return true;
@@ -5674,7 +5799,7 @@ self.onmessage = function(e) {
         this.templates.forEach(t => {
             grid.appendChild(this._createTemplateCard(t, () => {
                 this.dismissWelcome();
-                this.createNewDocument(t.w, t.h);
+                this.createNewDocument(t.w, t.h, { resetProject:true });
                 this.toast(`Created: ${t.name}`, 'success');
             }));
         });
@@ -5697,7 +5822,7 @@ self.onmessage = function(e) {
             grid.className = 'template-grid';
             tpls.forEach(t => {
                 grid.appendChild(this._createTemplateCard(t, () => {
-                    this.createNewDocument(t.w, t.h);
+                    this.createNewDocument(t.w, t.h, { resetProject:true });
                     o.remove();
                     this.toast(`Created: ${t.name}`, 'success');
                 }));
@@ -6024,9 +6149,12 @@ self.onmessage = function(e) {
     async _restoreRecoveryText(jsonText, overlay) {
         try {
             const json = JSON.parse(jsonText);
+            if (this._autoSaveInFlight) await this._autoSaveInFlight;
             await this._loadDocumentState(json, { fitToViewport:true });
+            this._documentGeneration += 1;
             this.history = [];
             this.historyIdx = -1;
+            this._projectFileHandle = null;
             this.saveHistory('Recovered Project');
             this.toast('Project restored from auto-save', 'success');
         } catch(e) { this.toast('Recovery failed: ' + e.message, 'error'); }
@@ -6043,11 +6171,14 @@ self.onmessage = function(e) {
     },
 
     _autoSaveWorker: null,
+    _autoSaveInFlight: null,
+    _autoSaveRequestId: 0,
+    _autoSaveRequests: new Map(),
     _getAutoSaveWorker() {
         if (this._autoSaveWorker) return this._autoSaveWorker;
         const code = `
 self.onmessage = async function(e) {
-    const {action, data} = e.data;
+    const {id, action, data} = e.data;
     try {
         const root = await navigator.storage.getDirectory();
         if (action === 'write') {
@@ -6058,21 +6189,68 @@ self.onmessage = async function(e) {
             handle.write(encoded);
             handle.flush();
             handle.close();
-            self.postMessage({ok: true});
+            self.postMessage({id, ok: true});
         } else if (action === 'delete') {
             await root.removeEntry('openshop-autosave.json').catch(() => {});
-            self.postMessage({ok: true});
+            self.postMessage({id, ok: true});
         }
-    } catch(e) { self.postMessage({ok: false, error: e.message}); }
+    } catch(e) { self.postMessage({id, ok: false, error: e.message}); }
 };`;
         const blob = new Blob([code], {type:'application/javascript'});
-        this._autoSaveWorker = new Worker(URL.createObjectURL(blob));
+        const url = URL.createObjectURL(blob);
+        this._autoSaveWorker = new Worker(url);
+        URL.revokeObjectURL(url);
+        this._autoSaveWorker.addEventListener('message', event => {
+            const pending = this._autoSaveRequests.get(event.data?.id);
+            if (!pending) return;
+            this._autoSaveRequests.delete(event.data.id);
+            clearTimeout(pending.timeout);
+            if (event.data.ok) pending.resolve(true);
+            else pending.reject(new Error(event.data.error || 'Auto-save worker failed'));
+        });
+        this._autoSaveWorker.addEventListener('error', error => {
+            this._autoSaveRequests.forEach(pending => {
+                clearTimeout(pending.timeout);
+                pending.reject(error);
+            });
+            this._autoSaveRequests.clear();
+            this._autoSaveWorker?.terminate();
+            this._autoSaveWorker = null;
+        });
         return this._autoSaveWorker;
     },
+    _writeAutoSaveWithWorker(data) {
+        return new Promise((resolve, reject) => {
+            const id = ++this._autoSaveRequestId;
+            const timeout = setTimeout(() => {
+                this._autoSaveRequests.delete(id);
+                reject(new Error('Auto-save worker acknowledgement timed out'));
+            }, 15000);
+            this._autoSaveRequests.set(id, { resolve, reject, timeout });
+            try {
+                this._getAutoSaveWorker().postMessage({ id, action:'write', data });
+            } catch (error) {
+                clearTimeout(timeout);
+                this._autoSaveRequests.delete(id);
+                reject(error);
+            }
+        });
+    },
     async _autoSave() {
-        if (!this._autoSaveDirty) return;
-        if (this.historyIdx <= 0) return;
-        if (!navigator.storage || !navigator.storage.getDirectory) return;
+        if (this._autoSaveInFlight) return this._autoSaveInFlight;
+        this._autoSaveInFlight = this._autoSaveTransaction();
+        try {
+            return await this._autoSaveInFlight;
+        } finally {
+            this._autoSaveInFlight = null;
+        }
+    },
+    async _autoSaveTransaction() {
+        if (!this._autoSaveDirty || !this._isDirty || this._savePromise) return false;
+        if (!navigator.storage?.getDirectory) return false;
+        const revision = this._documentRevision;
+        const generation = this._documentGeneration;
+        this._setPersistenceState('saving');
         try {
             const data = JSON.stringify(this._captureDocumentState());
             try {
@@ -6081,19 +6259,40 @@ self.onmessage = async function(e) {
                 const writable = await file.createWritable();
                 await writable.write(data);
                 await writable.close();
-            } catch(e) {
-                const worker = this._getAutoSaveWorker();
-                worker.postMessage({action:'write', data});
+            } catch {
+                await this._writeAutoSaveWithWorker(data);
             }
-            this._autoSaveDirty = false;
-        } catch(e) { console.warn('Auto-save failed:', e); }
+            if (this._documentGeneration !== generation) {
+                if (this._isDirty) {
+                    this._autoSaveDirty = true;
+                    setTimeout(() => { void this._autoSave(); }, 0);
+                } else {
+                    await this._clearAutoSave();
+                }
+                return true;
+            }
+            if (this._documentRevision === revision) this._autoSaveDirty = false;
+            this._setPersistenceState(this._isDirty ? 'dirty' : 'clean');
+            return true;
+        } catch(e) {
+            if (this._documentGeneration !== generation) return false;
+            this._autoSaveDirty = true;
+            this._setPersistenceState('error', e);
+            console.warn('Auto-save failed:', e);
+            return false;
+        }
     },
 
     async _clearAutoSave() {
+        if (!navigator.storage?.getDirectory) return false;
         try {
             const root = await navigator.storage.getDirectory();
             await root.removeEntry('openshop-autosave.json').catch(() => {});
-        } catch(e) { console.debug('Clear auto-save:', e.message); }
+            return true;
+        } catch(e) {
+            console.debug('Clear auto-save:', e.message);
+            return false;
+        }
     },
 
     // ====================== LASSO SELECTION ======================
@@ -8779,7 +8978,7 @@ self.onmessage = async function(e) {
         const w = +overlay.querySelector('#nd-w').value || 1920;
         const h = +overlay.querySelector('#nd-h').value || 1080;
         overlay.remove();
-        this.createNewDocument(w, h);
+        this.createNewDocument(w, h, { resetProject:true });
     },
 
     // ====================== SYMMETRY ======================

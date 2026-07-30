@@ -36,7 +36,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |
 | **Undo/Redo** | 60-step history with named entries and visual history panel |
 | **Free Transform** | Resize, rotate, skew, perspective, and warp on any object |
-| **Auto-Save** | Project state saved to browser storage every 30 seconds with crash recovery |
+| **Auto-Save** | Dirty project revisions are written to browser recovery storage every 30 seconds and cleared only after the storage path acknowledges the write |
 
 ### File I/O
 
@@ -86,6 +86,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | **Tab Toggle** | `Tab` hides all panels for distraction-free editing |
 | **PWA Support** | Installable as a standalone desktop app with offline CDN caching |
 | **Accessibility** | ARIA roles, keyboard navigation, focus indicators, reduced-motion support, hidden canvas-state mirror, and live status announcements |
+| **Save State** | The status bar and document title distinguish clean, unsaved, saving, saved, and failed writes; unload warnings follow actual dirty state |
 
 ## Keyboard Shortcuts
 
