@@ -25,6 +25,10 @@ All notable changes to Openshop will be documented in this file.
 - Keep modeless workspace panels below modal dialogs so a dialog is never overlapped by an un-dimmed panel
 - Stop the status bar from re-announcing on every pointer move, and announce each toast once instead of twice
 - Replace version-control jargon in the save-state and offline chips with plain language
+- Report images that fail to decode instead of doing nothing at all, and stop renaming the open document when an open fails
+- Bound animated GIF import by frame count and decoded size, close the decoder on every path, and discard a slow import if the document changed meanwhile
+- Accept PSD and `.openshop` files dropped anywhere in the window, not only over the canvas, and say when extra dropped files are ignored
+- Allow SVG in the Open Image picker, which previously advertised SVG but greyed it out
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden

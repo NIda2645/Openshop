@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-RhZKy1PRbapPh1Pg7NZYh3hOJqO8X5GbZ5GLZF0Sesg=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-BrWWdILAomlgwnvkp2e6Gog7oVz++Cx5nbPRkXftR0Q=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -2461,7 +2461,7 @@ body{
 <div id="dropzone-overlay">
     <div class="dropzone-ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
     <div class="dropzone-text">Drop files here</div>
-    <div class="dropzone-sub">PNG, JPEG, WebP, PSD, SVG</div>
+    <div class="dropzone-sub">PNG, JPEG, WebP, SVG, GIF, PSD, .openshop</div>
 </div>
 <!-- ===== ANNOTATION CONTAINER ===== -->
 <div id="sticky-container" style="position:absolute;inset:0;pointer-events:none;z-index:99"></div>
@@ -3304,7 +3304,9 @@ const OS = {
         maxProjectLayers: 512,
         maxPaletteColors: 256,
         maxPresets: 200,
-        maxTextLength: 10000
+        maxTextLength: 10000,
+        maxGifFrames: 300,
+        maxDecodedGifBytes: 512 * 1024 * 1024
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -4251,7 +4253,7 @@ const OS = {
         if (window.showOpenFilePicker) {
             try {
                 const [handle] = await window.showOpenFilePicker({
-                    types: [{ description: 'Images', accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.gif','.bmp'] } }]
+                    types: [{ description: 'Images', accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.gif','.bmp','.svg'] } }]
                 });
                 const file = await handle.getFile();
                 this._handleFileLoad(file);
@@ -4262,7 +4264,8 @@ const OS = {
     },
     _handleFileLoad(file) {
         try { this._validateImageFile(file); } catch(e) { this.toast(e.message, 'error'); return; }
-        this._docName = this._safeText(file.name.replace(/\.[^.]+$/, ''), 100);
+        // _docName is set by _addDecodedImageToCanvas once the decode succeeds;
+        // setting it here renamed the open document even when the file failed.
         if (file.type === 'image/gif' && typeof ImageDecoder !== 'undefined') {
             this._importGifFrames(file);
             return;
@@ -4274,18 +4277,36 @@ const OS = {
         }; r.readAsDataURL(file);
     },
     async _importGifFrames(file) {
+        const loadStatic = () => {
+            const r = new FileReader(); r.onload = ev => {
+                fabric.Image.fromURL(ev.target.result, img => {
+                    void Promise.resolve(this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' })).catch(err => this.toast(err.message, 'error'));
+                });
+            }; r.readAsDataURL(file);
+        };
+        let decoder = null;
         try {
-            const decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
+            const generation = this._documentGeneration;
+            decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
             await decoder.completed;
             const count = decoder.tracks.selectedTrack.frameCount;
-            if (count < 2) {
-                const r = new FileReader(); r.onload = ev => {
-                    fabric.Image.fromURL(ev.target.result, img => {
-                        void Promise.resolve(this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' })).catch(err => this.toast(err.message, 'error'));
-                    });
-                }; r.readAsDataURL(file);
-                return;
+            if (count < 2) { loadStatic(); return; }
+            // A small GIF can declare hundreds of large frames; every frame is
+            // decoded into a canvas and a PNG data URL, so bound it up front.
+            if (count > this._importLimits.maxGifFrames) {
+                throw new Error(`GIF has ${count} frames, over the ${this._importLimits.maxGifFrames} frame import limit`);
             }
+            const track = decoder.tracks.selectedTrack;
+            const probe = await decoder.decode({ frameIndex: 0 });
+            const frameW = probe.image.displayWidth, frameH = probe.image.displayHeight;
+            probe.image.close();
+            if (frameW * frameH > this._importLimits.maxImagePixels) {
+                throw new Error('GIF frame dimensions exceed import limits');
+            }
+            if (frameW * frameH * 4 * count > this._importLimits.maxDecodedGifBytes) {
+                throw new Error('GIF exceeds the decoded size budget for animation import');
+            }
+            void track;
             this.toast(`Importing ${count} GIF frames...`, 'info');
             const decodedFrames = [];
             for (let i = 0; i < count; i++) {
@@ -4299,6 +4320,11 @@ const OS = {
                 frame.close();
                 decodedFrames.push(cv.toDataURL('image/png'));
             }
+            // A slow decode must not replace a document the user opened since.
+            if (this._documentGeneration !== generation) {
+                this.toast('GIF import discarded because the document changed', 'info');
+                return;
+            }
             if (decodedFrames.length > 0) {
                 const img = await fabric.Image.fromURL(decodedFrames[0]);
                 await this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' });
@@ -4308,14 +4334,12 @@ const OS = {
             this._renderFrames();
             document.getElementById('timeline-panel')?.classList.add('visible');
             this.toast(`Imported ${this._animFrames.length} frames from GIF`, 'success');
-            decoder.close();
         } catch (e) {
             console.warn('GIF frame import failed, loading as static:', e.message);
-            const r = new FileReader(); r.onload = ev => {
-                fabric.Image.fromURL(ev.target.result, img => {
-                    void Promise.resolve(this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' })).catch(err => this.toast(err.message, 'error'));
-                });
-            }; r.readAsDataURL(file);
+            this.toast(`Animated import unavailable — ${e.message}. Loading the first frame instead.`, 'info');
+            loadStatic();
+        } finally {
+            try { decoder?.close(); } catch { /* already closed */ }
         }
     },
     handleFileOpen(e) {
@@ -4324,10 +4348,17 @@ const OS = {
         e.target.value='';
     },
     handleDrop(e) {
-        const file = e.dataTransfer.files[0];
+        const files = e.dataTransfer.files;
+        const file = files[0];
         if (!file) return;
-        if (file.name.toLowerCase().endsWith('.psd')) {
+        if (files.length > 1) this.toast(`Opening ${file.name}; ${files.length - 1} other file(s) ignored`, 'info');
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.psd')) {
             void this._confirmDiscardUnsaved('Opening a PSD').then(ok => ok && this._loadPSDFile(file));
+            return;
+        }
+        if (name.endsWith('.openshop') || name.endsWith('.json')) {
+            void this._confirmDiscardUnsaved('Opening a project').then(ok => ok && this._loadProjectFile(file));
             return;
         }
         try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }
@@ -12551,16 +12582,9 @@ self.onmessage = async function(e) {
             document.getElementById('dropzone-overlay').classList.remove('visible');
             // Canvas area drop is handled by existing handler, but this handles full-window drops
             if (e.target?.closest?.('#canvas-area')) return; // already handled
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }
-                const reader = new FileReader();
-                reader.onload = ev => {
-                    fabric.Image.fromURL(ev.target.result, img => {
-                        void Promise.resolve(this._addDecodedImageToCanvas(img, { name:file.name, mode:'drop' })).catch(err => this.toast(err.message, 'error'));
-                    });
-                }; reader.readAsDataURL(file);
-            }
+            // Same handler as the canvas so PSD and project files behave the
+            // same wherever the drop lands; the overlay invites both.
+            this.handleDrop(e);
         });
     },
 
@@ -14991,6 +15015,13 @@ document.addEventListener('input', e => {
         e.target.nextElementSibling.textContent = e.target.value + e.target.dataset.suffix;
 });
 
+// The Fabric compat shim reports async decode failures through this event.
+// Without a listener a corrupt image simply did nothing at all.
+window.addEventListener('openshop:fabric-error', e => {
+    if (typeof OS === 'undefined' || !OS.toast) return;
+    const reason = e.detail?.message || 'the file could not be decoded';
+    OS.toast(`Could not read that image — ${reason}`, 'error');
+});
 window.addEventListener('error', e => { console.error('Unhandled error:', e.error || e.message); if (typeof OS !== 'undefined' && OS.toast) OS.toast('Something went wrong — see console', 'error'); });
 window.addEventListener('unhandledrejection', e => { console.error('Unhandled promise rejection:', e.reason); if (typeof OS !== 'undefined' && OS.toast) OS.toast('Something went wrong — see console', 'error'); });
 window.addEventListener('DOMContentLoaded', () => OS.init());
