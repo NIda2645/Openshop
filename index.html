@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-IJJS7HR1/2IQ/45f7eYCv5NhQmWdQhsn/5h6D6Ghc4c=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-4cxFqdNsL/R+nO8FOcL3BMmpKp8qxC/bkODsmELgx+k=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.20.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3519,12 +3519,12 @@ const OS = {
         return count;
     },
     cancelActiveCompute() {
+        // PSD import owns its own progress overlay and Cancel button, so it is
+        // never the shared-progress job; only that dialog routes through here.
         const job = this._activeProgressJobId ? this._computeJobs.get(this._activeProgressJobId) : null;
         if (!job) return false;
-        const cancelled = job.kind === 'psd-import'
-            ? this._cancelPSDImport()
-            : this._cancelComputeJob(job, `${job.kind} cancelled`);
-        if (cancelled && job.kind !== 'psd-import') this.toast(`${job.kind} cancelled`, 'info');
+        const cancelled = this._cancelComputeJob(job, `${job.kind} cancelled`);
+        if (cancelled) this.toast(`${job.kind} cancelled`, 'info');
         return cancelled;
     },
     _finishComputeJob(job) {
@@ -6134,11 +6134,6 @@ self.onmessage = function(event) {
         inp.addEventListener('blur', finish);
         inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); });
     },
-    rebuildLayersFromCanvas() {
-        this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
-        this.canvas.getObjects().forEach(o => this.layers[0].objects.push(o));
-        this.activeLayerIdx = 0; this._enforceLayerInvariants(); this.updateLayersPanel();
-    },
 
     // ====================== TOOLS ======================
     // ====================== TOOL GROUP FLYOUTS ======================
@@ -7442,7 +7437,6 @@ self.onmessage = function(event) {
     },
 
     // ====================== AI BACKGROUND REMOVAL ======================
-    removeBackground() { this.aiRemoveBackground(); },
 
     // ====================== ADJUSTMENTS ======================
     _readAdjustmentValues() {
@@ -9996,6 +9990,8 @@ self.onmessage = function(event) {
             saveName.className = 'btn';
             saveName.textContent = 'Save Name';
             saveName.disabled = !record.valid;
+            // A greyed control with no reason reads as a broken UI.
+            if (saveName.disabled) saveName.title = 'Corrupt generations cannot be renamed';
             saveName.addEventListener('click', async () => {
                 await this._renameRecoveryGeneration(record, input.value);
                 o.remove();
@@ -10004,22 +10000,23 @@ self.onmessage = function(event) {
             rename.append(input, saveName);
             const actions = document.createElement('div');
             actions.className = 'recovery-actions';
-            const addAction = (label, className, handler, disabled = false) => {
+            const addAction = (label, className, handler, disabled = false, reason = '') => {
                 const button = document.createElement('button');
                 button.className = className;
                 button.textContent = label;
                 button.disabled = disabled;
+                if (disabled && reason) button.title = reason;
                 button.addEventListener('click', handler);
                 actions.appendChild(button);
             };
             addAction('Preview', 'btn', () => { details.hidden = !details.hidden; });
-            addAction('Export', 'btn', () => this._exportRecovery(record), !record.rawText && !record.payloadText);
+            addAction('Export', 'btn', () => this._exportRecovery(record), !record.rawText && !record.payloadText, 'Nothing readable was recovered from this generation');
             addAction('Discard', 'btn btn-danger', async () => {
                 await this._discardRecovery(record);
                 card.remove();
                 this.toast('Recovery generation discarded', 'info');
             });
-            addAction('Open as Copy', 'btn', () => this._restoreRecoveryRecord(record, o, true), !record.valid);
+            addAction('Open as Copy', 'btn', () => this._restoreRecoveryRecord(record, o, true), !record.valid, 'This generation failed its integrity check');
             addAction('Restore', 'btn btn-primary', () => this._restoreRecoveryRecord(record, o, false), !record.valid);
             card.append(heading, meta, details, rename, actions);
             list.appendChild(card);
@@ -10123,10 +10120,6 @@ self.onmessage = function(event) {
         this._recoveryData = record;
         requestAnimationFrame(() => o.classList.add('show'));
         return o;
-    },
-    _restoreRecovery(overlay) {
-        if (!this._recoveryData) { overlay.remove(); return; }
-        return this._restoreRecoveryRecord(this._recoveryData, overlay, false);
     },
     _restoreRecoveryRecord(record, overlay, asCopy = false) {
         if (!record?.valid || !record.payloadText) {
@@ -12157,7 +12150,9 @@ self.onmessage = async function(e) {
         const alphaHelp = overlay.querySelector('#es-alpha-help');
         overlay.querySelector('#es-quality-row').style.display = fmt === 'png' ? 'none' : 'flex';
         if (fmt === 'jpeg') {
-            alpha.dataset.previous = String(alpha.checked);
+            // Only record the preference on the way in; clicking JPEG twice
+            // used to overwrite it with the forced-off value.
+            if (!alpha.disabled) alpha.dataset.previous = String(alpha.checked);
             alpha.checked = false;
             alpha.disabled = true;
             matteRow.style.display = 'flex';
@@ -13364,13 +13359,6 @@ self.onmessage = async function(e) {
         if (visible.length < 2) { this.toast('Need 2+ visible layers', 'info'); return; }
         this.flattenImage();
     },
-    newDocument() { this.newImage(); },
-    _doNewDoc(overlay) {
-        const w = +overlay.querySelector('#nd-w').value || 1920;
-        const h = +overlay.querySelector('#nd-h').value || 1080;
-        overlay.remove();
-        this.createNewDocument(w, h, { resetProject:true });
-    },
 
     // ====================== SYMMETRY ======================
     setSymmetryMode(mode) {
@@ -14038,7 +14026,9 @@ self.onmessage = async function(e) {
     },
     async exportGIF() {
         if (this._animFrames.length < 2) { this.toast('Add at least 2 frames', 'info'); return; }
-        const fps = +document.getElementById('tl-fps').value || 12;
+        // A negative or absurd rate produced a ~4ms interval and thrashed the
+        // thumbnail strip during playback.
+        const fps = this._readNumberInput(document.getElementById('tl-fps'), { min:1, max:60, fallback:12 }).value;
         const delay = Math.round(1000 / fps);
         this.toast('Loading GIF encoder...', 'info');
         let GIFConstructor, workerScript;
@@ -14068,10 +14058,23 @@ self.onmessage = async function(e) {
         gif.on('finished', blob => {
             const a = document.createElement('a');
             a.download = `${(this._docName || 'openshop-animation').replace(/[^a-zA-Z0-9_-]/g, '_')}.gif`;
-            a.href = URL.createObjectURL(blob);
+            const url = URL.createObjectURL(blob);
+            a.href = url;
             a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
             this.toast(`GIF exported (${this._animFrames.length} frames @ ${fps}fps)`, 'success');
         });
+        // Without this a worker failure left the user on the last progress
+        // toast forever with no explanation.
+        gif.on('abort', () => this.toast('GIF export cancelled', 'info'));
+        if (typeof gif.on === 'function') {
+            try {
+                gif.on('error', error => {
+                    console.error('GIF encoding failed:', error);
+                    this.toast('GIF export failed — see console', 'error');
+                });
+            } catch (error) { console.debug('gif.js error channel unavailable:', error.message); }
+        }
         gif.render();
     },
     _loadImage(src) {

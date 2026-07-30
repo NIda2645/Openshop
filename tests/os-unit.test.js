@@ -156,7 +156,6 @@ describe('OpenShop core object', () => {
     });
     OS.canvas = canvas;
     quietUiMethods(OS);
-    OS.rebuildLayersFromCanvas = vi.fn();
     OS.setTool = vi.fn();
 
     OS.saveHistory('Initial');
@@ -751,7 +750,6 @@ describe('OpenShop core object', () => {
     const canvas = createCanvasMock();
     OS.canvas = canvas;
     quietUiMethods(OS);
-    OS.rebuildLayersFromCanvas = vi.fn();
     OS.zoomFit = vi.fn();
     const recovery = JSON.stringify({ _openShop: { w: 640, h: 480 }, objects: [{ name: 'javascript:alert(1)' }] });
     OS._getRecoveryInfo = vi.fn().mockResolvedValue({
@@ -1137,7 +1135,6 @@ describe('OpenShop core object', () => {
     OS.canvasW = 800;
     OS.canvasH = 600;
     quietUiMethods(OS);
-    OS.rebuildLayersFromCanvas = vi.fn();
     OS.zoomFit = vi.fn();
     OS.saveHistory = vi.fn();
     OS._clearAutoSave = vi.fn();
@@ -1360,7 +1357,6 @@ describe('OpenShop core object', () => {
     const canvas = createCanvasMock();
     OS.canvas = canvas;
     quietUiMethods(OS);
-    OS.rebuildLayersFromCanvas = vi.fn();
     OS.zoomFit = vi.fn();
     OS.saveHistory = vi.fn();
     OS._clearAutoSave = vi.fn();
@@ -1521,7 +1517,6 @@ describe('OpenShop core object', () => {
     quietUiMethods(OS);
     OS.saveHistory = vi.fn();
     OS._clearAutoSave = vi.fn();
-    OS.rebuildLayersFromCanvas = vi.fn();
     OS.zoomFit = vi.fn();
 
     OS.newImage();

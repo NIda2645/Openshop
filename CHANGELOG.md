@@ -45,9 +45,15 @@ All notable changes to Openshop will be documented in this file.
 - Release sticky-note drag listeners when a note is deleted instead of leaving document-level handlers behind for the session
 - Retry a lazily loaded runtime library once bypassing the HTTP cache when its integrity check fails, so a poisoned cache entry no longer disables that feature until the cache expires
 - Make template cards, New Image size presets, and the zoom indicator real buttons so they can be reached and activated from the keyboard, and give the layer visibility and lock controls accessible names
+- Keep the export dialog's alpha preference when the JPEG format button is clicked more than once
+- Report GIF export failures, clamp the frame rate to a usable range, and release the exported blob
+- Explain why recovery actions are unavailable for a corrupt generation instead of showing an unexplained disabled button
 
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
+
+### Removed
+- Delete unreachable code: the unused layer-rebuild, legacy recovery-restore, duplicate new-document and background-removal wrappers, and a PSD branch that could never run
 
 ### Changed
 - Reimagine the editor as a high-contrast precision studio with a floating tool dock, structured inspector cards, technical canvas workspace, local-only trust indicator, and compact ready state
