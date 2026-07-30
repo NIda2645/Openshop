@@ -1381,6 +1381,52 @@ describe('OpenShop core object', () => {
     expect(OS._isDirty).toBe(true);
     expect(OS._persistenceState).toBe('error');
   });
+  it('refuses to autosave a hybrid document while a load is in flight', async () => {
+    const OS = loadOpenShop();
+    const object = { name: 'Subject', type: 'rect' };
+    OS.canvas = createCanvasMock([object]);
+    OS.layers = [{ name: 'Subject', visible: true, locked: false, opacity: 100, blend: 'source-over', objects: [object] }];
+    quietUiMethods(OS);
+    OS.canvasW = 800;
+    OS.canvasH = 600;
+    OS.saveHistory('Edit on the outgoing document');
+    expect(OS._autoSaveDirty).toBe(true);
+
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: { getDirectory: vi.fn().mockResolvedValue({}) }
+    });
+    const capture = vi.spyOn(OS, '_captureDocumentState');
+    OS._writeAutoSaveWithWorker = vi.fn().mockResolvedValue(true);
+
+    // Image enliven can take seconds; hold the load at its first await.
+    let finishLoad;
+    OS.canvas.loadFromJSON = vi.fn(() => new Promise((resolve) => { finishLoad = resolve; }));
+
+    const loading = OS._loadDocumentState({
+      _openShop: { w: 1920, h: 1080 },
+      objects: []
+    }, { trusted: true }).catch(() => {});
+
+    await vi.waitFor(() => expect(OS.canvas.loadFromJSON).toHaveBeenCalled());
+    // canvasW/H already hold the incoming project; the canvas still holds the old one.
+    expect(OS.canvasW).toBe(1920);
+    expect(OS._documentLoadDepth).toBe(1);
+
+    await expect(OS._autoSave()).resolves.toBe(false);
+    expect(capture).not.toHaveBeenCalled();
+    // The work stays queued rather than being dropped.
+    expect(OS._autoSaveDirty).toBe(true);
+
+    finishLoad({});
+    await loading;
+    expect(OS._documentLoadDepth).toBe(0);
+
+    // With the load settled a capture is allowed again.
+    OS._markDocumentDirty();
+    await OS._autoSave();
+    expect(capture).toHaveBeenCalled();
+  });
 
   it('offers recovery with event-delegated buttons and restores or discards', async () => {
     const OS = loadOpenShop();

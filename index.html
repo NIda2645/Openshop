@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-Pb8V/UPrBoHgqPEeBOMKva40FDSBmjTeN4eWqTasOck=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-OCDCurdp9KUaGwMOoQ+WCQyDYzqITapQBIUiiqfocYU=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -4225,7 +4225,18 @@ const OS = {
             }
         });
     },
-    async _loadDocumentState(project, { fitToViewport = false, trusted = false } = {}) {
+    async _loadDocumentState(project, options = {}) {
+        this._documentLoadDepth++;
+        try {
+            return await this._applyDocumentState(project, options);
+        } finally {
+            this._documentLoadDepth = Math.max(0, this._documentLoadDepth - 1);
+            // The bail-out above leaves the work marked dirty; flush it now
+            // rather than waiting out the rest of the 30 s timer.
+            if (!this._documentLoadDepth && this._autoSaveDirty) setTimeout(() => { void this._autoSave(); }, 0);
+        }
+    },
+    async _applyDocumentState(project, { fitToViewport = false, trusted = false } = {}) {
         const state = this._normalizeDocumentState(project, { trusted });
         this.canvasW = state.canvas.width;
         this.canvasH = state.canvas.height;
@@ -9577,6 +9588,7 @@ self.onmessage = function(event) {
     // ====================== AUTO-SAVE / RECOVERY (OPFS) ======================
     _autoSaveTimer: null,
     _autoSaveDirty: false,
+    _documentLoadDepth: 0,
     _autoSaveWorker: null,
     _autoSaveInFlight: null,
     _autoSaveRequestId: 0,
@@ -10495,6 +10507,10 @@ self.onmessage = async function(event) {
         }
     },
     async _autoSaveTransaction() {
+        // Mid-load the canvas, layers and dimensions belong to different
+        // documents; capturing that hybrid writes a generation that restores
+        // at the wrong size. Stay dirty and let the load finish first.
+        if (this._documentLoadDepth) return false;
         if (!this._autoSaveDirty || !this._isDirty || this._savePromise) return false;
         if (!navigator.storage?.getDirectory) return false;
         const revision = this._documentRevision;

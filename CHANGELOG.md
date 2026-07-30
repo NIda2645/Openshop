@@ -2,6 +2,11 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Refuse to autosave while a document load is in flight. `canvasW/H` are assigned before `loadFromJSON` resolves, so a capture landing in that window persisted the outgoing document'''s content under the incoming document'''s dimensions, stored against the outgoing id — a generation that restored at the wrong size and could evict a good one under the five-per-document retention cap. The work now stays queued and flushes once the load settles
+
 ## [v0.23.0] - 2026-07-30
 
 ### Performance
