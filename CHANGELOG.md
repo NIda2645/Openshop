@@ -2,7 +2,7 @@
 
 All notable changes to Openshop will be documented in this file.
 
-## [Unreleased]
+## [v0.24.0] - 2026-07-30
 
 ### Performance
 - Move the highlight during animation playback instead of rebuilding the whole thumbnail strip on every tick. A 20-frame timeline at 12 fps was creating a div, an 80px canvas, an image decode and two listeners per frame, 12 times a second — roughly 240 decodes a second purely to move a border

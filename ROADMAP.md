@@ -7,12 +7,14 @@ Single-file browser image editor with layers, PSD import, and client-side AI. Ro
 ### Format & I/O
 - SVG import (paths, text, groups) with editable vector layers before rasterize
 - PDF multi-page import (page-per-layer or page-picker)
-- GIF / APNG / WebP animation import with per-frame timeline
+- APNG / animated WebP import with per-frame timing; the shipped GIF path must first pass the stateful timeline acceptance below
 - Raw camera file reader (via libraw wasm) with demosaic preview
 - `.openshop` project export round-trip that preserves guides, color profiles, and AI masks
+  Research note (2026-07-29): Treat the canonical document-state item below as the P0 prerequisite; add schema migrations and document/session separation before expanding fields.
 
 ### Editor Core
 - Adjustment layers (non-destructive Levels / Curves / HSL) stackable above pixel layers
+  Research note (2026-07-29): Store typed operation ID, schema version, parameters, cache key, and an explicit Apply/Merge path so old projects remain reproducible.
 - Layer masks with feather + density sliders, separate from alpha
 - Smart objects: re-editable embedded source so edits don't resample
 - Vector shapes stored as paths (Bezier handles on the canvas), not rasterized until export
@@ -27,6 +29,7 @@ Single-file browser image editor with layers, PSD import, and client-side AI. Ro
 ### Performance
 - OffscreenCanvas + Web Worker render pipeline for filters so UI never blocks
 - WebGPU filter path with CPU fallback — publish per-filter FPS matrix
+  Research note (2026-07-29): Measure transfer copies, dispatch overhead, peak memory, and output parity before selecting JS worker, WASM, or WebGPU per operation.
 - Tiled undo history (dirty-tile deltas, not full layer snapshots) to raise 60-step cap
 
 ## Competitive Research
@@ -37,11 +40,14 @@ Single-file browser image editor with layers, PSD import, and client-side AI. Ro
 
 ## Nice-to-Haves
 - Command palette plugin API (third-party scripts registered at runtime)
+  Research note (2026-07-29): Capability-scoped registration, lifecycle cleanup, and immutable code origins are prerequisites; do not accept arbitrary remote URLs.
 - Color management with embedded ICC profiles on export
 - Batch processor (drop a folder, apply an action recipe, zip the output)
+  Research note (2026-07-29): Depends on the versioned command/history item below; current label-based macro recording does not replay normal edits.
 - Collaborative session via WebRTC data channel (single doc, no server)
 - Swatches/brushes/gradients import from .ase / .abr / .grd
 - Mobile-first toolbar layout toggle with pressure-sensitive stylus support
+  Research note (2026-07-29): Define a tested compact phone/tablet subset first; pressure support follows pointer, target-size, and non-drag interaction coverage.
 
 ## Open-Source Research (Round 2)
 
@@ -60,8 +66,8 @@ Single-file browser image editor with layers, PSD import, and client-side AI. Ro
 - Tablet/stylus pressure curves + Photoshop-style custom brush dynamics (SimplePaint).
 - Plugin architecture for tools and filters (DarkroomJS) — lets third parties ship `.js` tool packs.
 - Full-featured filter set: grayscale, emboss, tint, multiply, blend modes w/ WebGL (tui.image-editor).
-- Vuel18n-style multi-language UI strings (BitMappery).
-- PSD layer read AND write round-trip (BitMappery) — currently PSD import only.
+- Complete UI/canvas-text localization and RTL behavior (BitMappery/miniPaint) — the shipped locale map is only partial.
+- PSD semantic round-trip (BitMappery) — current import/export exists but does not preserve hierarchy and blend semantics reliably.
 - Clipboard paste + URL/data-URL/drag-drop open paths (miniPaint).
 - JSON scene export format for reopening layered work (miniPaint).
 
@@ -71,62 +77,3 @@ Single-file browser image editor with layers, PSD import, and client-side AI. Ro
 - **Plugin registration API** (DarkroomJS) — each tool is `plugin.register(editor)` with lifecycle hooks.
 - **Vuex-style state store for history/undo** (BitMappery) — time-travel debugging, branch histories.
 - **WebGL shader-based color adjustments** (BitMappery) — real-time sliders without CPU re-composite.
-
-## Research-Driven Additions
-
-### P2 — Later (features and UX)
-
-
-- [ ] P2 — Wide-gamut color picker with Color.js and oklch()
-  Why: Current color picker is sRGB-only; modern displays (all Apple devices since 2016) support Display P3; oklch() has ~90.5% browser support
-  Evidence: CSS Color Level 4 spec; Color.js library (v0.6.1, tree-shakeable, by CSS spec editors)
-  Touches: Color wheel, HSB sliders, foreground/background color system; integrate Color.js for P3/OKLCh conversion
-  Acceptance: Color picker shows and selects Display P3 colors on capable monitors; exports correctly map to sRGB when needed
-  Complexity: M
-
-
-
-
-- [ ] P2 — Externalize all UI strings for i18n readiness
-  Why: All ~200 user-facing strings are hardcoded in English throughout 6883 lines; no i18n infrastructure exists; limits international adoption
-  Evidence: Code audit; BitMappery uses Vue-i18n pattern for multi-language UI
-  Touches: Extract all string literals to a strings object/map; render via lookup; add language switcher (start with en, structure for community translations)
-  Acceptance: All visible text comes from a single strings map; changing locale key switches all UI text; English is default
-  Complexity: L
-
-- [ ] P2 — WebCodecs-based animated GIF import/export
-  Why: Current GIF "export" is spritesheet-only (index.html:6385-6414); no actual GIF encoding; WebCodecs ImageDecoder enables proper frame-by-frame GIF I/O
-  Evidence: WebCodecs has ~92.7% browser support; current exportGIF() even acknowledges "GIF requires gif.js library"
-  Touches: index.html:6385-6414 (exportGIF); new GIF encoder using WebCodecs or gif.js library; GIF import via ImageDecoder
-  Acceptance: Export produces actual animated .gif file; import loads GIF frames into timeline; frame delay preserved
-  Complexity: M
-
-- [ ] P2 — Fabric.js 5.3.1 → 7.x migration
-  Why: 5.3.1 is end-of-life with two CVEs; 7.4.0 has TypeScript, Promise API, better eraser, SSR support; migration is prerequisite for future architecture improvements
-  Evidence: Fabric.js changelog; CVE fixes require ≥7.2.0; ES6 class migration, callback→Promise conversion, group system rewrite
-  Touches: Every `fabric.` reference in index.html (~200+ occurrences); CDN URL; all callback-based image loading; group/selection behavior
-  Acceptance: All tools, filters, layers, PSD import, export work identically; zero Fabric CVEs; code uses Promise-based API
-  Complexity: XL
-
-## Research-Driven Additions
-
-- [ ] P0 - Harden CSP and DOM rendering
-  Why: `index.html` still requires `unsafe-inline` and several static/generated UI paths use inline event attributes or `innerHTML`, leaving avoidable injection paths.
-  Evidence: `index.html:12`, static `onclick`/`oninput` attributes, remaining modal `innerHTML` builders, MDN CSP guidance
-  Touches: `index.html` CSP meta, menu/modal/palette/recent rendering, `tests/os-unit.test.js`, `tests/openshop.e2e.spec.js`
-  Acceptance: No user- or localStorage-derived value reaches `innerHTML` or inline event attributes; CSP no longer needs `unsafe-inline`; malicious recent-file/palette/preset fixtures render as inert text.
-  Complexity: L
-
-- [ ] P1 - Expand regression coverage for shipped file and recovery workflows
-  Why: Current tests cover core object behavior, one direct filter, screenshot smoke, and Segment Select, but not PSD round-trip, project migration, autosave, import sanitization, or export dimensions.
-  Evidence: `tests/os-unit.test.js`, `tests/openshop.e2e.spec.js`, README testing section
-  Touches: `tests/os-unit.test.js`, `tests/openshop.e2e.spec.js`, `tests/os-harness.js`, Playwright fixtures
-  Acceptance: Automated tests cover project save/open, recovery restore/discard, palette/preset import validation, SVG sanitization, PSD export structure, and at least one mobile viewport smoke path.
-  Complexity: M
-
-- [ ] P2 - Add mobile viewport and touch ergonomics pass
-  Why: README says mobile is functional but desktop recommended; no current test protects toolbar overflow, touch panning, dialogs, or panel visibility on phone/tablet viewports.
-  Evidence: README Browser Support, JS Paint mobile affordances, `tests/openshop.e2e.spec.js`
-  Touches: `index.html` responsive CSS/toolbars/dialogs, Playwright mobile projects
-  Acceptance: Phone and tablet Playwright screenshots show no clipped primary controls; touch pan/zoom and modal close/apply flows work without keyboard dependence.
-  Complexity: M
