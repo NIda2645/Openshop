@@ -142,9 +142,30 @@ test.describe('hosted offline contract', () => {
       await changed;
     });
 
+    // A single unconfirmed navigation is normal (second tab, refresh during
+    // load, quick close) and must not roll the update back.
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#bad-shell')).toBeVisible();
 
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#bad-shell')).toBeVisible();
+    // The trial shell has no OS object, so ask the worker directly.
+    const stillTrialling = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.ready;
+      return new Promise((resolve, reject) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => resolve(event.data?.status);
+        setTimeout(() => reject(new Error('worker status timed out')), 5000);
+        registration.active.postMessage({ type: 'OPENSHOP_GET_STATUS' }, [channel.port2]);
+      });
+    });
+    expect(stillTrialling.rolledBackFrom).toBeFalsy();
+    expect(stillTrialling.activeRevision).toBe('test-v2-bad');
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#bad-shell')).toBeVisible();
+
+    // Repeated failures to confirm do roll back.
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#editor-canvas')).toBeVisible();
     const status = await page.evaluate(() => OS._requestOfflineWorker('OPENSHOP_GET_STATUS'));

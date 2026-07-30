@@ -6,6 +6,9 @@ const SHELL_CACHE_PREFIX = 'openshop-shell-';
 const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SHELL_REVISION}`;
 const RUNTIME_CACHE = 'openshop-runtime-v1';
 const META_CACHE = 'openshop-offline-meta-v1';
+// Navigations that may occur before the health handshake completes without
+// meaning the new shell is broken (extra tab, refresh, quick close).
+const MAX_TRIAL_NAVIGATIONS = 3;
 const SCOPE_URL = new URL('./', self.registration.scope).href;
 const STATE_URL = new URL('./__openshop_offline_state__', self.registration.scope).href;
 
@@ -51,6 +54,7 @@ function defaultState() {
         stagedRevision: null,
         confirmed: false,
         trialStarted: false,
+        trialAttempts: 0,
         rolledBackFrom: null,
         failedRevision: null,
         reports: {}
@@ -133,6 +137,9 @@ async function stageShell() {
         [SHELL_REVISION]: {
             requiredTotal: REQUIRED_ASSETS.length,
             requiredCached: REQUIRED_ASSETS.length,
+            // Recorded so a later worker reports this cache against the manifest
+            // that filled it, not against its own asset list.
+            requiredAssets: REQUIRED_ASSETS.slice(),
             optionalTotal: OPTIONAL_ASSETS.length,
             optionalCached: OPTIONAL_ASSETS.length - optionalMissing.length,
             optionalMissing,
@@ -186,7 +193,11 @@ async function activateShell() {
 async function revisionForNavigation() {
     let state = await readState();
     if (state.activeRevision === SHELL_REVISION && !state.confirmed && state.previousRevision) {
-        if (state.trialStarted) {
+        // A second tab, a refresh during load, or closing the tab before the
+        // health handshake completes are all normal. Only roll back once the
+        // new shell has repeatedly failed to confirm.
+        const attempts = Number(state.trialAttempts || 0) + 1;
+        if (attempts > MAX_TRIAL_NAVIGATIONS) {
             const failedRevision = state.activeRevision;
             const fallbackRevision = state.previousRevision;
             state = await writeState({
@@ -195,17 +206,20 @@ async function revisionForNavigation() {
                 previousRevision: null,
                 confirmed: true,
                 trialStarted: false,
+                trialAttempts: 0,
                 rolledBackFrom: failedRevision,
                 failedRevision,
                 rollbackAt: new Date().toISOString()
             });
-            await caches.delete(shellCacheName(failedRevision));
+            // The failed shell cache is kept so a re-stage can recover without
+            // waiting for a new SHELL_REVISION to ship.
             return state.activeRevision;
         }
         state = await writeState({
             ...state,
             trialStarted: true,
-            trialStartedAt: new Date().toISOString()
+            trialAttempts: attempts,
+            trialStartedAt: state.trialStartedAt || new Date().toISOString()
         });
     }
     return state.activeRevision || SHELL_REVISION;
@@ -260,21 +274,26 @@ async function statusPayload() {
     const cacheName = shellCacheName(revision);
     const cacheNames = await caches.keys();
     const report = state.reports?.[revision] || {};
+    // An older revision was cached from its own manifest; checking it against
+    // this worker's list would report a healthy shell as incomplete forever.
+    const requiredAssets = Array.isArray(report.requiredAssets) && report.requiredAssets.length
+        ? report.requiredAssets
+        : REQUIRED_ASSETS;
     let requiredCached = 0;
     if (cacheNames.includes(cacheName)) {
         const cache = await caches.open(cacheName);
-        const matches = await Promise.all(REQUIRED_ASSETS.map(asset => cache.match(resolveAsset(asset))));
+        const matches = await Promise.all(requiredAssets.map(asset => cache.match(resolveAsset(asset))));
         requiredCached = matches.filter(Boolean).length;
     }
     return {
         ...state,
         workerRevision: SHELL_REVISION,
         activeRevision: revision,
-        requiredTotal: REQUIRED_ASSETS.length,
+        requiredTotal: requiredAssets.length,
         requiredCached,
         optionalTotal: OPTIONAL_ASSETS.length,
         optionalCached: Number(report.optionalCached || 0),
-        shellReady: requiredCached === REQUIRED_ASSETS.length,
+        shellReady: requiredCached === requiredAssets.length,
         rollbackAvailable: Boolean(state.previousRevision && cacheNames.includes(shellCacheName(state.previousRevision)))
     };
 }
@@ -288,6 +307,7 @@ async function confirmBoot(expectedRevision) {
         ...state,
         confirmed: true,
         trialStarted: false,
+        trialAttempts: 0,
         confirmedAt: new Date().toISOString()
     });
     await trimShellCaches([confirmed.activeRevision, confirmed.previousRevision]);
@@ -310,6 +330,25 @@ async function rollbackShell() {
     });
     await caches.delete(shellCacheName(failedRevision));
     await trimShellCaches([rolledBack.activeRevision]);
+    return statusPayload();
+}
+
+// Recovery path for a shell that was rolled back: stageShell only runs during
+// install, and a byte-identical worker never reinstalls, so without this a
+// rolled-back client is pinned to the old shell until a new revision ships.
+async function restageShell() {
+    await stageShell();
+    const state = await readState();
+    const restaged = await writeState({
+        ...state,
+        rolledBackFrom: null,
+        failedRevision: null,
+        trialAttempts: 0,
+        restagedAt: new Date().toISOString()
+    });
+    if (restaged.stagedRevision === SHELL_REVISION && restaged.activeRevision !== SHELL_REVISION) {
+        await activateShell();
+    }
     return statusPayload();
 }
 
@@ -358,6 +397,12 @@ self.addEventListener('message', event => {
     }
     if (type === 'OPENSHOP_ROLLBACK') {
         event.waitUntil(rollbackShell()
+            .then(status => reply({ ok: true, status }))
+            .catch(error => reply({ ok: false, error: error.message })));
+        return;
+    }
+    if (type === 'OPENSHOP_RESTAGE') {
+        event.waitUntil(restageShell()
             .then(status => reply({ ok: true, status }))
             .catch(error => reply({ ok: false, error: error.message })));
     }

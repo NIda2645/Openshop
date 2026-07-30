@@ -12,6 +12,9 @@ All notable changes to Openshop will be documented in this file.
 - Confirm before replacing a document that has unsaved changes, from New Image, templates, Open Image, Open Project, Open PSD, drag and drop, and installed-app launches, with a Save first option
 - Show the crash-recovery offer above the welcome launcher instead of behind it, so it is visible on the first run after a crash
 
+- Stop the hosted offline shell from rolling back an update after a single unconfirmed navigation; opening a second tab, refreshing during load, or closing the tab early no longer discards a healthy update, the rolled-back shell cache is retained, and a Rebuild Offline Shell action can re-stage without waiting for a new revision
+- Report a cached shell against the asset manifest that populated it, so changing the pinned asset list no longer reports a complete shell as incomplete forever
+
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
 
