@@ -2900,3 +2900,164 @@ test('deletes through a downscaled layer without leaving gaps', async ({ page })
   expect(result.survivors).toBe(0);
   expect(result.clearedOutside).toBe(0);
 });
+
+test('meets WCAG 2.2 text contrast across every theme @cross-browser', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const audit = await page.evaluate(async () => {
+    const parse = (value) => {
+      const match = String(value).match(/rgba?\(([^)]+)\)/);
+      if (!match) return null;
+      const parts = match[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+    };
+    const relative = ({ r, g, b }) => {
+      const channel = (value) => {
+        const c = value / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+    const composite = (fg, bg) => ({
+      r: fg.r * fg.a + bg.r * (1 - fg.a),
+      g: fg.g * fg.a + bg.g * (1 - fg.a),
+      b: fg.b * fg.a + bg.b * (1 - fg.a),
+      a: 1
+    });
+    const contrast = (a, b) => {
+      const la = relative(a), lb = relative(b);
+      return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    };
+    const backdrop = (el) => {
+      let node = el, stack = null;
+      while (node && node !== document.documentElement) {
+        const bg = parse(getComputedStyle(node).backgroundColor);
+        if (bg && bg.a > 0) {
+          stack = stack ? composite(stack, bg) : bg;
+          if (stack.a >= 1) return stack;
+        }
+        node = node.parentElement;
+      }
+      const root = parse(getComputedStyle(document.documentElement).backgroundColor) || { r: 0, g: 0, b: 0, a: 1 };
+      return stack ? composite(stack, root) : root;
+    };
+
+    const failures = [];
+    let sampled = 0;
+    for (const theme of ['default', 'midnight', 'oled']) {
+      OS.setTheme(theme, { silent: true, persist: false });
+      // Open representative surfaces so muted text inside dialogs and panels is
+      // measured, not only the resting studio chrome.
+      document.querySelectorAll('.modal-overlay,.filter-panel').forEach(node => node.remove());
+      try { OS.showPreferences(); } catch (error) {}
+      try { OS.newImage(); } catch (error) {}
+      try { OS.showExportSettings?.(); } catch (error) {}
+      try { OS.showShortcuts?.(); } catch (error) {}
+      try { OS.showLevelsDialog?.(); } catch (error) {}
+      document.querySelectorAll('.panel-tab').forEach(tab => { try { tab.click(); } catch (error) {} });
+      document.getElementById('welcome-overlay')?.classList.remove('hidden');
+      OS.toast('Contrast sample', 'info');
+      await new Promise(resolve => setTimeout(resolve, 250));
+
+      for (const el of document.querySelectorAll('body *')) {
+        if (!el.getClientRects().length) continue;
+        const own = [...el.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent.trim()).join('');
+        if (!own) continue;
+        const style = getComputedStyle(el);
+        const fg = parse(style.color);
+        if (!fg || fg.a === 0) continue;
+        const size = parseFloat(style.fontSize);
+        const weight = Number(style.fontWeight) || 400;
+        const large = size >= 24 || (size >= 18.66 && weight >= 700);
+        const required = large ? 3 : 4.5;
+        const bg = backdrop(el);
+        const ratio = contrast(composite(fg, bg), bg);
+        sampled++;
+        if (ratio < required) {
+          failures.push(`${theme} ${ratio.toFixed(2)}<${required} ${size}px ${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''} "${own.slice(0, 24)}"`);
+        }
+      }
+    }
+    return { failures: [...new Set(failures)], sampled };
+  });
+
+  expect(audit.sampled).toBeGreaterThan(100);
+  expect(audit.failures).toEqual([]);
+});
+
+test('gives every pointer target at least 24 by 24 CSS pixels', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const undersized = await page.evaluate(async () => {
+    try { OS.showPreferences(); } catch (error) {}
+    try { OS.newImage(); } catch (error) {}
+    document.querySelectorAll('.panel-tab').forEach(tab => { try { tab.click(); } catch (error) {} });
+    await new Promise(resolve => setTimeout(resolve, 250));
+
+    const selector = 'button,a[href],input:not([type="hidden"]),select,[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])';
+    const offenders = new Set();
+    for (const el of document.querySelectorAll(selector)) {
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      if (rect.width >= 24 && rect.height >= 24) continue;
+      // Sliders, checkboxes, and radios are sized by the platform.
+      const type = (el.getAttribute('type') || '').toLowerCase();
+      if (type === 'range' || type === 'checkbox' || type === 'radio') continue;
+      offenders.add(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''} ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`);
+    }
+    return [...offenders];
+  });
+
+  expect(undersized).toEqual([]);
+});
+
+test('offers a keyboard path for moving, resizing, and reordering', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const rect = new fabric.Rect({ left: 100, top: 100, width: 60, height: 40, fill: '#888', strokeWidth: 0 });
+    OS.canvas.add(rect);
+    OS.layers[OS.activeLayerIdx].objects.push(rect);
+    OS.canvas.setActiveObject(rect);
+
+    const press = (key, init = {}) => document.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    );
+
+    press('ArrowRight');
+    press('ArrowDown');
+    const nudged = { left: rect.left, top: rect.top };
+
+    press('ArrowRight', { shiftKey: true });
+    const coarse = rect.left;
+
+    press('ArrowRight', { altKey: true });
+    press('ArrowDown', { altKey: true });
+    const resized = { w: Math.round(rect.width * rect.scaleX), h: Math.round(rect.height * rect.scaleY) };
+
+    OS.addLayer();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const before = OS.activeLayerIdx;
+    const names = OS.layers.map(layer => layer.name);
+    press('ArrowDown', { ctrlKey: true, altKey: true });
+    const afterNames = OS.layers.map(layer => layer.name);
+
+    return {
+      nudged,
+      coarse,
+      resized,
+      reordered: names.join('|') !== afterNames.join('|'),
+      movedIndex: OS.activeLayerIdx !== before
+    };
+  });
+
+  expect(result.nudged).toEqual({ left: 101, top: 101 });
+  // Shift makes the step coarse rather than doing nothing.
+  expect(result.coarse).toBe(111);
+  expect(result.resized).toEqual({ w: 61, h: 41 });
+  expect(result.reordered).toBe(true);
+  expect(result.movedIndex).toBe(true);
+});

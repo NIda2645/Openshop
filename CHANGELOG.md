@@ -9,6 +9,8 @@ All notable changes to Openshop will be documented in this file.
 - Coalesce the Color Range preview instead of recomputing the whole mask on every fuzziness slider tick
 
 ### Added
+- Keyboard alternatives to every drag: arrow keys move the selected object, Shift makes the step 10px, Alt resizes it, and Ctrl+Alt+Up/Down reorders the active layer
+- Automated WCAG 2.2 gates for text contrast in all three themes, 24x24 minimum pointer targets, and the non-drag paths above
 - Cross-engine test gate: the core open, edit, filter, save, recover, export, keyboard, and dialog flows now run automatically on Firefox and WebKit as well as Chromium (`npm run test:cross-browser`)
 - A single assertion that keeps the version in `package.json`, `package-lock.json`, the README badge, the changelog, the page title, the in-app labels, and the offline shell revision aligned
 
@@ -20,6 +22,8 @@ All notable changes to Openshop will be documented in this file.
 - Preserve partial selection coverage in saved projects; projects written with the older one-bit format still open
 - Keep the marching-ants box over the selection when the viewport moves
 - Rescale selection masks saved by earlier versions into the document when a project is opened, rather than leaving them addressing pixels the document does not have
+- Raise the contrast of the welcome card's helper text, the active export-format and curves-channel pills, and the export preview placeholder, all of which fell below 4.5:1
+- Enlarge the zoom readout, the offline status chip, the palette buttons, and the preference fields to the 24x24 minimum
 - Correct the browser-support table to say what is actually verified on each engine rather than claiming blanket full support
 - Sync `package-lock.json`, which still declared 0.20.0 after the 0.21.0 release
 - Guard the last ten pixel adjustments against a document that changed while they ran: a result that arrives after the layer was replaced, deleted, or edited is now discarded rather than written over the new pixels

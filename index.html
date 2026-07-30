@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-cFE4UFyME0lXKTi9kdlHfmEWoqmPyGTXI+riJ77fQm0=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-GAHuFiIMa2ap5Ebn+OyhZ5ZXpc8PMRqN8tpQayAbonM=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.21.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -107,6 +107,7 @@
 --canvas-bg:#0a111b;--tool-size:38px;--panel-width:312px;--topbar-h:52px;--toolbar-w:64px;--statusbar-h:52px;
 --glass:rgba(11,17,27,.92);--glass-border:rgba(112,157,255,.18);
 --checker-a:#39435a;--checker-b:#59647d;--guide:#6cdcff;--smart-guide:#ff5078;
+--accent-solid:color-mix(in srgb, var(--accent) 78%, #05070d);
 --ease-out:cubic-bezier(.2,0,0,1);--ease-in:cubic-bezier(.4,0,1,1);
 --focus-ring:0 0 0 2px var(--bg-depth-0),0 0 0 4px var(--accent);
 }
@@ -409,7 +410,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .curves-presets .btn{padding:3px 8px;font-size:10px}
 .curves-channel-row{display:flex;gap:4px;margin-bottom:8px;justify-content:center}
 .curves-channel-row .btn{padding:3px 10px;font-size:11px;min-width:44px}
-.curves-channel-row .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.curves-channel-row .btn.active{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 
 /* === GUIDES === */
 .guide-line{position:absolute;z-index:6;pointer-events:all}
@@ -487,8 +488,8 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .pref-section h4{font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px}
 .pref-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .pref-row label{flex:1;font-size:12px;color:var(--text-primary)}
-.pref-row input[type="number"]{width:60px;height:24px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;outline:none}
-.pref-row select{height:24px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:11px;padding:0 6px;outline:none;cursor:pointer}
+.pref-row input[type="number"]{width:60px;height:26px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;outline:none}
+.pref-row select{height:26px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:11px;padding:0 6px;outline:none;cursor:pointer}
 
 /* === IMAGE INFO === */
 .info-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
@@ -508,11 +509,14 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .export-preview{position:relative;width:100%;height:120px;background:var(--bg-depth-3);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px}
 .export-preview.alpha{background-color:#b8b8b8;background-image:linear-gradient(45deg,#e2e2e2 25%,transparent 25%),linear-gradient(-45deg,#e2e2e2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e2e2 75%),linear-gradient(-45deg,transparent 75%,#e2e2e2 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
 .export-preview img{max-width:100%;max-height:100%;object-fit:contain}
+/* The alpha checkerboard behind this is deliberately light in every theme, so
+   the placeholder cannot follow the theme's muted text colour. */
+.export-preview-placeholder{font-size:11px;color:#2a3242}
 .export-preview-label{position:absolute;left:6px;bottom:6px;padding:3px 6px;border-radius:4px;background:rgba(7,13,23,.84);color:#eaf1ff;font:9px 'JetBrains Mono',monospace;letter-spacing:.03em}
 .export-size-est{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-align:center;margin-bottom:8px}
 .export-format-row{display:flex;gap:6px;margin-bottom:10px;justify-content:center}
 .export-format-row .btn{min-width:55px}
-.export-format-row .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.export-format-row .btn.active{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff}
 .export-impact{margin:8px 0;padding:8px 10px;border:1px solid color-mix(in srgb,var(--warning) 45%,var(--border));border-radius:6px;background:color-mix(in srgb,var(--warning) 8%,var(--bg-depth-3));font-size:11px;color:var(--text-secondary)}
 .export-impact strong{display:block;color:var(--text-primary);margin-bottom:4px}
 .export-impact ul{margin:0;padding-left:16px;display:grid;gap:2px}
@@ -616,6 +620,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 .palette-swatch:hover{transform:scale(1.2);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .palette-name{font-size:10px;color:var(--text-muted);margin-bottom:4px;font-weight:500}
 .palette-actions{display:flex;gap:4px;margin-top:6px}
+.palette-actions .btn{min-height:24px}
 
 /* === THEME VARIANTS === */
 :root.theme-midnight{--bg-depth-0:#070b18;--bg-depth-1:#0b1325;--bg-depth-2:#101b31;--bg-depth-3:#182641;--bg-depth-4:#223253;--accent:#588cff;--accent-hover:#78a3ff;--accent-dim:rgba(88,140,255,.17);--border:#2b4165;--border-active:#46618d;--text-secondary:#b2bfd6;--text-muted:#8192b0;--canvas-bg:#091124;--checker-a:#22304d;--checker-b:#3a4a6c;--guide:#5fd0ff;--smart-guide:#ff5f86}
@@ -1019,10 +1024,12 @@ body{
   font-size:9.5px;
 }
 #statusbar .sep{background:var(--border-active);opacity:.85}
-#zoom-display{color:var(--text-secondary)}
+#zoom-display{color:var(--text-secondary);min-width:48px;min-height:24px}
+/* WCAG 2.2 target size: every pointer target is at least 24x24 CSS pixels. */
 .ready-state{
   display:flex;
   align-items:center;
+  min-height:24px;
   gap:7px;
   color:var(--success);
   font-weight:700;
@@ -1361,7 +1368,7 @@ body{
   font-weight:600;
 }
 .welcome-actions .btn small{
-  color:var(--text-muted);
+  color:var(--text-secondary);
   font-size:8.5px;
   font-weight:400;
 }
@@ -11430,6 +11437,58 @@ self.onmessage = async function(event) {
         });
     },
 
+    // Arrow keys move the active object; with Shift they resize it; with Alt
+    // they reorder the active layer. Every one of these was drag-only before.
+    _nudgeWithKeyboard(event) {
+        const ctrl = event.ctrlKey || event.metaKey;
+        const step = event.shiftKey ? 10 : 1;
+        const dx = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0;
+        const dy = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0;
+        if (!dx && !dy) return false;
+
+        // Ctrl+Alt+Up/Down reorders the active layer.
+        if (ctrl && event.altKey) {
+            const direction = dy < 0 ? 1 : dy > 0 ? -1 : 0;
+            if (!direction) return false;
+            event.preventDefault();
+            const from = this.activeLayerIdx;
+            const to = from + direction;
+            if (to < 0 || to >= this.layers.length) { this.toast('Layer is already at the end of the stack', 'info'); return true; }
+            if (this._moveLayer(from, to)) {
+                this.activeLayerIdx = to;
+                this.updateLayersPanel();
+                this.toast(`Layer moved ${direction > 0 ? 'up' : 'down'}`, 'info');
+            }
+            return true;
+        }
+
+        if (ctrl) return false;   // leave the other Ctrl shortcuts alone
+        const active = this.canvas.getActiveObject();
+        if (!active || active.name === '__boundary__') return false;
+        if (!this._guardObjectEdit(active)) return true;
+        event.preventDefault();
+        // Alt turns the nudge into a resize.
+        if (event.altKey) {
+            // Scale from the object's own box: getScaledWidth() folds in the
+            // stroke, so feeding it back through scaleX compounds the border.
+            const baseW = active.width || 1, baseH = active.height || 1;
+            const width = Math.max(1, baseW * (active.scaleX || 1) + dx);
+            const height = Math.max(1, baseH * (active.scaleY || 1) + dy);
+            active.set({ scaleX:width / baseW, scaleY:height / baseH });
+            active.setCoords();
+            this.canvas.requestRenderAll();
+            this.saveHistory('Resize Object');
+            this.updateStatus();
+            return true;
+        }
+        active.set({ left:(active.left || 0) + dx, top:(active.top || 0) + dy });
+        active.setCoords();
+        this.canvas.requestRenderAll();
+        this.saveHistory('Move Object');
+        this.updateStatus();
+        return true;
+    },
+
     // ====================== UPDATE INFO PANEL ======================
     updateInfoPanel() {
         const el = id => document.getElementById(id);
@@ -12198,7 +12257,7 @@ self.onmessage = async function(e) {
             <div class="modal-row"><label><input type="checkbox" id="es-transparent" checked> Preserve transparent pixels</label><span id="es-alpha-help" style="font-size:10px;color:var(--text-muted)"></span></div>
             <div class="modal-row" id="es-matte-row" style="display:none"><label>Matte</label><input type="color" id="es-matte" value="#ffffff"><span style="font-size:10px;color:var(--text-muted)">Fills transparent pixels</span></div>
             <div class="export-size-est" id="es-size">Est. size: calculating...</div>
-            <div class="export-preview alpha" id="es-preview" role="img" aria-label="Export preview"><span style="font-size:11px;color:var(--text-muted)">Rendering preview…</span></div>
+            <div class="export-preview alpha" id="es-preview" role="img" aria-label="Export preview"><span class="export-preview-placeholder">Rendering preview…</span></div>
             <div class="export-impact" id="es-impact" role="status"></div>
             <div class="export-project-state" id="es-project-state" hidden>
                 <span>Unsaved editable project changes remain after export.</span>
@@ -13445,6 +13504,11 @@ self.onmessage = async function(e) {
         document.addEventListener('keydown', e => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
             const ctrl = e.ctrlKey || e.metaKey;
+
+            // WCAG 2.2 "Dragging Movements": moving, resizing, and reordering
+            // must all have a keyboard path, not drag only. This runs before
+            // the Ctrl block because that block swallows every Ctrl combination.
+            if (e.key.startsWith('Arrow') && this._nudgeWithKeyboard(e)) return;
 
             // === Ctrl/Cmd shortcuts ===
             if (ctrl) {
