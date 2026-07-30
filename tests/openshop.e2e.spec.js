@@ -1082,9 +1082,11 @@ test('round-trips one document state through save, open, recovery, undo, and red
 
     OS.addGuide('horizontal', 37, { silent: true, recordHistory: false });
     OS.addGuide('vertical', 91, { silent: true, recordHistory: false });
-    const mask = new Uint8Array(64);
-    [9, 10, 17, 18].forEach((index) => { mask[index] = 1; });
-    OS._selectionMask = { w: 8, h: 8, mask };
+    // Masks are document-space, so a round trip must return exactly what went in.
+    const maskW = Math.round(OS.canvasW), maskH = Math.round(OS.canvasH);
+    const mask = new Uint8Array(maskW * maskH);
+    for (let y = 1; y < 3; y++) for (let x = 1; x < 3; x++) mask[y * maskW + x] = 1;
+    OS._selectionMask = { w: maskW, h: maskH, mask };
     OS._selectionBounds = { x: 1, y: 1, w: 2, h: 2 };
     const frame = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3MxZ5wAAAABJRU5ErkJggg==';
     OS._animFrames = [frame, frame];
@@ -2599,4 +2601,201 @@ test('lets a second AI request take over from the model load it cancels', async 
   expect(result.second).toEqual({ tag: 'pipe-2' });
   expect(result.blockedMessage).toBe(false);
   expect(result.mutexReleased).toBe(false);
+});
+
+test('deletes the selected pixels at any zoom or pan, not the ones under the old viewport @cross-browser', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    OS.zoom = 1;
+
+    // A 200x200 opaque layer sitting at the document origin.
+    const oc = document.createElement('canvas');
+    oc.width = 200; oc.height = 200;
+    const ctx = oc.getContext('2d');
+    ctx.fillStyle = 'rgb(200,60,60)';
+    ctx.fillRect(0, 0, 200, 200);
+    const image = await new Promise(resolve => {
+      const el = new Image();
+      el.onload = () => resolve(new fabric.Image(el, { left: 0, top: 0, originX: 'left', originY: 'top' }));
+      el.src = oc.toDataURL();
+    });
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+
+    // Select a known document-space square: 20,20 to 59,59.
+    const dw = Math.round(OS.canvasW), dh = Math.round(OS.canvasH);
+    const mask = new Uint8Array(dw * dh);
+    for (let y = 20; y < 60; y++) for (let x = 20; x < 60; x++) mask[y * dw + x] = 1;
+    OS._setPixelSelectionMask(mask, dw, dh);
+    const bounds = { ...OS._selectionBounds };
+
+    // Zoom out and pan *after* selecting — this is what used to relocate the
+    // deletion to a different part of the image and punch it full of holes.
+    OS.canvas.setViewportTransform([0.5, 0, 0, 0.5, 137, 91]);
+    OS.canvas.renderAll();
+
+    OS._deleteSelectionPixels();
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    const active = OS.canvas.getObjects().find(o => o.type === 'image' && !o._wandOverlay);
+    const el = active.getElement();
+    const probe = document.createElement('canvas');
+    probe.width = el.naturalWidth || el.width;
+    probe.height = el.naturalHeight || el.height;
+    probe.getContext('2d').drawImage(el, 0, 0);
+    const data = probe.getContext('2d').getImageData(0, 0, probe.width, probe.height).data;
+    const alphaAt = (x, y) => data[(y * probe.width + x) * 4 + 3];
+
+    let clearedInside = 0, holesInside = 0, clearedOutside = 0;
+    for (let y = 0; y < probe.height; y++) {
+      for (let x = 0; x < probe.width; x++) {
+        const inside = x >= 20 && x < 60 && y >= 20 && y < 60;
+        if (inside) { if (alphaAt(x, y) === 0) clearedInside++; else holesInside++; }
+        else if (alphaAt(x, y) === 0) clearedOutside++;
+      }
+    }
+    return { bounds, clearedInside, holesInside, clearedOutside, size: probe.width };
+  });
+
+  expect(result.size).toBe(200);
+  expect(result.bounds).toEqual({ x: 20, y: 20, w: 40, h: 40 });
+  // The whole selected square is gone — no sparse checkerboard of survivors.
+  expect(result.clearedInside).toBe(40 * 40);
+  expect(result.holesInside).toBe(0);
+  // And nothing outside it was touched.
+  expect(result.clearedOutside).toBe(0);
+});
+
+test('keeps the marching-ants box over the selection when the viewport moves', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const box = await page.evaluate(async () => {
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    const dw = Math.round(OS.canvasW), dh = Math.round(OS.canvasH);
+    const mask = new Uint8Array(dw * dh);
+    for (let y = 10; y < 50; y++) for (let x = 30; x < 90; x++) mask[y * dw + x] = 1;
+    OS._setPixelSelectionMask(mask, dw, dh);
+    const read = () => {
+      const el = document.getElementById('selection-overlay');
+      return { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height };
+    };
+    const atIdentity = read();
+    OS.canvas.setViewportTransform([2, 0, 0, 2, 25, 40]);
+    OS.canvas.renderAll();
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    return { atIdentity, zoomed: read() };
+  });
+
+  expect(box.atIdentity).toEqual({ left: '30px', top: '10px', width: '60px', height: '40px' });
+  // 2x zoom with a (25,40) pan: 30*2+25, 10*2+40, 60*2, 40*2.
+  expect(box.zoomed).toEqual({ left: '85px', top: '60px', width: '120px', height: '80px' });
+});
+
+test('rescales a pre-document-space selection mask from an older project', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    // Projects saved before masks were document-space stored them at the
+    // canvas element's size under a viewport transform that was never recorded.
+    const legacy = { w: 8, h: 8, mask: new Uint8Array(64) };
+    [9, 10, 17, 18].forEach(index => { legacy.mask[index] = 1; });
+
+    const converted = OS._toDocumentSpaceMask(legacy);
+    const dw = Math.round(OS.canvasW), dh = Math.round(OS.canvasH);
+    let selected = 0;
+    for (let i = 0; i < converted.mask.length; i++) if (converted.mask[i]) selected++;
+
+    // The four set cells occupy the 1..2 block of an 8x8 grid, so a quarter of
+    // the way across and down the document must land inside the region.
+    const insideX = Math.floor(dw * 1.5 / 8), insideY = Math.floor(dh * 1.5 / 8);
+    const outsideX = Math.floor(dw * 6.5 / 8), outsideY = Math.floor(dh * 6.5 / 8);
+
+    // A mask already at document size is returned untouched, not re-scaled.
+    const native = { w: dw, h: dh, mask: new Uint8Array(dw * dh) };
+    return {
+      dims: [converted.w, converted.h],
+      docDims: [dw, dh],
+      fraction: selected / (dw * dh),
+      inside: converted.mask[insideY * dw + insideX] === 1,
+      outside: converted.mask[outsideY * dw + outsideX] === 1,
+      nativeUntouched: OS._toDocumentSpaceMask(native) === native,
+      nullSafe: OS._toDocumentSpaceMask(null)
+    };
+  });
+
+  expect(result.dims).toEqual(result.docDims);
+  // 4 of 64 source cells stay 1/16 of the document after scaling.
+  expect(result.fraction).toBeCloseTo(4 / 64, 2);
+  expect(result.inside).toBe(true);
+  expect(result.outside).toBe(false);
+  expect(result.nativeUntouched).toBe(true);
+  expect(result.nullSafe).toBe(null);
+});
+
+test('selects the shape a lasso encloses rather than its bounding box', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    OS.setTool('lasso');
+    // A right triangle: (10,10) (110,10) (10,110). Its bounding box is the
+    // whole 100x100 square, but only the lower-left half is enclosed.
+    OS._lassoPoints = ['10,10', '110,10', '10,110'];
+    OS._lassoDoubleClick();
+
+    const mask = OS._selectionMask;
+    const at = (x, y) => mask.mask[y * mask.w + x] === 1;
+    let selected = 0;
+    for (let i = 0; i < mask.mask.length; i++) if (mask.mask[i]) selected++;
+    return {
+      dims: [mask.w, mask.h],
+      docDims: [Math.round(OS.canvasW), Math.round(OS.canvasH)],
+      bounds: { ...OS._selectionBounds },
+      insideTriangle: at(20, 20),
+      // Just inside the bounding box but outside the hypotenuse.
+      outsideHypotenuse: at(100, 100),
+      selected
+    };
+  });
+
+  expect(result.dims).toEqual(result.docDims);
+  expect(result.insideTriangle).toBe(true);
+  expect(result.outsideHypotenuse).toBe(false);
+  // Roughly half the 100x100 bounding box, not all of it.
+  expect(result.selected).toBeGreaterThan(4200);
+  expect(result.selected).toBeLessThan(5800);
+  expect(result.bounds.w).toBeGreaterThan(90);
+  expect(result.bounds.h).toBeGreaterThan(90);
+});
+
+test('maps lasso points through the viewport before rasterising', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    // Same on-screen gesture, but drawn while zoomed to 2x and panned.
+    OS.canvas.setViewportTransform([2, 0, 0, 2, 40, 60]);
+    OS.setTool('lasso');
+    OS._lassoPoints = ['60,80', '160,80', '160,180', '60,180'];
+    OS._lassoDoubleClick();
+    const mask = OS._selectionMask;
+    const at = (x, y) => mask.mask[y * mask.w + x] === 1;
+    return {
+      bounds: { ...OS._selectionBounds },
+      // Screen (60,80) is document (10,10); screen (160,180) is document (60,60).
+      insideDoc: at(30, 30),
+      outsideDoc: at(80, 80)
+    };
+  });
+
+  expect(result.bounds).toEqual({ x: 10, y: 10, w: 50, h: 50 });
+  expect(result.insideDoc).toBe(true);
+  expect(result.outsideDoc).toBe(false);
 });

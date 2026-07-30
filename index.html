@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-7oEJGNykSjKE9UzzQjWRHRb0igjZjpIelohH4Vo9q2U=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-XZ3MOwVgYdKZDdce/T7Aipu+M2GEPyJzlZ/fZLAgzIg=' 'sha256-yB2qCBBUkthEX6WGuNZqIYuayfClvCGQyZv/NO+cNHM=' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.21.0 — Online Image Editor</title>
 <script src="https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js" integrity="sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6" crossorigin="anonymous"></script>
 <script>
@@ -3402,6 +3402,15 @@ const OS = {
         this.canvas.on('selection:created', () => this.updateStatus());
         this.canvas.on('selection:cleared', () => this.updateStatus());
         this.canvas.on('mouse:wheel', opt => this.onMouseWheel(opt));
+        // Every zoom and pan path ends in a render, so re-place the screen-space
+        // selection box here rather than chasing each caller.
+        this.canvas.on('after:render', () => {
+            if (!this._selectionMask) return;
+            const key = String(this.canvas.viewportTransform);
+            if (key === this._selectionBoxViewport) return;
+            this._selectionBoxViewport = key;
+            this._placeSelectionBox();
+        });
         this.canvas.on('path:created', e => {
             if (!this._isLayerEditable()) {
                 this.canvas.remove(e.path);
@@ -4089,9 +4098,13 @@ const OS = {
             };
             if (Object.values(bounds).every(Number.isFinite) && bounds.w > 0 && bounds.h > 0) this._selectionBounds = bounds;
         }
-        this._selectionMask = this._decodeSelectionMask(selection?.mask);
-        if (this._selectionMask && !this._selectionBounds) this._recalcSelectionBounds(this._selectionMask);
-        if (this._selectionBounds && overlay) {
+        this._selectionMask = this._toDocumentSpaceMask(this._decodeSelectionMask(selection?.mask));
+        if (this._selectionMask) {
+            // Bounds saved alongside a rescaled mask no longer describe it.
+            this._recalcSelectionBounds(this._selectionMask);
+            this._placeSelectionBox({ borderRadius:'0' });
+            this._showMaskOverlay(this._selectionMask);
+        } else if (this._selectionBounds && overlay) {
             overlay.style.display = 'block';
             overlay.style.left = this._selectionBounds.x + 'px';
             overlay.style.top = this._selectionBounds.y + 'px';
@@ -4099,7 +4112,6 @@ const OS = {
             overlay.style.height = this._selectionBounds.h + 'px';
             overlay.style.borderRadius = '0';
         }
-        if (this._selectionMask) this._showMaskOverlay(this._selectionMask);
     },
     _restoreGuidesState(guides) {
         this.guides.forEach(guide => guide._cleanup?.());
@@ -6686,27 +6698,11 @@ self.onmessage = function(event) {
                 }
             }
         }
-        this._selectionMask={mask,w:cw,h:ch};
-        this._selectionBounds=count>0?{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1}:null;
-        // Non-destructive overlay: paint tint on a SEPARATE overlay canvas
-        const ov=document.createElement('canvas'); ov.width=cw; ov.height=ch;
-        const ovCtx=ov.getContext('2d');
-        const ovData=ovCtx.createImageData(cw,ch); const od=ovData.data;
-        for(let i=0;i<mask.length;i++){ if(mask[i]){ od[i*4]=80;od[i*4+1]=140;od[i*4+2]=255;od[i*4+3]=60; }}
-        ovCtx.putImageData(ovData,0,0);
-        // Draw overlay as fabric image (removable, doesn't affect source)
-        this.canvas.getObjects().filter(o=>o._wandOverlay).forEach(o=>this.canvas.remove(o));
-        fabric.Image.fromURL(ov.toDataURL(),img=>{
-            img.set({left:(0-vpt[4])/vpt[0],top:(0-vpt[5])/vpt[3],scaleX:1/vpt[0],scaleY:1/vpt[3],
-                selectable:false,evented:false,_wandOverlay:true,excludeFromExport:true});
-            this.canvas.add(img); this.canvas.renderAll();
-        });
-        // Marching ants on bounding box
-        const el=document.getElementById('selection-overlay');
-        if(count>0){el.style.display='block';el.style.left=minX+'px';el.style.top=minY+'px';
-            el.style.width=(maxX-minX+1)+'px';el.style.height=(maxY-minY+1)+'px';el.style.borderRadius='0';}
-        else el.style.display='none';
-        this.toast('Selected '+count.toLocaleString()+' px','info');
+        // The wand samples the composited canvas, so its mask is screen-space
+        // until the shared setter converts it.
+        const selected = this._setPixelSelectionMask(mask, cw, ch, { space:'screen' });
+        this._placeSelectionBox({ borderRadius:'0' });
+        this.toast('Selected '+selected.toLocaleString()+' px','info');
     },
     clearSelection(){
         this._storeLastSelection();
@@ -6784,12 +6780,7 @@ self.onmessage = function(event) {
             }
         }
         this._selectionBounds = count > 0 ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : null;
-        const el = document.getElementById('selection-overlay');
-        if (this._selectionBounds) {
-            el.style.display = 'block';
-            el.style.left = minX + 'px'; el.style.top = minY + 'px';
-            el.style.width = (maxX - minX + 1) + 'px'; el.style.height = (maxY - minY + 1) + 'px';
-        } else { el.style.display = 'none'; }
+        this._placeSelectionBox();
         this._showMaskOverlay(this._selectionMask);
         this.toast('Selection inverted: ' + count.toLocaleString() + ' px', 'info');
     },
@@ -6987,19 +6978,30 @@ self.onmessage = function(event) {
             }
         }
         this._selectionBounds = count > 0 ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : null;
-        const el = document.getElementById('selection-overlay');
-        if (this._selectionBounds) {
-            el.style.display = 'block';
-            el.style.left = minX + 'px'; el.style.top = minY + 'px';
-            el.style.width = (maxX - minX + 1) + 'px'; el.style.height = (maxY - minY + 1) + 'px';
-            el.style.borderRadius = '0';
-        } else { el.style.display = 'none'; }
+        this._placeSelectionBox({ borderRadius:'0' });
         this._renderAccessibilityTree();
+    },
+
+    // The marching-ants box is a DOM element positioned in screen pixels, but
+    // mask bounds are document coordinates, so it has to go through the
+    // viewport — and be re-placed whenever the viewport moves.
+    _placeSelectionBox({ borderRadius = null } = {}) {
+        const el = document.getElementById('selection-overlay');
+        if (!el) return;
+        if (!this._selectionMask) return;   // lasso and marquee place their own box
+        const bounds = this._selectionBounds;
+        if (!bounds) { el.style.display = 'none'; return; }
+        const vpt = this.canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+        el.style.display = 'block';
+        el.style.left = (bounds.x * vpt[0] + vpt[4]) + 'px';
+        el.style.top = (bounds.y * vpt[3] + vpt[5]) + 'px';
+        el.style.width = (bounds.w * vpt[0]) + 'px';
+        el.style.height = (bounds.h * vpt[3]) + 'px';
+        if (borderRadius !== null) el.style.borderRadius = borderRadius;
     },
 
     // Show blue tint overlay for pixel mask
     _showMaskOverlay(m) {
-        const vpt = this.canvas.viewportTransform;
         const ov = document.createElement('canvas'); ov.width = m.w; ov.height = m.h;
         const ovCtx = ov.getContext('2d');
         const ovData = ovCtx.createImageData(m.w, m.h); const od = ovData.data;
@@ -7009,7 +7011,7 @@ self.onmessage = function(event) {
         ovCtx.putImageData(ovData, 0, 0);
         this.canvas.getObjects().filter(o => o._wandOverlay).forEach(o => this.canvas.remove(o));
         fabric.Image.fromURL(ov.toDataURL(), img => {
-            img.set({ left: (0 - vpt[4]) / vpt[0], top: (0 - vpt[5]) / vpt[3], scaleX: 1 / vpt[0], scaleY: 1 / vpt[3],
+            img.set({ left: 0, top: 0, scaleX: 1, scaleY: 1,
                 selectable: false, evented: false, _wandOverlay: true, excludeFromExport: true });
             this.canvas.add(img); this.canvas.renderAll();
         });
@@ -7216,13 +7218,8 @@ self.onmessage = function(event) {
         if (!this._crMask) { document.getElementById('cr-overlay').remove(); return; }
         const mask = this._crMask;
         const cw = this._crSnap.width, ch = this._crSnap.height;
-        // Set as active selection
-        this._selectionMask = { mask, w: cw, h: ch };
-        this._recalcSelectionBounds(this._selectionMask);
-        this._showMaskOverlay(this._selectionMask);
-
-        let count = 0;
-        for (let i = 0; i < mask.length; i++) if (mask[i]) count++;
+        // Color Range also samples the composite, so it is screen-space too.
+        const count = this._setPixelSelectionMask(mask, cw, ch, { space:'screen' });
         this.toast('Color Range: ' + count.toLocaleString() + ' px selected', 'success');
 
         document.getElementById('cr-overlay').remove();
@@ -10377,24 +10374,40 @@ self.onmessage = async function(event) {
         const svg = document.querySelector('#lasso-overlay svg polygon');
         svg.setAttribute('points', this._lassoPoints.join(' '));
     },
+    // Fill the polygon into a document-sized buffer: the drawn shape is the
+    // selection. It used to keep only the bounding box, so a lasso around a
+    // diagonal subject also selected every corner it did not enclose.
+    _rasterizePolygonMask(points) {
+        const dw = Math.max(1, Math.round(this.canvasW));
+        const dh = Math.max(1, Math.round(this.canvasH));
+        const oc = document.createElement('canvas');
+        oc.width = dw; oc.height = dh;
+        const ctx = oc.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+        ctx.closePath();
+        ctx.fill();
+        const data = ctx.getImageData(0, 0, dw, dh).data;
+        const mask = new Uint8Array(dw * dh);
+        for (let i = 0; i < mask.length; i++) if (data[i * 4 + 3] > 127) mask[i] = 1;
+        return { mask, w:dw, h:dh };
+    },
     _lassoDoubleClick() {
         if (this._lassoPoints.length < 3) return;
         // Close the polygon visually
         const svg = document.querySelector('#lasso-overlay svg polygon');
         svg.setAttribute('points', this._lassoPoints.join(' '));
-        // Calculate bounding box from points
-        const pts = this._lassoPoints.map(p => { const [x, y] = p.split(',').map(Number); return { x, y }; });
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        pts.forEach(p => { if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y; if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; });
-        this._selectionBounds = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-        this._selectionMask = null; // Lasso uses bounds, not pixel mask
-        // Show the selection overlay bounding box with marching ants
-        const el = document.getElementById('selection-overlay');
-        el.style.display = 'block';
-        el.style.left = minX + 'px'; el.style.top = minY + 'px';
-        el.style.width = (maxX - minX) + 'px'; el.style.height = (maxY - minY) + 'px';
-        el.style.borderRadius = '0';
-        this.toast('Lasso selection: ' + this._lassoPoints.length + ' points', 'info');
+        const vpt = this.canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+        const points = this._lassoPoints.map(entry => {
+            const [x, y] = entry.split(',').map(Number);
+            return { x:(x - vpt[4]) / (vpt[0] || 1), y:(y - vpt[5]) / (vpt[3] || 1) };
+        });
+        const raster = this._rasterizePolygonMask(points);
+        const count = this._setPixelSelectionMask(raster.mask, raster.w, raster.h);
+        if (!count) { this.toast('Lasso selection is outside the document', 'info'); return; }
+        this._placeSelectionBox({ borderRadius:'0' });
+        this.toast('Lasso selection: ' + count.toLocaleString() + ' px', 'info');
     },
 
     // ====================== HEALING BRUSH ======================
@@ -13679,7 +13692,6 @@ self.onmessage = async function(e) {
         if (this._selectionMask) {
             // Magic wand: use pixel mask
             const mask = this._selectionMask;
-            const vpt = this.canvas.viewportTransform;
             const matrix = target.calcTransformMatrix();
             const inv = fabric.util.invertTransform(matrix);
             const imgData = ctx.getImageData(0, 0, oc.width, oc.height);
@@ -13687,9 +13699,9 @@ self.onmessage = async function(e) {
             for (let sy = 0; sy < mask.h; sy++) {
                 for (let sx = 0; sx < mask.w; sx++) {
                     if (!mask.mask[sy * mask.w + sx]) continue;
-                    // Convert screen pixel to canvas coords then to image local
-                    const cx = (sx - vpt[4]) / vpt[0], cy = (sy - vpt[5]) / vpt[3];
-                    const local = fabric.util.transformPoint({ x: cx, y: cy }, inv);
+                    // Document pixel to image-local; the mask is already in
+                    // document space, so no viewport conversion belongs here.
+                    const local = fabric.util.transformPoint({ x: sx, y: sy }, inv);
                     const ix = Math.round(local.x + oc.width / 2), iy = Math.round(local.y + oc.height / 2);
                     if (ix >= 0 && iy >= 0 && ix < oc.width && iy < oc.height) {
                         const i = (iy * oc.width + ix) * 4;
@@ -14873,7 +14885,53 @@ self.onmessage = async function(e) {
             .sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
     },
 
-    _setPixelSelectionMask(mask, w, h) {
+    // Masks live in document space. Sampling the composited canvas produces a
+    // screen-space mask, which used to be stored as-is and then re-read under
+    // whatever viewport transform happened to be current — so zooming or
+    // panning between selecting and deleting hit the wrong pixels entirely,
+    // and below 100% zoom the one-to-one mapping left a sparse grid of
+    // survivors instead of a clean hole.
+    _screenMaskToDocument(mask, sw, sh) {
+        const vpt = this.canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+        const dw = Math.max(1, Math.round(this.canvasW));
+        const dh = Math.max(1, Math.round(this.canvasH));
+        const out = new Uint8Array(dw * dh);
+        const scaleX = vpt[0] || 1, scaleY = vpt[3] || 1;
+        for (let dy = 0; dy < dh; dy++) {
+            const sy = Math.round(dy * scaleY + vpt[5]);
+            if (sy < 0 || sy >= sh) continue;
+            for (let dx = 0; dx < dw; dx++) {
+                const sx = Math.round(dx * scaleX + vpt[4]);
+                if (sx < 0 || sx >= sw) continue;
+                if (mask[sy * sw + sx]) out[dy * dw + dx] = 1;
+            }
+        }
+        return { mask:out, w:dw, h:dh };
+    },
+    // Projects saved before masks became document-space stored them at the
+    // canvas element's size under an unrecorded viewport. Rescaling to the
+    // document is the only interpretation available, and it beats leaving a
+    // mask that addresses pixels the document does not have.
+    _toDocumentSpaceMask(selection) {
+        if (!selection?.mask) return null;
+        const dw = Math.max(1, Math.round(this.canvasW));
+        const dh = Math.max(1, Math.round(this.canvasH));
+        if (selection.w === dw && selection.h === dh) return selection;
+        const out = new Uint8Array(dw * dh);
+        for (let y = 0; y < dh; y++) {
+            const sy = Math.min(selection.h - 1, Math.floor(y * selection.h / dh));
+            for (let x = 0; x < dw; x++) {
+                const sx = Math.min(selection.w - 1, Math.floor(x * selection.w / dw));
+                if (selection.mask[sy * selection.w + sx]) out[y * dw + x] = 1;
+            }
+        }
+        return { mask:out, w:dw, h:dh };
+    },
+    _setPixelSelectionMask(mask, w, h, { space = 'document' } = {}) {
+        if (space === 'screen') {
+            const converted = this._screenMaskToDocument(mask, w, h);
+            mask = converted.mask; w = converted.w; h = converted.h;
+        }
         let count = 0;
         for (let i = 0; i < mask.length; i++) if (mask[i]) count++;
         const el = document.getElementById('selection-overlay');
@@ -14894,19 +14952,18 @@ self.onmessage = async function(e) {
     async _applySegmentSelection(target, segment, imageW, imageH, job = null) {
         const info = this._segmentMaskInfo(this._segmentMaskFor(segment), imageW, imageH);
         if (!info) return 0;
-        const cw = this.canvas.width, ch = this.canvas.height;
+        const cw = Math.max(1, Math.round(this.canvasW)), ch = Math.max(1, Math.round(this.canvasH));
         const fullMask = new Uint8Array(cw * ch);
-        const vpt = this.canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
-        const pixelW = Math.abs((target.scaleX || 1) * (vpt[0] || 1) * imageW / info.w);
-        const pixelH = Math.abs((target.scaleY || 1) * (vpt[3] || 1) * imageH / info.h);
+        const pixelW = Math.abs((target.scaleX || 1) * imageW / info.w);
+        const pixelH = Math.abs((target.scaleY || 1) * imageH / info.h);
         const fillRadius = Math.min(2, Math.max(0, Math.ceil(Math.max(pixelW, pixelH)) - 1));
         for (let y = 0; y < info.h; y++) {
             if (job && y > 0 && y % 32 === 0) await this._yieldComputeJob(job);
             for (let x = 0; x < info.w; x++) {
                 if (!this._segmentMaskActive(info, x, y)) continue;
                 const pt = this._imageCanvasPointFromLocal(target, (x + 0.5) * imageW / info.w, (y + 0.5) * imageH / info.h, imageW, imageH);
-                const sx = Math.round(pt.x * vpt[0] + vpt[4]);
-                const sy = Math.round(pt.y * vpt[3] + vpt[5]);
+                const sx = Math.round(pt.x);
+                const sy = Math.round(pt.y);
                 for (let yy = sy - fillRadius; yy <= sy + fillRadius; yy++) {
                     if (yy < 0 || yy >= ch) continue;
                     for (let xx = sx - fillRadius; xx <= sx + fillRadius; xx++) {

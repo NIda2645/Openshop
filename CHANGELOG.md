@@ -13,6 +13,10 @@ All notable changes to Openshop will be documented in this file.
 - A single assertion that keeps the version in `package.json`, `package-lock.json`, the README badge, the changelog, the page title, the in-app labels, and the offline shell revision aligned
 
 ### Fixed
+- Store pixel selections in document space instead of screen space: zooming or panning between selecting and deleting no longer erases a different part of the image, and deleting below 100% zoom no longer leaves a sparse grid of surviving pixels
+- Make the Lasso select the shape it encloses instead of its bounding box, mapped through the current zoom and pan
+- Keep the marching-ants box over the selection when the viewport moves
+- Rescale selection masks saved by earlier versions into the document when a project is opened, rather than leaving them addressing pixels the document does not have
 - Correct the browser-support table to say what is actually verified on each engine rather than claiming blanket full support
 - Sync `package-lock.json`, which still declared 0.20.0 after the 0.21.0 release
 - Guard the last ten pixel adjustments against a document that changed while they ran: a result that arrives after the layer was replaced, deleted, or edited is now discarded rather than written over the new pixels
