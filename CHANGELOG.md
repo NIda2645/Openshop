@@ -15,6 +15,9 @@ All notable changes to Openshop will be documented in this file.
 - Stop the hosted offline shell from rolling back an update after a single unconfirmed navigation; opening a second tab, refreshing during load, or closing the tab early no longer discards a healthy update, the rolled-back shell cache is retained, and a Rebuild Offline Shell action can re-stage without waiting for a new revision
 - Report a cached shell against the asset manifest that populated it, so changing the pinned asset list no longer reports a complete shell as incomplete forever
 
+- Make the Midnight and OLED themes apply to the whole studio: the precision-studio chrome now draws from the design tokens instead of ~170 hardcoded literals, so the topbar, toolbar, panels, dialogs, status bar, and canvas well all follow the selected theme, and the canvas-drawn rulers, curves grid, histogram, navigator, and before/after chrome repaint on a theme change
+- Persist the selected theme across reloads and apply it during startup rather than after the welcome screen is dismissed
+
 ### Performance
 - Stop encoding a full-resolution PNG of the whole document on every edit and every zoom step: the navigator now renders at thumbnail scale, zoom and pan update only the viewport rectangle, and minimap and histogram refreshes coalesce into one frame and skip entirely while their panels are hidden
 

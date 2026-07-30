@@ -2048,3 +2048,43 @@ test('keeps zoom cheap and coalesces inspector redraws after edits', async ({ pa
   // The minimap renders at thumbnail scale, not full document resolution.
   expect(result.thumbnailMultiplier).toBeLessThan(1);
 });
+
+test('applies every theme across the studio chrome and persists the choice', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const sample = () => page.evaluate(() => {
+    const bg = (sel) => {
+      const el = document.querySelector(sel);
+      const style = getComputedStyle(el);
+      return style.backgroundImage !== 'none' ? style.backgroundImage : style.backgroundColor;
+    };
+    return {
+      topbar: bg('#topbar'),
+      toolbar: bg('#toolbar'),
+      canvasArea: getComputedStyle(document.querySelector('#canvas-area')).backgroundColor,
+      statusbar: bg('#statusbar'),
+      panel: bg('.panel-tabs')
+    };
+  });
+
+  const seen = {};
+  for (const theme of ['default', 'midnight', 'oled']) {
+    await page.evaluate((t) => OS.setTheme(t, { silent: true, persist: false }), theme);
+    seen[theme] = await sample();
+  }
+
+  // Every chrome surface must actually change between themes.
+  for (const surface of Object.keys(seen.default)) {
+    expect(seen.default[surface], surface).not.toBe(seen.oled[surface]);
+    expect(seen.default[surface], surface).not.toBe(seen.midnight[surface]);
+    expect(seen.midnight[surface], surface).not.toBe(seen.oled[surface]);
+  }
+  // OLED drives the canvas well to near black.
+  expect(seen.oled.canvasArea).toBe('rgb(3, 4, 5)');
+
+  // The choice survives a reload.
+  await page.evaluate(() => OS.setTheme('oled'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('html')).toHaveClass(/theme-oled/);
+});
