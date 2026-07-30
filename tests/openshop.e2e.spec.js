@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 const appUrl = pathToFileURL(join(process.cwd(), 'index.html')).toString();
 
-test('loads the editor shell and supports core UI interactions', async ({ page }) => {
+test('loads the editor shell and supports core UI interactions @cross-browser', async ({ page, browserName }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -32,15 +32,19 @@ test('loads the editor shell and supports core UI interactions', async ({ page }
   await page.keyboard.press('Control+Z');
   await expect(page.locator('#history-list .history-item.current')).toContainText(/New Document|New Layer/);
 
-  await expect(page).toHaveScreenshot('openshop-editor-shell.png', {
-    animations: 'disabled',
-    fullPage: false,
-    maxDiffPixelRatio: 0.03
-  });
+  // One rendering engine owns the visual baseline; the others are here to prove
+  // the flow works, not to re-litigate sub-pixel text rasterisation.
+  if (browserName === 'chromium') {
+    await expect(page).toHaveScreenshot('openshop-editor-shell.png', {
+      animations: 'disabled',
+      fullPage: false,
+      maxDiffPixelRatio: 0.03
+    });
+  }
   expect(pageErrors).toEqual([]);
 });
 
-test('exposes clean, dirty, saving, and saved project states', async ({ page }) => {
+test('exposes clean, dirty, saving, and saved project states @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -77,7 +81,7 @@ test('exposes clean, dirty, saving, and saved project states', async ({ page }) 
   expect(await unloadPrevented()).toBe(false);
 });
 
-test('applies a one-click pixel filter to an active image layer', async ({ page }) => {
+test('applies a one-click pixel filter to an active image layer @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -1016,7 +1020,7 @@ test('stores atomic recovery generations, falls back from corruption, and forks 
   expect(pageErrors).toEqual([]);
 });
 
-test('round-trips one document state through save, open, recovery, undo, and redo', async ({ page }) => {
+test('round-trips one document state through save, open, recovery, undo, and redo @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -1194,7 +1198,7 @@ test('round-trips one document state through save, open, recovery, undo, and red
   }));
 });
 
-test('keeps layer stacking, locks, visibility, and history in one canonical model', async ({ page }) => {
+test('keeps layer stacking, locks, visibility, and history in one canonical model @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -1611,7 +1615,7 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
-test('exports real alpha or matte pixels and presents format loss before download', async ({ page }) => {
+test('exports real alpha or matte pixels and presents format loss before download @cross-browser', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
@@ -1786,7 +1790,11 @@ test('exports real alpha or matte pixels and presents format loss before downloa
 
   expect(result.pixels.transparentPng[3]).toBe(0);
   expect(result.pixels.transparentWebp[3]).toBe(0);
-  expect(result.pixels.mattePng).toEqual([0, 255, 0, 255]);
+  // WebKit's canvas composite lands a channel one step off pure green.
+  expect(result.pixels.mattePng[0]).toBeLessThanOrEqual(2);
+  expect(result.pixels.mattePng[1]).toBeGreaterThanOrEqual(253);
+  expect(result.pixels.mattePng[2]).toBeLessThanOrEqual(2);
+  expect(result.pixels.mattePng[3]).toBe(255);
   expect(result.pixels.jpeg[1]).toBeGreaterThan(180);
   expect(result.pixels.jpeg[0]).toBeLessThan(80);
   expect(result.pixels.jpeg[2]).toBeLessThan(80);
@@ -1798,7 +1806,10 @@ test('exports real alpha or matte pixels and presents format loss before downloa
     boundaryRestored: true
   });
   expect(result.pdf.succeeded).toBe(true);
-  expect(result.pdf.pixel).toEqual([0, 255, 0, 255]);
+  expect(result.pdf.pixel[0]).toBeLessThanOrEqual(2);
+  expect(result.pdf.pixel[1]).toBeGreaterThanOrEqual(253);
+  expect(result.pdf.pixel[2]).toBeLessThanOrEqual(2);
+  expect(result.pdf.pixel[3]).toBe(255);
   expect(result.pdf.filename).toBe('Untitled.pdf');
   expect(result.jpegTransparentOption).toBe(false);
   expect(result.stateRestored).toBe(true);
@@ -2117,7 +2128,7 @@ test('exposes onboarding and layer controls to the keyboard', async ({ page }) =
   await expect(page.locator('#ni-w')).toHaveValue('1920');
 });
 
-test('drives the whole menubar from the keyboard with clean accessible names', async ({ page }) => {
+test('drives the whole menubar from the keyboard with clean accessible names @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -2195,7 +2206,7 @@ test('drives the whole menubar from the keyboard with clean accessible names', a
   expect(shortcut).toBe('Ctrl+A');
 });
 
-test('traps focus inside dialogs and returns it to whatever opened them', async ({ page }) => {
+test('traps focus inside dialogs and returns it to whatever opened them @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -2223,7 +2234,9 @@ test('traps focus inside dialogs and returns it to whatever opened them', async 
   expect(named.dialogCount).toBe(1);
 
   // Focus is moved into the dialog rather than left behind it.
-  expect(await page.evaluate(() => document.querySelector('.modal-overlay').contains(document.activeElement))).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector('.modal-overlay')?.contains(document.activeElement)))
+    .toBe(true);
 
   // Tab wraps at both ends instead of escaping into the editor behind.
   const focusables = await page.evaluate(() => {
@@ -2354,7 +2367,7 @@ test('resolves accent-derived chrome through the token scale in every theme', as
   }
 });
 
-test('runs every migrated pixel filter off the main thread with unchanged math', async ({ page }) => {
+test('runs every migrated pixel filter off the main thread with unchanged math @cross-browser', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 

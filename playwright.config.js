@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
+// Chromium runs the whole suite. Firefox and WebKit run the flows tagged
+// @cross-browser — open, edit, filter, save, recover, export, and the keyboard
+// and dialog contracts — because the README claims full support there and a
+// Chromium-only suite cannot back that claim up.
 export default defineConfig({
   testDir: './tests',
   testMatch: /.*\.e2e\.spec\.js/,
@@ -14,8 +18,12 @@ export default defineConfig({
     reuseExistingServer: true
   },
   use: {
-    browserName: 'chromium',
     trace: 'retain-on-failure',
     viewport: { width: 1440, height: 1000 }
-  }
+  },
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    { name: 'firefox', use: { browserName: 'firefox' }, grep: /@cross-browser/ },
+    { name: 'webkit', use: { browserName: 'webkit' }, grep: /@cross-browser/ }
+  ]
 });

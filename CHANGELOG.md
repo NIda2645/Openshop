@@ -8,7 +8,13 @@ All notable changes to Openshop will be documented in this file.
 - Run Solarize, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Curves, Channel Mixer, Auto Levels, Auto Contrast, and Auto Enhance in the filter worker instead of blocking the main thread, so they can be cancelled mid-run and the interface stays responsive on large images
 - Coalesce the Color Range preview instead of recomputing the whole mask on every fuzziness slider tick
 
+### Added
+- Cross-engine test gate: the core open, edit, filter, save, recover, export, keyboard, and dialog flows now run automatically on Firefox and WebKit as well as Chromium (`npm run test:cross-browser`)
+- A single assertion that keeps the version in `package.json`, `package-lock.json`, the README badge, the changelog, the page title, the in-app labels, and the offline shell revision aligned
+
 ### Fixed
+- Correct the browser-support table to say what is actually verified on each engine rather than claiming blanket full support
+- Sync `package-lock.json`, which still declared 0.20.0 after the 0.21.0 release
 - Guard the last ten pixel adjustments against a document that changed while they ran: a result that arrives after the layer was replaced, deleted, or edited is now discarded rather than written over the new pixels
 - Let a second AI request take over from the model download it cancels — starting one while another was loading used to kill both and require a third click
 - Operate the whole menubar from the keyboard: arrow keys move between menus and rows, Enter or Space opens and activates, Home and End jump to the ends, typing a letter jumps to the next matching row, Escape closes one level at a time, and clicking a menu title now keeps it open instead of requiring the pointer to stay put

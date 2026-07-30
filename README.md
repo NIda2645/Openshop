@@ -213,12 +213,14 @@ npm run test:release
 
 ## Browser Support
 
-| Browser | Status |
-|---------|--------|
-| Chrome / Edge 90+ | Full support (including AI via WebGPU) |
-| Firefox 90+ | Full support (AI via WASM fallback) |
-| Safari 15+ | Full support (AI via WASM fallback, auto-save via Worker) |
-| Mobile Chrome/Safari | Responsive shell and dialogs; precision canvas work is best on a larger display |
+| Browser | Status | Evidence |
+|---------|--------|----------|
+| Chrome / Edge 90+ | Full support (including AI via WebGPU) | Full automated suite runs on every change |
+| Firefox 90+ | Core editing supported (AI via WASM fallback) | Open, edit, filter, save, recover, export, keyboard and dialog flows run automatically |
+| Safari 15+ / WebKit | Core editing supported (AI via WASM fallback, auto-save via Worker) | Same automated flows run on WebKit; not yet verified on Safari hardware |
+| Mobile Chrome/Safari | Responsive shell and dialogs; precision canvas work is best on a larger display | Viewport tests only; not verified on a physical device |
+
+Run the cross-engine flows yourself with `npm run test:cross-browser`.
 
 Offline installation depends on service-worker/PWA support. Operating-system file associations are currently a desktop Chromium capability; OpenShop feature-detects them and does not claim them in Firefox or Safari.
 
@@ -253,7 +255,7 @@ Simplicity. A single HTML file can be hosted anywhere, shared as an email attach
 Issues and PRs welcome. The codebase is a single file — just open `index.html` in any editor.
 
 When contributing:
-- Test in Chrome and Firefox at minimum
+- Run `npm test` and `npm run test:e2e`; run `npm run test:cross-browser` before changing anything the browser-support table claims
 - Maintain the single-file architecture
 - Keep the dark theme consistent with existing CSS variables
 - Route replayable edits through a schema-v1 command and one history transaction; use `saveHistory()` only for a completed synchronous mutation
