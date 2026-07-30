@@ -1534,6 +1534,32 @@ describe('OpenShop core object', () => {
     expect(clean).toContain('fill="blue"');
   });
 
+  it('strips namespaced and mixed-case hrefs that the old guard let through', () => {
+    const OS = loadOpenShop();
+
+    // fabric emits image references as xlink:href — precisely the attribute the
+    // dead '[xlink\:href]' selector was written to guard.
+    const malicious = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+      <image xlink:href="javascript:alert(1)" width="10" height="10"/>
+      <a href="JAVASCRIPT:alert(2)"><text>Upper</text></a>
+      <a href="Data:text/html,evil"><text>Mixed</text></a>
+      <a href="java	script:alert(3)"><text>Tabbed</text></a>
+      <a href="vbscript:msgbox(4)"><text>Legacy</text></a>
+      <image xlink:href="data:image/png;base64,AAAA" width="10" height="10"/>
+      <use xlink:href="#shape"/>
+      <a href="https://example.com/"><text>Fine</text></a>
+    </svg>`;
+
+    const clean = OS._sanitizeSVG(malicious);
+    expect(clean).not.toMatch(/javascript/i);
+    expect(clean).not.toMatch(/vbscript/i);
+    expect(clean).not.toMatch(/data:text\/html/i);
+    // Legitimate references survive, or export would silently lose content.
+    expect(clean).toContain('data:image/png;base64,AAAA');
+    expect(clean).toContain('#shape');
+    expect(clean).toContain('https://example.com/');
+  });
+
   it('builds PSD export structure with correct layer metadata', () => {
     const OS = loadOpenShop();
     const boundary = {
