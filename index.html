@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-e+l/5bQXOrD7O0nCL9gB9sr51S2432Yg4Fx3rggJniE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-pq45ScoeaHGsV7khcJv2C1TRmeOIYcNQ51tqQ3JpwuA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.23.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3710,6 +3710,11 @@ const OS = {
         this._computeJobs.set(job.id, job);
         return job;
     },
+    // _computeJobs already knows which job owns a group; a second field
+    // tracking the same thing is a second thing to keep in step.
+    _activeComputeJob(group) {
+        return [...this._computeJobs.values()].find(job => job.group === group && !job.done && !job.cancelled) || null;
+    },
     _cancelComputeJob(jobOrId, message = 'Operation cancelled') {
         const job = typeof jobOrId === 'string' ? this._computeJobs.get(jobOrId) : jobOrId;
         if (!job || job.done || job.cancelled) return false;
@@ -5361,8 +5366,7 @@ const OS = {
         }
     },
     _cancelPSDImport(message = 'PSD import cancelled') {
-        const job = this._psdDecodeJob;
-        return this._cancelComputeJob(job, message);
+        return this._cancelComputeJob(this._activeComputeJob('psd-import'), message);
     },
     async _decodePSDInWorker(bytes, fileSize, job) {
         if (typeof Worker === 'undefined') return Promise.reject(new Error('PSD import requires Web Worker support'));
@@ -5986,15 +5990,13 @@ self.onmessage = function(event) {
         this._captureBA();
         this._claimRecoveryOwnership();
     },
-    _psdDecodeJob: null,
     async _loadPSDFile(file) {
         if (!file) return false;
-        if (this._psdDecodeJob) this._cancelPSDImport('A newer PSD import replaced this one');
+        // _startComputeJob already cancels whatever else holds this group.
         const job = this._startComputeJob('psd-import', { group:'psd-import' });
         job.overlay = null;
         job.status = null;
         job.cancel = () => this._closePSDImportProgress(job);
-        this._psdDecodeJob = job;
         this._showPSDImportProgress(file.name, job);
         try {
             if (file.size > this._psdLimits.maxFileBytes) throw new Error('PSD exceeds 256 MB import limit');
@@ -6022,11 +6024,10 @@ self.onmessage = function(event) {
             }
             return false;
         } finally {
-            if (this._psdDecodeJob === job) {
-                job.worker?.terminate();
-                this._closePSDImportProgress(job);
-                this._psdDecodeJob = null;
-            }
+            // Both are job-scoped, so a superseded import cannot close the
+            // overlay or kill the worker belonging to the one that replaced it.
+            job.worker?.terminate();
+            this._closePSDImportProgress(job);
             this._finishComputeJob(job);
         }
     },
@@ -15371,16 +15372,28 @@ self.onmessage = async function(e) {
         'Xenova/detr-resnet-50': '8be7ab59ff663484ee9ba2e8d8f267330d5ad03e',
         'Xenova/detr-resnet-50-panoptic': 'ea24b2d4e0bfae31f0a1299ba3fb892a2df064de',
     },
-    async _loadPipeline(task, model, label, job = null) {
-        const key = task + ':' + model;
-        if (this._aiPipelines[key]) {
-            this.toast(label + ' model ready (cached)', 'info');
-            return this._aiPipelines[key];
-        }
-        const operation = job || this._startComputeJob(`AI ${label}`, { group:'image-processing' });
+    _modelProgressCallback(operation) {
+        let lastPct = 0;
+        return (p) => {
+            if (p.status === 'progress' && p.progress) {
+                lastPct = p.progress;
+                this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '', operation);
+            } else if (p.status === 'done') {
+                this._updateAIProgress(100, 'Model loaded', operation);
+            } else if (p.status === 'initiate') {
+                this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''), operation);
+            }
+        };
+    },
+    // The busy guard, job ownership, transformers load, device probe, progress
+    // plumbing, dispose-on-cancel and failure toast were written twice, so any
+    // change to the download experience had to land in both places. Resolves to
+    // an array of loaded artefacts, or null if the load did not happen.
+    async _loadModelArtifacts({ job = null, jobKind, busyMessage, title, failure }, start) {
+        const operation = job || this._startComputeJob(jobKind, { group:'image-processing' });
         const ownsJob = !job;
         if (this._aiModelLoadBusy()) {
-            this.toast('Another AI model is loading, please wait', 'info');
+            this.toast(busyMessage, 'info');
             if (ownsJob) this._finishComputeJob(operation);
             return null;
         }
@@ -15388,45 +15401,53 @@ self.onmessage = async function(e) {
         try {
             const lib = await this._loadTransformers(operation);
             const device = await this._raceComputeJob(this._selectAIDevice(), operation);
-            this._showAIProgress('Downloading ' + label + ' Model', `First-time download, will be cached for future use (${device})`, operation);
-            let lastPct = 0;
-            const loading = lib.pipeline(task, model, {
-                dtype: 'q8',
-                device,
-                revision: this._modelRevisions[model] || 'main',
-                progress_callback: (p) => {
-                    if (p.status === 'progress' && p.progress) {
-                        lastPct = p.progress;
-                        this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '', operation);
-                    } else if (p.status === 'done') {
-                        this._updateAIProgress(100, 'Model loaded', operation);
-                    } else if (p.status === 'initiate') {
-                        this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''), operation);
-                    }
-                }
-            });
-            let pipe;
+            this._showAIProgress(title, `First-time download, cached for future use (${device})`, operation);
+            const pending = [].concat(start(lib, device, this._modelProgressCallback(operation), operation));
+            let loaded;
             try {
-                pipe = await this._raceComputeJob(loading, operation);
+                loaded = await this._raceComputeJob(Promise.all(pending), operation);
             } catch (error) {
-                void Promise.resolve(loading).then(value => value?.dispose?.()).catch(() => {});
+                // A cancelled download still lands; without this it becomes a
+                // model nothing will ever free.
+                pending.forEach(item => { void Promise.resolve(item).then(value => value?.dispose?.()).catch(() => {}); });
                 throw error;
             }
             this._assertComputeJobCurrent(operation);
-            this._aiPipelines[key] = pipe;
             this._hideAIProgress(operation);
-            this.toast(label + ' model ready', 'success');
-            return pipe;
+            return loaded;
         } catch(e) {
             this._hideAIProgress(operation);
             if (this._isComputeAbort(e)) throw e;
-            this.toast('Failed to load ' + label + ': ' + e.message, 'error');
-            console.error('AI model load error:', e);
+            this.toast(failure + ': ' + e.message, 'error');
+            console.error(failure + ':', e);
             return null;
         } finally {
             if (this._aiLoadingJobId === operation.id) this._aiLoadingJobId = null;
             if (ownsJob) this._finishComputeJob(operation);
         }
+    },
+    async _loadPipeline(task, model, label, job = null) {
+        const key = task + ':' + model;
+        if (this._aiPipelines[key]) {
+            this.toast(label + ' model ready (cached)', 'info');
+            return this._aiPipelines[key];
+        }
+        const loaded = await this._loadModelArtifacts({
+            job,
+            jobKind: `AI ${label}`,
+            busyMessage: 'Another AI model is loading, please wait',
+            title: 'Downloading ' + label + ' Model',
+            failure: 'Failed to load ' + label
+        }, (lib, device, onProgress) => lib.pipeline(task, model, {
+            dtype: 'q8',
+            device,
+            revision: this._modelRevisions[model] || 'main',
+            progress_callback: onProgress
+        }));
+        if (!loaded) return null;
+        this._aiPipelines[key] = loaded[0];
+        this.toast(label + ' model ready', 'success');
+        return loaded[0];
     },
 
     _getActiveImage() {
@@ -15715,64 +15736,29 @@ self.onmessage = async function(e) {
     _aiRmbgProcessor: null,
     async _loadRmbgModel(job = null) {
         if (this._aiRmbgModel) return true;
-        const operation = job || this._startComputeJob('AI Background Removal', { group:'image-processing' });
-        const ownsJob = !job;
-        if (this._aiModelLoadBusy()) {
-            this.toast('Another AI model is loading', 'info');
-            if (ownsJob) this._finishComputeJob(operation);
-            return false;
-        }
-        this._aiLoadingJobId = operation.id;
-        try {
-            const lib = await this._loadTransformers(operation);
-            const device = await this._raceComputeJob(this._selectAIDevice(), operation);
-            this._showAIProgress('Downloading Background Removal Model', `First-time download, cached for future use (${device})`, operation);
-            let lastPct = 0;
-            const progressCb = (p) => {
-                if (p.status === 'progress' && p.progress) {
-                    lastPct = p.progress;
-                    this._updateAIProgress(p.progress, p.file ? 'Downloading: ' + p.file.split('/').pop() : '', operation);
-                } else if (p.status === 'done') {
-                    this._updateAIProgress(100, 'Model loaded', operation);
-                } else if (p.status === 'initiate') {
-                    this._updateAIProgress(lastPct, 'Loading: ' + (p.file ? p.file.split('/').pop() : ''), operation);
-                }
-            };
+        const revision = this._modelRevisions['Xenova/modnet'] || 'main';
+        const loaded = await this._loadModelArtifacts({
+            job,
+            jobKind: 'AI Background Removal',
+            busyMessage: 'Another AI model is loading',
+            title: 'Downloading Background Removal Model',
+            failure: 'Failed to load BG model'
+        }, (lib, device, onProgress) => {
             lib.env.allowLocalModels = false;
-            const modelLoading = lib.AutoModel.from_pretrained('Xenova/modnet', {
-                device,
-                dtype: 'fp32',
-                revision: this._modelRevisions['Xenova/modnet'] || 'main',
-                progress_callback: progressCb
-            });
-            const processorLoading = lib.AutoProcessor.from_pretrained('Xenova/modnet', {
-                revision: this._modelRevisions['Xenova/modnet'] || 'main',
-            });
-            let model;
-            let processor;
-            try {
-                [model, processor] = await this._raceComputeJob(Promise.all([modelLoading, processorLoading]), operation);
-            } catch (error) {
-                void Promise.resolve(modelLoading).then(value => value?.dispose?.()).catch(() => {});
-                void Promise.resolve(processorLoading).then(value => value?.dispose?.()).catch(() => {});
-                throw error;
-            }
-            this._assertComputeJobCurrent(operation);
-            this._aiRmbgModel = model;
-            this._aiRmbgProcessor = processor;
-            this._hideAIProgress(operation);
-            this.toast('Background Removal model ready', 'success');
-            return true;
-        } catch(e) {
-            this._hideAIProgress(operation);
-            if (this._isComputeAbort(e)) throw e;
-            this.toast('Failed to load BG model: ' + e.message, 'error');
-            console.error('MODNet load error:', e);
-            return false;
-        } finally {
-            if (this._aiLoadingJobId === operation.id) this._aiLoadingJobId = null;
-            if (ownsJob) this._finishComputeJob(operation);
-        }
+            return [
+                lib.AutoModel.from_pretrained('Xenova/modnet', {
+                    device,
+                    dtype: 'fp32',
+                    revision,
+                    progress_callback: onProgress
+                }),
+                lib.AutoProcessor.from_pretrained('Xenova/modnet', { revision })
+            ];
+        });
+        if (!loaded) return false;
+        [this._aiRmbgModel, this._aiRmbgProcessor] = loaded;
+        this.toast('Background Removal model ready', 'success');
+        return true;
     },
     async aiRemoveBackground() {
         const target = this._getActiveImage();

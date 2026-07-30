@@ -774,7 +774,7 @@ test('rejects hostile or cancelled PSD work without mutating the open document',
       'cancel.psd',
       { type: 'image/vnd.adobe.photoshop' }
     ));
-    while (!OS._psdDecodeJob?.reject) await new Promise((resolve) => setTimeout(resolve, 0));
+    while (!OS._activeComputeJob('psd-import')?.reject) await new Promise((resolve) => setTimeout(resolve, 0));
     const cancelAccepted = OS._cancelPSDImport();
     const cancelled = await pendingCancellation;
     const afterCancelled = summary();
