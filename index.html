@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-3TDHHI2ikuia2q7qpGhpjA2jBnMtwzXtnXsgwWuuUdo=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-lStAGAlNiiBSBuQqbubk7JdwQd7ZwXnNdf+eVIrz+kg=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3694,9 +3694,21 @@ const OS = {
         // Snap to grid
         this.canvas.on('object:moving', opt => {
             if (!this.snapEnabled) return;
-            const g = this.gridSize, obj = opt.target;
+            // Alt suppresses snapping for the one drag, the way it does in
+            // every other editor.
+            if (opt.e?.altKey) { this._clearSmartGuides(); return; }
+            const obj = opt.target;
+            // Object and canvas alignment wins over the grid: it is what the
+            // user is looking at. Issue #3 asked for exactly this — there was
+            // no "adsorption" between layers or against the artboard, which
+            // makes composing anything a matter of eyeballing pixels.
+            if (this._snapToAlignment(obj)) return;
+            this._clearSmartGuides();
+            const g = this.gridSize;
             obj.set({ left: Math.round(obj.left / g) * g, top: Math.round(obj.top / g) * g });
         });
+        this.canvas.on('object:modified', () => this._clearSmartGuides());
+        this.canvas.on('mouse:up', () => this._clearSmartGuides());
         // Welcome screen
         this.populateTemplates();
         this.populateRecentFiles();
@@ -11309,6 +11321,69 @@ self.onmessage = async function(event) {
         }
     },
 
+    // ====================== SMART GUIDES ======================
+    _smartGuideNodes: [],
+    _clearSmartGuides() {
+        this._smartGuideNodes.forEach(node => node.remove());
+        this._smartGuideNodes = [];
+    },
+    _drawSmartGuide(orientation, documentPosition) {
+        const area = document.getElementById('canvas-area');
+        if (!area) return;
+        const vpt = this.canvas.viewportTransform;
+        const node = document.createElement('div');
+        node.className = `smart-guide ${orientation}`;
+        if (orientation === 'vertical') node.style.left = `${documentPosition * vpt[0] + vpt[4]}px`;
+        else node.style.top = `${documentPosition * vpt[3] + vpt[5]}px`;
+        area.appendChild(node);
+        this._smartGuideNodes.push(node);
+    },
+    // Every edge, centre and midpoint worth aligning to: the artboard and
+    // every other object on the canvas.
+    _alignmentTargets(moving) {
+        const vertical = [0, this.canvasW / 2, this.canvasW];
+        const horizontal = [0, this.canvasH / 2, this.canvasH];
+        this.canvas.getObjects().forEach(other => {
+            if (other === moving || other._wandOverlay || other.name === '__boundary__' || other.visible === false) return;
+            const rect = other.getBoundingRect(true);
+            vertical.push(rect.left, rect.left + rect.width / 2, rect.left + rect.width);
+            horizontal.push(rect.top, rect.top + rect.height / 2, rect.top + rect.height);
+        });
+        return { vertical, horizontal };
+    },
+    _snapToAlignment(obj) {
+        const tolerance = Math.max(0, Number(this._prefs?.snapTolerance) || 0);
+        if (!tolerance) return false;
+        // Screen-constant feel: the tolerance is in document units, so scale it
+        // by the zoom or snapping gets sticky when zoomed in.
+        const zoom = Math.abs(this.canvas.viewportTransform?.[0] || 1) || 1;
+        const reach = tolerance / zoom;
+        const rect = obj.getBoundingRect(true);
+        const targets = this._alignmentTargets(obj);
+        const best = (edges, candidates) => {
+            let match = null;
+            edges.forEach(edge => {
+                candidates.forEach(candidate => {
+                    const delta = candidate - edge.value;
+                    if (Math.abs(delta) > reach) return;
+                    if (!match || Math.abs(delta) < Math.abs(match.delta)) match = { delta, candidate };
+                });
+            });
+            return match;
+        };
+        const x = best([
+            { value:rect.left }, { value:rect.left + rect.width / 2 }, { value:rect.left + rect.width }
+        ], targets.vertical);
+        const y = best([
+            { value:rect.top }, { value:rect.top + rect.height / 2 }, { value:rect.top + rect.height }
+        ], targets.horizontal);
+        if (!x && !y) return false;
+        this._clearSmartGuides();
+        if (x) { obj.set({ left:obj.left + x.delta }); this._drawSmartGuide('vertical', x.candidate); }
+        if (y) { obj.set({ top:obj.top + y.delta }); this._drawSmartGuide('horizontal', y.candidate); }
+        obj.setCoords();
+        return true;
+    },
     // ====================== LASSO SELECTION ======================
     // How close a click has to be to the first point to close the path.
     _closeSnapRadius: 12,

@@ -2866,6 +2866,59 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('objects snap to the canvas and to each other @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Issue #3: there was no "adsorption" between layers or against the
+  // artboard, so composing anything meant eyeballing pixel positions. Only
+  // grid snapping existed.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(400, 300, '#ffffff');
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    OS.snapEnabled = true;
+    OS._prefs.snapTolerance = 8;
+
+    const anchor = new fabric.Rect({ left: 100, top: 50, width: 80, height: 60, fill: '#3355ff' });
+    OS.canvas.add(anchor);
+    OS.layers[OS.activeLayerIdx].objects.push(anchor);
+
+    const mover = new fabric.Rect({ left: 0, top: 0, width: 40, height: 40, fill: '#ff3355' });
+    OS.canvas.add(mover);
+    OS.layers[OS.activeLayerIdx].objects.push(mover);
+
+    const drag = (left, top, altKey = false) => {
+      mover.set({ left, top });
+      mover.setCoords();
+      OS.canvas.fire('object:moving', { target: mover, e: { altKey } });
+      return { left: Math.round(mover.left), top: Math.round(mover.top) };
+    };
+
+    // Near the left edge of the artboard: snaps to 0.
+    const toCanvasEdge = drag(3, 200);
+    // Near the anchor's left edge: snaps to 100.
+    const toObject = drag(104, 200);
+    const guidesShown = document.querySelectorAll('#canvas-area .smart-guide').length;
+    // Alt suppresses it.
+    const withAlt = drag(104, 203, true);
+    const guidesAfterAlt = document.querySelectorAll('#canvas-area .smart-guide').length;
+
+    OS.canvas.fire('mouse:up', {});
+    const guidesAfterRelease = document.querySelectorAll('#canvas-area .smart-guide').length;
+
+    return { toCanvasEdge, toObject, guidesShown, withAlt, guidesAfterAlt, guidesAfterRelease };
+  });
+
+  expect(result.toCanvasEdge.left).toBe(0);
+  expect(result.toObject.left).toBe(100);
+  expect(result.guidesShown).toBeGreaterThan(0);
+  // Alt leaves the position alone and shows no guides.
+  expect(result.withAlt).toEqual({ left: 104, top: 203 });
+  expect(result.guidesAfterAlt).toBe(0);
+  // Guides do not outlive the drag.
+  expect(result.guidesAfterRelease).toBe(0);
+});
+
 test('lasso and pen paths close by clicking their start point @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
