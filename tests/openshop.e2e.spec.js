@@ -2866,6 +2866,54 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('the panel stack resizes by drag and by keyboard @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Issue #3 asked for drag bars between the panel sections. A drag-only
+  // control would fail WCAG 2.5.7, so the separator takes focus and keys too.
+  const splitters = page.locator('#panels .panel-splitter');
+  await expect(splitters.first()).toBeAttached();
+  const count = await splitters.count();
+  expect(count).toBeGreaterThan(0);
+
+  const roles = await page.evaluate(() => [...document.querySelectorAll('#panels .panel-splitter')].map(el => ({
+    role: el.getAttribute('role'),
+    orientation: el.getAttribute('aria-orientation'),
+    labelled: Boolean(el.getAttribute('aria-label'))
+  })));
+  roles.forEach(r => {
+    expect(r.role).toBe('separator');
+    expect(r.orientation).toBe('horizontal');
+    expect(r.labelled).toBe(true);
+  });
+
+  const resized = await page.evaluate(async () => {
+    const group = document.querySelector('#panels > .panel-tab-group');
+    const splitter = document.querySelector('#panels .panel-splitter');
+    const before = Math.round(group.getBoundingClientRect().height);
+
+    splitter.focus();
+    const focused = document.activeElement === splitter;
+    for (let i = 0; i < 3; i += 1) {
+      splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    }
+    const afterKeys = Math.round(group.getBoundingClientRect().height);
+
+    // Home restores the natural size.
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    const afterHome = Math.round(group.getBoundingClientRect().height);
+
+    return { focused, before, afterKeys, afterHome, saved: OS._prefs.panelSizes?.length || 0 };
+  });
+
+  expect(resized.focused).toBe(true);
+  expect(resized.afterKeys).toBeGreaterThan(resized.before);
+  expect(resized.afterHome).toBe(resized.before);
+  // Sizes are remembered.
+  expect(resized.saved).toBeGreaterThan(0);
+});
+
 test('creates documents in physical units at a chosen resolution @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

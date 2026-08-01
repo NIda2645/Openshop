@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-Dz+XHvqZXgK+Q9SjS/HfMb2EV4TONqOljr3LRwRFxnU=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-R3XQRyHBT0025571T9AIhSJHEglBNAu4lnqcF1h3nBM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -254,6 +254,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 #panels{position:absolute;right:0;top:var(--topbar-h);bottom:var(--statusbar-h);width:var(--panel-width);background:var(--bg-depth-1);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:50;overflow-y:auto;overflow-x:hidden}
 .panel-tab-group{border-bottom:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
 .panel-tab-group.ptg-flex{flex:1}
+/* Issue #3 asked for drag bars between the panel sections. It is a separator
+   widget, so it takes focus and arrow keys too — a drag-only control fails
+   WCAG 2.5.7. The box is 24px so it also meets the 2.5.8 target size, pulled
+   back with negative margins so it only costs 12px of panel height. */
+.panel-splitter{flex:0 0 24px;margin:-6px 0;cursor:row-resize;background:transparent;position:relative;border:none;padding:0;width:100%;z-index:2}
+.panel-splitter::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:3px;border-radius:2px;background:var(--border);transition:var(--transition-chrome)}
+.panel-splitter:hover::before,.panel-splitter.dragging::before{background:var(--accent)}
+.panel-splitter:focus-visible{outline:none}
+.panel-splitter:focus-visible::before{background:var(--accent);width:44px;box-shadow:var(--focus-ring)}
 .panel-tabs{display:flex;background:var(--bg-depth-2);border-bottom:1px solid var(--border);flex-shrink:0;min-height:28px}
 .panel-tab{padding:6px 11px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;transition:var(--transition-chrome);white-space:nowrap;flex-shrink:0}
 .panel-tab:hover{color:var(--text-secondary);background:var(--bg-depth-3)}
@@ -3695,6 +3704,7 @@ const OS = {
         this._initMenuAccessibility();
         this._initModalFocusManagement();
         this._initCanvasFocusContext();
+        this._initPanelSplitters();
         document.querySelectorAll('.panel-tab').forEach(tab => {
             tab.setAttribute('role', 'tab');
         });
@@ -9677,6 +9687,78 @@ self.onmessage = function(event) {
         this._announceAccessibility(hidden ? 'Panels shown' : 'Panels hidden');
         return true;
     },
+    _panelMinHeight: 80,
+    _initPanelSplitters() {
+        if (this._panelSplittersReady) return;
+        const panels = document.getElementById('panels');
+        if (!panels) return;
+        this._panelSplittersReady = true;
+        const groups = [...panels.querySelectorAll(':scope > .panel-tab-group')];
+        const saved = Array.isArray(this._prefs?.panelSizes) ? this._prefs.panelSizes : [];
+        groups.forEach((group, index) => {
+            if (saved[index]) this._setPanelGroupHeight(group, saved[index]);
+            if (index === groups.length - 1) return;
+            const splitter = document.createElement('button');
+            splitter.type = 'button';
+            splitter.className = 'panel-splitter';
+            splitter.setAttribute('role', 'separator');
+            splitter.setAttribute('aria-orientation', 'horizontal');
+            const label = this._menuOwnText(group.querySelector('.panel-tab')) || `Section ${index + 1}`;
+            splitter.setAttribute('aria-label', `Resize ${label} panel`);
+            splitter.title = 'Drag, or focus and use the arrow keys, to resize';
+            group.after(splitter);
+            this._wirePanelSplitter(splitter, group);
+        });
+    },
+    _setPanelGroupHeight(group, height) {
+        const next = Math.max(this._panelMinHeight, Math.round(height));
+        group.style.flex = `0 0 ${next}px`;
+        return next;
+    },
+    _persistPanelSizes() {
+        const panels = document.getElementById('panels');
+        if (!panels) return;
+        this._prefs.panelSizes = [...panels.querySelectorAll(':scope > .panel-tab-group')]
+            .map(group => Math.round(group.getBoundingClientRect().height));
+        this._persistPreferences();
+    },
+    _wirePanelSplitter(splitter, group) {
+        let startY = 0, startHeight = 0, pointerId = null;
+        const move = event => {
+            if (pointerId === null) return;
+            this._setPanelGroupHeight(group, startHeight + (event.clientY - startY));
+        };
+        const end = () => {
+            if (pointerId === null) return;
+            pointerId = null;
+            splitter.classList.remove('dragging');
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            this._persistPanelSizes();
+        };
+        splitter.addEventListener('pointerdown', event => {
+            pointerId = event.pointerId;
+            startY = event.clientY;
+            startHeight = group.getBoundingClientRect().height;
+            splitter.classList.add('dragging');
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', end);
+            event.preventDefault();
+        });
+        // The non-drag path WCAG 2.5.7 requires.
+        splitter.addEventListener('keydown', event => {
+            const step = event.shiftKey ? 48 : 16;
+            const height = group.getBoundingClientRect().height;
+            if (event.key === 'ArrowUp') this._setPanelGroupHeight(group, height - step);
+            else if (event.key === 'ArrowDown') this._setPanelGroupHeight(group, height + step);
+            else if (event.key === 'Home') group.style.flex = '';
+            else return;
+            event.preventDefault();
+            this._persistPanelSizes();
+        });
+        // Double-click restores the natural size, as splitters usually do.
+        splitter.addEventListener('dblclick', () => { group.style.flex = ''; this._persistPanelSizes(); });
+    },
     _initCanvasFocusContext() {
         if (this._canvasFocusContextReady) return;
         this._canvasFocusContextReady = true;
@@ -12289,7 +12371,10 @@ self.onmessage = async function(event) {
             defaultH: this._prefs.defaultH,
             gridSize: this.gridSize,
             snapTolerance: this._prefs.snapTolerance,
-            maxHistory: this.maxHistory
+            maxHistory: this.maxHistory,
+            stackNewObjects: Boolean(this._prefs.stackNewObjects),
+            vectorStrokes: Boolean(this._prefs.vectorStrokes),
+            panelSizes: Array.isArray(this._prefs.panelSizes) ? this._prefs.panelSizes.slice(0, 8) : []
         };
         if (/^#[0-9a-fA-F]{6}$/.test(String(accent || ''))) payload.accent = String(accent).toLowerCase();
         try { localStorage.setItem('os_prefs', JSON.stringify(payload)); }
@@ -12312,6 +12397,11 @@ self.onmessage = async function(event) {
         this.gridSize = clamp(stored.gridSize, 1, 500, this.gridSize);
         this._prefs.snapTolerance = clamp(stored.snapTolerance, 0, 100, this._prefs.snapTolerance);
         this.maxHistory = clamp(stored.maxHistory, 10, 200, this.maxHistory);
+        this._prefs.stackNewObjects = Boolean(stored.stackNewObjects);
+        this._prefs.vectorStrokes = Boolean(stored.vectorStrokes);
+        this._prefs.panelSizes = Array.isArray(stored.panelSizes)
+            ? stored.panelSizes.slice(0, 8).map(value => clamp(value, this._panelMinHeight, 2000, this._panelMinHeight))
+            : [];
         if (/^#[0-9a-fA-F]{6}$/.test(String(stored.accent || ''))) {
             document.documentElement.style.setProperty('--accent', String(stored.accent).toLowerCase());
         }
