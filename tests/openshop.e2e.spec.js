@@ -2866,6 +2866,68 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('selections add, subtract and intersect @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // No boolean modes existed at all — the most-reacted open issue on the
+  // nearest open-source rival, and a baseline expectation from Photoshop.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(100, 100, '#ffffff');
+    const w = Math.round(OS.canvasW), h = Math.round(OS.canvasH);
+    const box = (x0, y0, x1, y1) => {
+      const mask = new Uint8Array(w * h);
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[y * w + x] = 255;
+      return mask;
+    };
+    const count = () => (OS._selectionMask ? [...OS._selectionMask.mask].filter(Boolean).length : 0);
+
+    // Two 20x20 squares overlapping in a 10x10 corner.
+    const a = box(10, 10, 30, 30);
+    const b = box(20, 20, 40, 40);
+
+    OS._setPixelSelectionMask(a, w, h, { coverage: true });
+    const base = count();
+
+    OS._setPixelSelectionMask(b, w, h, { coverage: true, combine: 'add' });
+    const added = count();
+
+    OS._setPixelSelectionMask(a.slice(), w, h, { coverage: true });
+    OS._setPixelSelectionMask(b.slice(), w, h, { coverage: true, combine: 'subtract' });
+    const subtracted = count();
+
+    OS._setPixelSelectionMask(a.slice(), w, h, { coverage: true });
+    OS._setPixelSelectionMask(b.slice(), w, h, { coverage: true, combine: 'intersect' });
+    const intersected = count();
+
+    // Modifiers map to the modes, and the toolbar sets a sticky default.
+    const fromEvent = {
+      plain: OS._combineModeFromEvent({}),
+      shift: OS._combineModeFromEvent({ shiftKey: true }),
+      alt: OS._combineModeFromEvent({ altKey: true }),
+      both: OS._combineModeFromEvent({ shiftKey: true, altKey: true })
+    };
+    OS.setSelectionCombineMode('add');
+    const stickyDefault = OS._combineModeFromEvent({});
+    const buttonState = [...document.querySelectorAll('.selection-mode')]
+      .map(btn => [btn.dataset.combine, btn.getAttribute('aria-pressed')]);
+    OS.setSelectionCombineMode('replace');
+
+    return { base, added, subtracted, intersected, fromEvent, stickyDefault, buttonState };
+  });
+
+  expect(result.base).toBe(400);
+  // Union of two 20x20 squares overlapping by 10x10.
+  expect(result.added).toBe(700);
+  expect(result.subtracted).toBe(300);
+  expect(result.intersected).toBe(100);
+  expect(result.fromEvent).toEqual({ plain: 'replace', shift: 'add', alt: 'subtract', both: 'intersect' });
+  // The toolbar default applies when no modifier is held.
+  expect(result.stickyDefault).toBe('add');
+  expect(result.buttonState).toContainEqual(['add', 'true']);
+  expect(result.buttonState).toContainEqual(['replace', 'false']);
+});
+
 test('objects snap to the canvas and to each other @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

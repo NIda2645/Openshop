@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-lStAGAlNiiBSBuQqbubk7JdwQd7ZwXnNdf+eVIrz+kg=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-TdaF6f0/EYfAOEWhddBDs2iiDJtwHesBLWfW7cUS58E=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -258,6 +258,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
    widget, so it takes focus and arrow keys too — a drag-only control fails
    WCAG 2.5.7. The box is 24px so it also meets the 2.5.8 target size, pulled
    back with negative margins so it only costs 12px of panel height. */
+.selection-mode-group{display:flex;gap:2px}
+.selection-mode{padding:4px 9px;font-size:11px;min-height:24px}
+.selection-mode.active{background:var(--accent-dim);color:var(--text-primary);border-color:var(--border-active)}
 .panel-splitter{flex:0 0 24px;margin:-6px 0;cursor:row-resize;background:transparent;position:relative;border:none;padding:0;width:100%;z-index:2}
 .panel-splitter::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:3px;border-radius:2px;background:var(--border);transition:var(--transition-chrome)}
 .panel-splitter:hover::before,.panel-splitter.dragging::before{background:var(--accent)}
@@ -2259,7 +2262,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <button class="btn btn-primary" style="padding:3px 14px;font-size:11px" data-os-click="click-148">Apply</button>
         <button class="btn" style="padding:3px 10px;font-size:11px" data-os-click="click-149">Cancel</button>
     </div>
-    <div class="opt-group" id="opt-marquee" style="display:none"><span style="color:var(--text-muted);font-size:11px">Drag to create selection.</span></div>
+    <div class="opt-group" id="opt-marquee" style="display:none"><label>Mode</label><div class="selection-mode-group" role="group" aria-label="Selection mode"><button type="button" class="btn selection-mode active" data-combine="replace" aria-pressed="true">New</button><button type="button" class="btn selection-mode" data-combine="add" aria-pressed="false">Add</button><button type="button" class="btn selection-mode" data-combine="subtract" aria-pressed="false">Subtract</button><button type="button" class="btn selection-mode" data-combine="intersect" aria-pressed="false">Intersect</button></div><span style="color:var(--text-muted);font-size:11px">Or hold Shift to add, Alt to subtract.</span></div>
     <div class="opt-group" id="opt-lasso" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click to add points. Double-click to close selection.</span></div>
     <div class="opt-group" id="opt-ai-segment" style="display:none"><span style="color:var(--text-muted);font-size:11px">Segment Select</span><span style="color:var(--accent);font-size:11px;margin-left:8px">Panoptic model loads on demand</span></div>
     <div class="opt-group" id="opt-pen" style="display:none">
@@ -3723,6 +3726,7 @@ const OS = {
         this._initModalFocusManagement();
         this._initCanvasFocusContext();
         this._initPanelSplitters();
+        this._initSelectionModes();
         document.querySelectorAll('.panel-tab').forEach(tab => {
             tab.setAttribute('role', 'tab');
         });
@@ -6936,6 +6940,9 @@ self.onmessage = function(event) {
     // ====================== MOUSE ======================
     onMouseDown(opt) {
         const ptr = this.canvas.getPointer(opt.e), tool = this.state.tool;
+        // Read the modifier at the start of the gesture; by the time a marquee
+        // is released it is usually already back up.
+        if (this._selectionCombineTools.has(tool)) this._captureSelectionCombine(opt.e);
         if (tool==='pan' || this._tempPanning) { this.state.isPanning=true; this.state.panStart={x:opt.e.clientX,y:opt.e.clientY}; this.canvas.defaultCursor='grabbing'; return; }
         if (tool==='zoom') { opt.e.altKey?this.zoomOut():this.zoomIn(); return; }
         if (this._activeLayerWriteTools.has(tool) && !this._guardActiveLayerEdit()) return;
@@ -7087,8 +7094,20 @@ self.onmessage = function(event) {
                     w:sw/vpt[0],
                     h:sh/vpt[3]
                 };
-                this._selectionMask=null;
-                this.toast('Selection: '+Math.round(sw/vpt[0])+' x '+Math.round(sh/vpt[3])+' px','info');
+                const mode = this._selectionCombine || 'replace';
+                if (mode === 'replace') {
+                    this._selectionMask=null;
+                    this._selectionCombine = 'replace';
+                    this.toast('Selection: '+Math.round(sw/vpt[0])+' x '+Math.round(sh/vpt[3])+' px','info');
+                } else {
+                    // Booleans work on masks, so the rectangle becomes one.
+                    const promoted = this._maskFromMarqueeBounds();
+                    const count = promoted
+                        ? this._setPixelSelectionMask(promoted.mask, promoted.w, promoted.h, { coverage:true, combine:mode })
+                        : 0;
+                    const labels = { add:'added to', subtract:'subtracted from', intersect:'intersected with' };
+                    this.toast(`Selection ${labels[mode]}: ${count.toLocaleString()} px`, 'info');
+                }
             } else { el.style.display='none'; this._selectionBounds=null; }
             this._marqueeStart=null;this.state.isDrawing=false; return;
         }
@@ -16528,7 +16547,54 @@ self.onmessage = async function(e) {
     // Mask values are 0-255 coverage, not flags. Every producer except feather
     // and the antialiased lasso edge selects whole pixels and writes 1, so
     // normalise here instead of asking each of them to remember to write 255.
-    _setPixelSelectionMask(mask, w, h, { space = 'document', coverage = false } = {}) {
+    // Boolean selection modes. Shift adds, Alt subtracts, both intersect —
+    // the convention every editor shares, and the most-requested missing piece
+    // in the nearest open-source rival (miniPaint#312). The mode is captured
+    // when the gesture starts, because by the time a marquee is released the
+    // modifier is often already back up.
+    _selectionCombineTools: new Set(['marquee-rect','marquee-ellipse','wand','magic-wand','lasso','ai-segment']),
+    _selectionCombine: 'replace',
+    // What the toolbar is set to. A held modifier wins for that one gesture.
+    _selectionCombineDefault: 'replace',
+    setSelectionCombineMode(mode) {
+        const allowed = ['replace','add','subtract','intersect'];
+        if (!allowed.includes(mode)) return false;
+        this._selectionCombineDefault = mode;
+        document.querySelectorAll('.selection-mode').forEach(btn => {
+            const active = btn.dataset.combine === mode;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        return true;
+    },
+    _initSelectionModes() {
+        document.querySelectorAll('.selection-mode').forEach(btn => {
+            btn.addEventListener('click', () => this.setSelectionCombineMode(btn.dataset.combine));
+        });
+    },
+    _combineModeFromEvent(event) {
+        if (!event) return this._selectionCombineDefault;
+        if (event.shiftKey && event.altKey) return 'intersect';
+        if (event.shiftKey) return 'add';
+        if (event.altKey) return 'subtract';
+        return this._selectionCombineDefault;
+    },
+    _captureSelectionCombine(event) {
+        this._selectionCombine = this._combineModeFromEvent(event);
+        return this._selectionCombine;
+    },
+    _combineMasks(next, previous, mode) {
+        if (mode === 'replace' || !previous || previous.length !== next.length) return next;
+        const out = new Uint8Array(next.length);
+        for (let i = 0; i < next.length; i++) {
+            const a = previous[i], b = next[i];
+            if (mode === 'add') out[i] = Math.max(a, b);
+            else if (mode === 'subtract') out[i] = a ? Math.max(0, a - b) : 0;
+            else out[i] = Math.min(a, b);
+        }
+        return out;
+    },
+    _setPixelSelectionMask(mask, w, h, { space = 'document', coverage = false, combine = null } = {}) {
         if (space === 'screen') {
             const converted = this._screenMaskToDocument(mask, w, h);
             mask = converted.mask; w = converted.w; h = converted.h;
@@ -16537,6 +16603,19 @@ self.onmessage = async function(e) {
             const normalized = new Uint8Array(mask.length);
             for (let i = 0; i < mask.length; i++) normalized[i] = mask[i] ? 255 : 0;
             mask = normalized;
+        }
+        const mode = combine || this._selectionCombine || 'replace';
+        // Consumed here so one gesture cannot leak its modifier into the next.
+        this._selectionCombine = 'replace';
+        if (mode !== 'replace') {
+            const existing = this._selectionMask;
+            const compatible = existing && existing.w === w && existing.h === h;
+            // Subtracting from or intersecting with nothing selects nothing.
+            if (!compatible) {
+                if (mode !== 'add') mask = new Uint8Array(mask.length);
+            } else {
+                mask = this._combineMasks(mask, existing.mask, mode);
+            }
         }
         let count = 0;
         for (let i = 0; i < mask.length; i++) if (mask[i]) count++;
