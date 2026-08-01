@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-xwQAf6oMm3ZW/ltLGvHk6dW2LWJkI54YXZ2fjgcjiG0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-ZtQlyGtoeYDL45nideP8gJKYpB3s4it/7TBZIV9XfSc=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3504,10 +3504,14 @@ const OS = {
     },
     // Every locale key the UI can currently reach, so parity with a translation
     // map is measurable rather than assumed.
+    // The reachable string surface, not just the part stamped into the DOM.
+    // Measuring only the latter reported near-parity while the command palette
+    // and every toast stayed English — the metric flattered by construction.
     i18nKeys() {
         const keys = new Set();
         document.querySelectorAll('[data-i18n]').forEach(el => keys.add(el.dataset.i18n));
         document.querySelectorAll('[data-i18n-tip]').forEach(el => keys.add(el.dataset.i18nTip));
+        (this._getCommands?.() || []).forEach(command => { if (command.label) keys.add(command.label); });
         return [...keys];
     },
     missingLocaleKeys(lang) {
@@ -14014,7 +14018,9 @@ self.onmessage = async function(e) {
         const results = document.getElementById('cmd-results');
         const cmds = this._getCommands();
         const lower = q.toLowerCase();
-        const filtered = lower ? cmds.filter(c => c.label.toLowerCase().includes(lower) || c.cat.toLowerCase().includes(lower)) : cmds.slice(0, 20);
+        const filtered = lower ? cmds.filter(c => c.label.toLowerCase().includes(lower)
+            || this._t(c.label).toLowerCase().includes(lower)
+            || c.cat.toLowerCase().includes(lower)) : cmds.slice(0, 20);
         this._cmdIdx = 0;
         this._cmdFiltered = filtered.slice(0, 20);
         this._clearNode(results);
@@ -14025,7 +14031,7 @@ self.onmessage = async function(e) {
             item.addEventListener('click', () => this._cmdExec(i));
             const label = document.createElement('span');
             label.className = 'cmd-label';
-            label.textContent = this._safeText(c.label, 80);
+            label.textContent = this._safeText(this._t(c.label), 80);
             item.appendChild(label);
             if (c.key) {
                 const shortcut = document.createElement('span');
@@ -17554,7 +17560,10 @@ self.onmessage = async function(e) {
         const el=document.getElementById('toast-container');
         // A stack that only ever grows covers the canvas. Oldest goes first.
         while (el.children.length >= this._maxToasts) el.firstElementChild.remove();
-        const t=document.createElement('div'); t.className=`toast ${type}`; t.textContent=msg;
+        // Translating here rather than at 268 call sites: a static message picks
+        // up its dictionary entry for free, and an interpolated one falls back
+        // to itself exactly as before.
+        const t=document.createElement('div'); t.className=`toast ${type}`; t.textContent=this._t(msg);
         el.appendChild(t); requestAnimationFrame(()=>t.classList.add('show'));
         this._announceAccessibility(msg);
         if (type === 'error' || type === 'warning') this.recordDiagnostic(type === 'error' ? 'error' : 'warning', msg);

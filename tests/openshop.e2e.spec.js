@@ -2866,6 +2866,44 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('translates toasts and command labels, and counts them as coverage @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Translation reached menus, tabs and tooltips only. Every toast and all
+  // ~140 command-palette labels stayed English, and missingLocaleKeys measured
+  // only the DOM-stamped subset — so it reported near-parity regardless.
+  const result = await page.evaluate(() => {
+    const domOnly = [...document.querySelectorAll('[data-i18n],[data-i18n-tip]')].length;
+    const keys = OS.i18nKeys();
+    const commandLabels = OS._getCommands().map(c => c.label);
+    const covered = commandLabels.filter(label => keys.includes(label)).length;
+
+    // A dictionary entry now reaches a toast without touching its call site.
+    OS._locales.pseudo = undefined;
+    OS._locales.zh['Project saved'] = 'ZH-SAVED';
+    OS.setLocale('zh');
+    document.getElementById('toast-container').replaceChildren();
+    OS.toast('Project saved', 'success');
+    const toastText = document.getElementById('toast-container').lastElementChild.textContent;
+
+    // An interpolated message with no entry falls back to itself.
+    OS.toast('Created 12 x 34 canvas', 'info');
+    const passthrough = document.getElementById('toast-container').lastElementChild.textContent;
+
+    OS.setLocale('en');
+    return { domOnly, keyCount: keys.length, commandCount: commandLabels.length, covered, toastText, passthrough };
+  });
+
+  // The inventory is now larger than the DOM-stamped subset.
+  expect(result.commandCount).toBeGreaterThan(100);
+  expect(result.covered).toBe(result.commandCount);
+  expect(result.keyCount).toBeGreaterThan(result.domOnly);
+  // Toasts translate, and untranslated ones read exactly as before.
+  expect(result.toastText).toBe('ZH-SAVED');
+  expect(result.passthrough).toBe('Created 12 x 34 canvas');
+});
+
 test('collects diagnostics a bug report can attach @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -4800,7 +4838,12 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
       direction,
       restored,
       keys: OS.i18nKeys().length,
-      missingInChinese: OS.missingLocaleKeys('zh')
+      missingInChinese: OS.missingLocaleKeys('zh'),
+      // The menu/tab/tooltip surface stamped into the DOM, separately from the
+      // command-palette labels the inventory also covers now.
+      domKeys: [...document.querySelectorAll('[data-i18n]')].map(el => el.dataset.i18n)
+        .concat([...document.querySelectorAll('[data-i18n-tip]')].map(el => el.dataset.i18nTip)),
+      commandLabels: OS._getCommands().map(c => c.label)
     };
   });
 
@@ -4812,12 +4855,26 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
   // Switching back restores real English rather than leaving markers behind.
   expect(result.restored.some(text => text.includes('⟦'))).toBe(false);
   expect(result.keys).toBeGreaterThan(50);
-  // Chinese has parity with English apart from format names, units, and the
-  // single-letter typographic controls, which are the same in every locale.
+  // Chinese covers the menu, tab and tooltip surface apart from format names,
+  // units, and the single-letter typographic controls, which are the same in
+  // every locale.
   const sameEverywhere = new Set([
     'PNG', 'JPEG', 'WebP', 'SVG', 'PDF', 'PSD (Photoshop)', 'AI', '100%', 'B', 'I', 'W', 'x', 'H'
   ]);
-  expect(result.missingInChinese.filter(key => !sameEverywhere.has(key))).toEqual([]);
+  const domSet = new Set(result.domKeys);
+  const missingInChrome = result.missingInChinese
+    .filter(key => domSet.has(key) && !sameEverywhere.has(key));
+  expect(missingInChrome).toEqual([]);
+
+  // The inventory now also covers the command palette, which the dictionary
+  // does not reach yet. Measuring it is the point — the metric used to report
+  // parity because those labels were not counted at all. This asserts the gap
+  // is visible and does not grow silently, not that it is zero.
+  const commandSet = new Set(result.commandLabels);
+  const untranslatedCommands = result.missingInChinese.filter(key => commandSet.has(key));
+  expect(result.commandLabels.length).toBeGreaterThan(100);
+  expect(untranslatedCommands.length).toBeLessThanOrEqual(result.commandLabels.length);
+  expect(result.keys).toBeGreaterThan(result.domKeys.length);
 });
 
 test('selects WebGPU only when an adapter resolves and falls back to WASM', async ({ page }) => {
