@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-z+iVN31u5FpsT4KKM+LhUQDloVPM75QrARVxINQZU1M=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-Dz+XHvqZXgK+Q9SjS/HfMb2EV4TONqOljr3LRwRFxnU=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3468,6 +3468,10 @@ const OS = {
     // appVersion would have misread them. The release-metadata test pins this
     // to package.json along with every other version string.
     version: '0.25.0',
+    // Canvas pixels are CSS pixels, so 96 is the honest default. A document
+    // created in millimetres or inches carries whatever it was created at, and
+    // the PSD and PDF exporters declare that rather than assuming 96.
+    _documentResolution: 96,
     _documentSchemaVersion: 1,
     _documentId: null,
     // Ids this document has already used and surrendered this session. Kept so
@@ -3945,6 +3949,23 @@ const OS = {
         const pat = new fabric.Pattern({ source: pc, repeat: 'repeat' });
         return new fabric.Rect({ left:0, top:0, width:w, height:h, fill:pat, selectable:false, evented:false, name:'__boundary__' });
     },
+    // Physical units for print work: issue #3 asked for millimetre sizes, and
+    // the templates were pixel-only with no resolution anywhere.
+    _convertLength(value, from, to, ppi) {
+        if (from === to) return this._roundLength(value, to);
+        const inches = from === 'px' ? value / ppi : from === 'mm' ? value / 25.4 : value;
+        const out = to === 'px' ? inches * ppi : to === 'mm' ? inches * 25.4 : inches;
+        return this._roundLength(out, to);
+    },
+    _roundLength(value, unit) {
+        if (unit === 'px') return Math.max(1, Math.round(value));
+        return Math.round(value * 100) / 100;
+    },
+    _documentPixelSize(width, height, unit, ppi) {
+        const resolution = Math.min(2400, Math.max(1, Number(ppi) || 96));
+        const toPx = value => Math.max(1, Math.round(this._convertLength(Number(value) || 0, unit || 'px', 'px', resolution)));
+        return { width:toPx(width), height:toPx(height), resolution };
+    },
     newImage() {
         const o = document.createElement('div'); o.className = 'modal-overlay';
         o.innerHTML = `<div class="modal"><h3>New Image</h3>
@@ -3954,10 +3975,22 @@ const OS = {
                 <button type="button" class="preset-btn" data-pw="1080" data-ph="1080">1080x1080</button>
                 <button type="button" class="preset-btn" data-pw="800" data-ph="600">800x600</button>
                 <button type="button" class="preset-btn" data-pw="3840" data-ph="2160">4K</button>
-                <button type="button" class="preset-btn" data-pw="2480" data-ph="3508">A4 300dpi</button>
+                <button type="button" class="preset-btn" data-pw="210" data-ph="297" data-punit="mm" data-pdpi="300">A4 300dpi</button>
+                <button type="button" class="preset-btn" data-pw="216" data-ph="279" data-punit="mm" data-pdpi="300">Letter 300dpi</button>
+                <button type="button" class="preset-btn" data-pw="6" data-ph="4" data-punit="in" data-pdpi="300">6x4in photo</button>
             </div>
+            <div class="modal-row"><label>Units</label>
+                <select id="ni-unit">
+                    <option value="px">Pixels</option>
+                    <option value="mm">Millimetres</option>
+                    <option value="in">Inches</option>
+                </select>
+                <label for="ni-dpi" style="flex:0 0 auto">Resolution</label>
+                <input id="ni-dpi" type="number" value="96" min="1" max="2400" aria-label="Resolution in pixels per inch">
+                <span class="opt-val">PPI</span></div>
             <div class="modal-row"><label>Width</label><input id="ni-w" type="number" value="1920" min="1" max="8000"></div>
             <div class="modal-row"><label>Height</label><input id="ni-h" type="number" value="1080" min="1" max="8000"></div>
+            <div class="modal-row"><label>Pixel size</label><span id="ni-pixels" class="opt-val">1920 x 1080 px</span></div>
             <div class="modal-row"><label>Background</label>
                 <select id="ni-bg-mode">
                     <option value="transparent">Transparent</option>
@@ -3970,31 +4003,65 @@ const OS = {
         const bgMode = o.querySelector('#ni-bg-mode');
         const bgColor = o.querySelector('#ni-bg');
         bgMode.addEventListener('change', () => { bgColor.disabled = bgMode.value !== 'custom'; });
+        const unit = o.querySelector('#ni-unit');
+        const dpi = o.querySelector('#ni-dpi');
+        const wInput = o.querySelector('#ni-w');
+        const hInput = o.querySelector('#ni-h');
+        const pixels = o.querySelector('#ni-pixels');
+        const refresh = () => {
+            const size = this._documentPixelSize(wInput.value, hInput.value, unit.value, dpi.value);
+            pixels.textContent = `${size.width} x ${size.height} px`;
+        };
+        // Switching units converts what is already typed rather than
+        // reinterpreting it, so 210mm does not silently become 210px.
+        let lastUnit = unit.value;
+        unit.addEventListener('change', () => {
+            const ppi = this._readNumberInput(dpi, { min:1, max:2400, fallback:96 }).value;
+            wInput.value = this._convertLength(Number(wInput.value) || 0, lastUnit, unit.value, ppi);
+            hInput.value = this._convertLength(Number(hInput.value) || 0, lastUnit, unit.value, ppi);
+            lastUnit = unit.value;
+            refresh();
+        });
+        [dpi, wInput, hInput].forEach(input => input.addEventListener('input', refresh));
         o.querySelectorAll('[data-pw]').forEach(btn => btn.addEventListener('click', () => {
-            o.querySelector('#ni-w').value = btn.dataset.pw;
-            o.querySelector('#ni-h').value = btn.dataset.ph;
+            unit.value = btn.dataset.punit || 'px';
+            lastUnit = unit.value;
+            dpi.value = btn.dataset.pdpi || '96';
+            wInput.value = btn.dataset.pw;
+            hInput.value = btn.dataset.ph;
+            refresh();
         }));
+        refresh();
         o.querySelector('[data-modal-create]').addEventListener('click', () => this.doNewImage(o));
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
     },
     async doNewImage(o) {
         const limit = this._importLimits.maxImageDimension;
-        const width = this._readNumberInput(o.querySelector('#ni-w'), { min:1, max:limit, fallback:1920 });
-        const height = this._readNumberInput(o.querySelector('#ni-h'), { min:1, max:limit, fallback:1080 });
-        if (!width.valid || !height.valid) {
-            this.toast(`Canvas size must be between 1 and ${limit} pixels`, 'error');
+        const unit = o.querySelector('#ni-unit')?.value || 'px';
+        const ppi = this._readNumberInput(o.querySelector('#ni-dpi'), { min:1, max:2400, fallback:96 });
+        const size = this._documentPixelSize(
+            o.querySelector('#ni-w')?.value,
+            o.querySelector('#ni-h')?.value,
+            unit,
+            ppi.value
+        );
+        if (size.width < 1 || size.height < 1 || size.width > limit || size.height > limit) {
+            this.toast(`Canvas size must work out to between 1 and ${limit} pixels`, 'error');
             return;
         }
-        const w = width.value, h = height.value;
+        const w = size.width, h = size.height;
         const mode = o.querySelector('#ni-bg-mode')?.value || 'transparent';
         const background = mode === 'white' ? '#ffffff'
             : mode === 'custom' ? (o.querySelector('#ni-bg')?.value || null)
             : null;
         if (!await this._confirmDiscardUnsaved('Creating a new document')) return;
         this.createNewDocument(w,h,{resetProject:true, background});
+        // Carried into the PSD resolution resource and the PDF page size.
+        this._documentResolution = size.resolution;
         this.trackRecentFile(this._docName, w, h);
         o.remove();
-        this.toast(`Created ${w} × ${h} canvas`, 'success');
+        const physical = unit === 'px' ? '' : ` (${o.querySelector('#ni-w')?.value}${unit} x ${o.querySelector('#ni-h')?.value}${unit} at ${size.resolution} PPI)`;
+        this.toast(`Created ${w} × ${h} canvas${physical}`, 'success');
     },
 
     // ====================== FILE I/O ======================
@@ -9014,8 +9081,9 @@ self.onmessage = function(event) {
             // a 600x400 canvas came out as 800x533.33pt, an 11.1in-wide page at
             // roughly 54 DPI. Work in points and treat canvas pixels as CSS
             // pixels (96 per inch), so the page is the document's real size.
-            const pageW = this.canvasW * 72 / 96;
-            const pageH = this.canvasH * 72 / 96;
+            const dpi = this._documentResolution || 96;
+            const pageW = this.canvasW * 72 / dpi;
+            const pageH = this.canvasH * 72 / dpi;
             // Without compress the image stream is embedded raw, which made a
             // 600x400 export about 940 KB. With it, addImage defaults to the
             // 'SLOW' Paeth-predicted FlateDecode path.
@@ -9023,7 +9091,7 @@ self.onmessage = function(event) {
             pdf.setProperties?.({
                 title: this._docName || 'Untitled',
                 creator: 'OpenShop',
-                subject: `${this.canvasW}x${this.canvasH} px at 96 DPI`
+                subject: `${this.canvasW}x${this.canvasH} px at ${dpi} DPI`
             });
             // Screen readers and reflow both need a language; a PDF without one
             // is announced in the reader's default voice.
@@ -9172,10 +9240,10 @@ self.onmessage = function(event) {
             // density the PDF export sizes its page from.
             imageResources:{
                 resolutionInfo:{
-                    horizontalResolution:96,
+                    horizontalResolution:this._documentResolution || 96,
                     horizontalResolutionUnit:'PPI',
                     widthUnit:'Inches',
-                    verticalResolution:96,
+                    verticalResolution:this._documentResolution || 96,
                     verticalResolutionUnit:'PPI',
                     heightUnit:'Inches'
                 }

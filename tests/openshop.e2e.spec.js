@@ -2866,6 +2866,52 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('creates documents in physical units at a chosen resolution @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Issue #3 asked for millimetre sizes; the templates were pixel-only with no
+  // resolution anywhere, and both exporters assumed 96 PPI.
+  const maths = await page.evaluate(() => ({
+    mmToPx: OS._documentPixelSize(210, 297, 'mm', 300),
+    inToPx: OS._documentPixelSize(6, 4, 'in', 300),
+    pxPassthrough: OS._documentPixelSize(800, 600, 'px', 96),
+    roundTrip: OS._convertLength(OS._convertLength(210, 'mm', 'px', 300), 'px', 'mm', 300)
+  }));
+  // A4 at 300 PPI is 2480 x 3508.
+  expect(maths.mmToPx.width).toBe(2480);
+  expect(maths.mmToPx.height).toBe(3508);
+  expect(maths.inToPx).toMatchObject({ width: 1800, height: 1200, resolution: 300 });
+  expect(maths.pxPassthrough).toMatchObject({ width: 800, height: 600 });
+  expect(maths.roundTrip).toBeCloseTo(210, 1);
+
+  // Creating through the dialog carries the resolution into the document.
+  const created = await page.evaluate(async () => {
+    OS.newImage();
+    const modal = document.querySelector('.modal-overlay:last-of-type');
+    modal.querySelector('#ni-unit').value = 'mm';
+    modal.querySelector('#ni-unit').dispatchEvent(new Event('change'));
+    modal.querySelector('#ni-dpi').value = '300';
+    modal.querySelector('#ni-w').value = '210';
+    modal.querySelector('#ni-h').value = '297';
+    modal.querySelector('#ni-w').dispatchEvent(new Event('input'));
+    const preview = modal.querySelector('#ni-pixels').textContent;
+    await OS.doNewImage(modal);
+    return { preview, w: Math.round(OS.canvasW), h: Math.round(OS.canvasH), dpi: OS._documentResolution };
+  });
+
+  expect(created.preview).toBe('2480 x 3508 px');
+  expect([created.w, created.h]).toEqual([2480, 3508]);
+  expect(created.dpi).toBe(300);
+
+  // And the PSD resolution resource declares it rather than a hardcoded 96.
+  const psd = await page.evaluate(() => {
+    const { structure } = OS._withExportCanvasState({ transparent: true }, () => OS._buildPsdExportStructure());
+    return structure.imageResources?.resolutionInfo || null;
+  });
+  expect(psd).toMatchObject({ horizontalResolution: 300, verticalResolution: 300 });
+});
+
 test('says what best-effort storage actually costs @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
