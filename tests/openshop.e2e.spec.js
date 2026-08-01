@@ -2866,6 +2866,35 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('applying a filter commits the value on screen, not the last debounce tick @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // The preview is debounced by 50ms while Apply saved history immediately and
+  // nulled the target, so the pending tick returned early and the committed
+  // image carried the previous slider value under the new one's label.
+  const result = await page.evaluate(async () => {
+    const seen = [];
+    const original = OS._filterPreviewNow.bind(OS);
+    OS._filterPreviewNow = (name) => { seen.push(OS._filterName); return original(name); };
+    OS._filterName = 'Brightness';
+    OS._filterTarget = null;
+
+    // Schedule a preview and apply inside the debounce window.
+    OS._filterPreview('Brightness');
+    const pendingBefore = OS._filterPreviewDebounce !== null;
+    OS._filterApply();
+    const pendingAfter = OS._filterPreviewDebounce;
+    OS._filterPreviewNow = original;
+    return { pendingBefore, pendingAfter, flushed: seen.length };
+  });
+
+  expect(result.pendingBefore).toBe(true);
+  // Apply forced the pending tick through and left nothing scheduled.
+  expect(result.flushed).toBe(1);
+  expect(result.pendingAfter).toBeNull();
+});
+
 test('deleting a mask selection edits the image, not the selection tint @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

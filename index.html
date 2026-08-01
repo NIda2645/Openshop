@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-60BfpEvmswVLaS/yYFghp9xbMI5ASX9Cg3XmMk66Wgg=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-KsZhPXavQdLDeSmtyjNJY1Yiw2bGruacNZA3KwVXzTs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -7979,13 +7979,36 @@ self.onmessage = function(event) {
         }, { signal: ac.signal });
         document.addEventListener('mouseup', () => { dragging = false; }, { signal: ac.signal });
     },
+    // A filter worker returns null when its job was cancelled or superseded.
+    // Every caller simply returned, so an aborted run left its panel open with
+    // no message and no way to tell whether Apply had done anything — and
+    // starting a second job cancels the first, so double-clicking Apply
+    // reproduced it every time.
+    _filterJobEnded(panelId) {
+        if (panelId) this._removeFilterPanel(panelId);
+        this.toast('Filter cancelled', 'info');
+    },
     _removeFilterPanel(id) {
         const panel = document.getElementById(id);
         if (panel) { if (panel._dragAbort) panel._dragAbort.abort(); panel.classList.remove('show'); setTimeout(() => panel.remove(), 150); }
     },
     _filterPreview(name) {
         clearTimeout(this._filterPreviewDebounce);
-        this._filterPreviewDebounce = setTimeout(() => {
+        this._filterPreviewDebounce = setTimeout(() => this._filterPreviewNow(name), 50);
+    },
+    // Apply has to be able to force the pending tick through: it used to save
+    // history and null the target immediately, so a slider moved and applied
+    // within the debounce window committed the previous value while the
+    // history label named the new one.
+    _filterPreviewFlush() {
+        if (!this._filterPreviewDebounce) return;
+        clearTimeout(this._filterPreviewDebounce);
+        this._filterPreviewDebounce = null;
+        this._filterPreviewNow(this._filterName);
+    },
+    _filterPreviewNow(name) {
+        this._filterPreviewDebounce = null;
+        {
             const active = this._filterTarget;
             if (!active || active.type !== 'image') return;
             const panel = document.getElementById('filter-dialog-overlay');
@@ -8014,7 +8037,7 @@ self.onmessage = function(event) {
                 active.applyFilters();
                 this.canvas.renderAll();
             }
-        }, 50);
+        }
     },
     _filterCancel() {
         const active = this._filterTarget;
@@ -8028,6 +8051,7 @@ self.onmessage = function(event) {
     },
     _filterApply() {
         const name = this._filterName || 'Applied';
+        this._filterPreviewFlush();
         this.saveHistory('Filter: ' + name);
         this.toast(`Applied ${name}`, 'success');
         this._lastFilter = name;
@@ -11159,7 +11183,7 @@ self.onmessage = async function(event) {
         };
         this._removeFilterPanel('curves-dialog-overlay');
         const result = await this._runFilterInWorker('curves', info.imgData, info.canvas.width, info.canvas.height, params);
-        if (!result) return;
+        if (!result) { this._filterJobEnded('curves-dialog-overlay'); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Curves', { success:'Curves applied' });
     },
@@ -11365,21 +11389,21 @@ self.onmessage = async function(event) {
     async autoLevels() {
         const info = this._getActiveImageData(); if (!info) return;
         const result = await this._runFilterInWorker('autoLevels', info.imgData, info.canvas.width, info.canvas.height);
-        if (!result) return;
+        if (!result) { this._filterJobEnded(); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Auto Levels', { success:'Auto levels applied' });
     },
     async autoContrast() {
         const info = this._getActiveImageData(); if (!info) return;
         const result = await this._runFilterInWorker('autoContrast', info.imgData, info.canvas.width, info.canvas.height);
-        if (!result) return;
+        if (!result) { this._filterJobEnded(); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Auto Contrast', { success:'Auto contrast applied' });
     },
     async autoEnhance() {
         const info = this._getActiveImageData(); if (!info) return;
         const result = await this._runFilterInWorker('autoEnhance', info.imgData, info.canvas.width, info.canvas.height);
-        if (!result) return;
+        if (!result) { this._filterJobEnded(); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Auto Enhance', { success:'Auto enhance applied' });
     },
@@ -11819,7 +11843,7 @@ self.onmessage = async function(event) {
         const matrix = [m('cm-rr'),m('cm-rg'),m('cm-rb'),m('cm-gr'),m('cm-gg'),m('cm-gb'),m('cm-br'),m('cm-bg'),m('cm-bb')];
         this._removeFilterPanel('cm-dialog-overlay');
         const result = await this._runFilterInWorker('channelMixer', info.imgData, info.canvas.width, info.canvas.height, { matrix });
-        if (!result) return;
+        if (!result) { this._filterJobEnded('cm-dialog-overlay'); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Channel Mixer', { success:'Channel mixer applied' });
     },
@@ -12635,7 +12659,7 @@ self.onmessage = async function(e) {
         const levels = +(panel.querySelector('#fp-lvl')?.value||6);
         this.toast('Applying posterize...', 'info');
         const result = await this._runFilterInWorker('posterize', info.imgData, info.canvas.width, info.canvas.height, {levels});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('posterize-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('posterize-overlay'); await this._commitImageData(info, 'Posterize', { success:'Posterize applied' });
     },
@@ -12649,14 +12673,14 @@ self.onmessage = async function(e) {
         const info = this._getActiveImageData(); if (!info) { this._removeFilterPanel('threshold-overlay'); return; }
         const thr = +(panel.querySelector('#ft-thr')?.value||128);
         const result = await this._runFilterWithPhoton('threshold', info.imgData, info.canvas.width, info.canvas.height, {thr});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('threshold-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('threshold-overlay'); await this._commitImageData(info, 'Threshold', { success:'Threshold applied' });
     },
     async filterSolarize() {
         const info = this._getActiveImageData(); if (!info) return;
         const result = await this._runFilterInWorker('solarize', info.imgData, info.canvas.width, info.canvas.height);
-        if (!result) return;
+        if (!result) { this._filterJobEnded(); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Solarize', { success:'Solarize applied' });
     },
@@ -12664,7 +12688,7 @@ self.onmessage = async function(e) {
         const info = this._getActiveImageData(); if (!info) return;
         this.toast('Detecting edges...', 'info');
         const result = await this._runFilterWithPhoton('edgeDetect', info.imgData, info.canvas.width, info.canvas.height);
-        if (!result) return;
+        if (!result) { this._filterJobEnded(); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Edge Detect', { success:'Edge detect applied' });
     },
@@ -12679,7 +12703,7 @@ self.onmessage = async function(e) {
         const amt = +(panel.querySelector('#fv-amt')?.value||50) / 100, soft = +(panel.querySelector('#fv-soft')?.value||60) / 100;
         this.toast('Applying vignette...', 'info');
         const result = await this._runFilterInWorker('vignette', info.imgData, info.canvas.width, info.canvas.height, {amt, soft});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('vignette-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('vignette-overlay'); await this._commitImageData(info, 'Vignette', { success:'Vignette applied' });
     },
@@ -12694,7 +12718,7 @@ self.onmessage = async function(e) {
         const amount = +(panel.querySelector('#fu-amt')?.value||100) / 100, radius = +(panel.querySelector('#fu-rad')?.value||2);
         this.toast('Applying unsharp mask...', 'info');
         const result = await this._runFilterInWorker('unsharpMask', info.imgData, info.canvas.width, info.canvas.height, {amount, radius});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('unsharpmask-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('unsharpmask-overlay'); await this._commitImageData(info, 'Unsharp Mask', { success:'Unsharp mask applied' });
     },
@@ -12709,7 +12733,7 @@ self.onmessage = async function(e) {
         const radius = +(panel.querySelector('#fo-rad')?.value||3), levels = +(panel.querySelector('#fo-lvl')?.value||16);
         this.toast('Applying oil paint...', 'info');
         const result = await this._runFilterInWorker('oilPaint', info.imgData, info.canvas.width, info.canvas.height, {radius, levels});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('oilpaint-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('oilpaint-overlay'); await this._commitImageData(info, 'Oil Paint', { success:'Oil paint applied' });
     },
@@ -12752,7 +12776,7 @@ self.onmessage = async function(e) {
         const sr=parseInt(sc.slice(1,3),16),sg=parseInt(sc.slice(3,5),16),sb=parseInt(sc.slice(5,7),16);
         const hr=parseInt(hc.slice(1,3),16),hg=parseInt(hc.slice(3,5),16),hb=parseInt(hc.slice(5,7),16);
         const result = await this._runFilterInWorker('duotone', info.imgData, info.canvas.width, info.canvas.height, {sr,sg,sb,hr,hg,hb});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('duotone-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('duotone-overlay'); await this._commitImageData(info, 'Duotone', { success:'Duotone applied' });
     },
@@ -12767,7 +12791,7 @@ self.onmessage = async function(e) {
         const focusY = +(panel.querySelector('#fts-y')?.value||50)/100, focusW = +(panel.querySelector('#fts-w')?.value||20)/100, blurR = +(panel.querySelector('#fts-blur')?.value||4);
         this.toast('Applying tilt shift...', 'info');
         const result = await this._runFilterInWorker('tiltShift', info.imgData, info.canvas.width, info.canvas.height, {focusY, focusW, blurR});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('tiltshift-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('tiltshift-overlay'); await this._commitImageData(info, 'Tilt Shift', { success:'Tilt shift applied' });
     },
@@ -12781,7 +12805,7 @@ self.onmessage = async function(e) {
         const info = this._getActiveImageData(); if (!info) { this._removeFilterPanel('chromab-overlay'); return; }
         const off = +(panel.querySelector('#fca-off')?.value||4);
         const result = await this._runFilterInWorker('chromaticAberration', info.imgData, info.canvas.width, info.canvas.height, {off});
-        if (!result) return;
+        if (!result) { this._filterJobEnded('chromab-overlay'); return; }
         info.imgData = result;
         this._removeFilterPanel('chromab-overlay'); await this._commitImageData(info, 'Chromatic Aberration', { success:'Chromatic aberration applied' });
     },
@@ -13032,16 +13056,26 @@ self.onmessage = async function(e) {
 
     // ====================== BEFORE / AFTER COMPARE ======================
     _captureBA() {
+        // Without the finally, a throw from toDataURL — an out-of-memory on a
+        // large canvas, or a tainted canvas — stranded the editor at an
+        // identity viewport with the boundary invisible and every overlay
+        // hidden. The restore also hardcoded opacity 1 rather than whatever
+        // the boundary actually had.
         const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0];
         const boundary = this.canvas.getObjects().find(o => o.name === '__boundary__');
-        if (boundary) boundary.set('opacity', 0);
+        const boundaryOpacity = boundary?.opacity;
         const restoreOverlays = this._hideNonExportableObjects();
-        this.canvas.renderAll();
-        this._baSnapshot = this.canvas.toDataURL({ format:'png', left:0, top:0, width:this.canvasW, height:this.canvasH });
-        restoreOverlays();
-        if (boundary) boundary.set('opacity', 1);
-        this.canvas.viewportTransform = vpt; this.canvas.renderAll();
+        try {
+            this.canvas.viewportTransform = [1,0,0,1,0,0];
+            if (boundary) boundary.set('opacity', 0);
+            this.canvas.renderAll();
+            this._baSnapshot = this.canvas.toDataURL({ format:'png', left:0, top:0, width:this.canvasW, height:this.canvasH });
+        } finally {
+            restoreOverlays();
+            if (boundary) boundary.set('opacity', boundaryOpacity);
+            this.canvas.viewportTransform = vpt;
+            this.canvas.renderAll();
+        }
     },
     showBeforeAfter() {
         if (!this._baSnapshot) { this._captureBA(); }
@@ -13065,9 +13099,13 @@ self.onmessage = async function(e) {
         acv.width = cw; acv.height = ch;
         const actx = acv.getContext('2d');
         const vpt = this.canvas.viewportTransform.slice();
-        this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
-        const afterData = this.canvas.toDataURL({ format:'png', left:0, top:0, width:this.canvasW, height:this.canvasH });
-        this.canvas.viewportTransform = vpt; this.canvas.renderAll();
+        let afterData;
+        try {
+            this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
+            afterData = this.canvas.toDataURL({ format:'png', left:0, top:0, width:this.canvasW, height:this.canvasH });
+        } finally {
+            this.canvas.viewportTransform = vpt; this.canvas.renderAll();
+        }
         const afterImg = new Image(); afterImg.onload = () => {
             const scale = Math.min(cw / this.canvasW, ch / this.canvasH);
             const dx = (cw - this.canvasW * scale) / 2, dy = (ch - this.canvasH * scale) / 2;
@@ -14760,7 +14798,7 @@ self.onmessage = async function(e) {
         const amount = +panel.querySelector('#adj-vib').value / 100;
         this._removeFilterPanel('vibrance-overlay');
         const result = await this._runFilterInWorker('vibrance', info.imgData, info.canvas.width, info.canvas.height, { amount });
-        if (!result) return;
+        if (!result) { this._filterJobEnded('vibrance-overlay'); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Vibrance', { success:this._t('Vibrance applied') });
     },
@@ -14779,7 +14817,7 @@ self.onmessage = async function(e) {
         const gamma = +panel.querySelector('#adj-exp-gam').value / 100;
         this._removeFilterPanel('exposure-overlay');
         const result = await this._runFilterInWorker('exposure', info.imgData, info.canvas.width, info.canvas.height, { ev, offset, gamma });
-        if (!result) return;
+        if (!result) { this._filterJobEnded('exposure-overlay'); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Exposure', { success:this._t('Exposure applied') });
     },
@@ -14797,7 +14835,7 @@ self.onmessage = async function(e) {
         const highlights = +panel.querySelector('#adj-sh-h').value / 100;
         this._removeFilterPanel('shadowhl-overlay');
         const result = await this._runFilterInWorker('shadowsHighlights', info.imgData, info.canvas.width, info.canvas.height, { shadows, highlights });
-        if (!result) return;
+        if (!result) { this._filterJobEnded('shadowhl-overlay'); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Shadows/Highlights', { success:this._t('Shadows/Highlights applied') });
     },
@@ -14819,7 +14857,7 @@ self.onmessage = async function(e) {
         else color = presets[type] || presets.warming;
         this._removeFilterPanel('photofilter-overlay');
         const result = await this._runFilterInWorker('photoFilter', info.imgData, info.canvas.width, info.canvas.height, { color, density });
-        if (!result) return;
+        if (!result) { this._filterJobEnded('photofilter-overlay'); return; }
         info.imgData = result;
         await this._commitImageData(info, 'Photo Filter', { success:this._t('Photo filter applied') });
     },
@@ -14988,8 +15026,16 @@ self.onmessage = async function(e) {
     _liquifyApply() {
         if (!this._liquifyData) return;
         const cv = document.getElementById('liquify-canvas');
-        this._replaceActiveImage(this._liquifyData.active, cv.toDataURL(), 'Liquify');
-        this.closeLiquify(); this.toast(this._t('Liquify applied'),'success');
+        // Wait for the commit. This used to close the dialog and toast success
+        // straight away, so when the guard refused the write — layer locked or
+        // hidden since the dialog opened, or the document changed under it —
+        // the user got a success and an error toast together and the liquify
+        // canvas was already gone, taking the work with it.
+        this._replaceActiveImage(this._liquifyData.active, cv.toDataURL(), 'Liquify').then(committed => {
+            if (!committed) return;
+            this.closeLiquify();
+            this.toast(this._t('Liquify applied'),'success');
+        });
     },
 
     // ====================== CURVED TEXT ======================
