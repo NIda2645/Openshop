@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-6SKK/dUyE7DavETOqJP4dt18fQUfkq5nIaH983sdq2A=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-iy6Mc0+58Zvse2TXgiaWZnSIjF895O1N73U6x0eFR3c=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -824,6 +824,8 @@ body{
 .menu-dropdown{
   top:calc(100% + 7px);
   background:color-mix(in srgb, var(--bg-depth-1) 97%, transparent);
+  /* see .menu-item>.menu-dropdown::before — the offset below is dead space the
+     pointer has to cross, and crossing it used to close the menu */
   border-color:var(--border);
   border-radius:var(--radius-lg);
   box-shadow:0 20px 60px rgba(0,0,0,.58),inset 0 1px rgba(255,255,255,.035);
@@ -836,6 +838,20 @@ body{
   font-size:12px;
 }
 .dd-item:hover{background:color-mix(in srgb, var(--accent) 15%, transparent)}
+/* The dropdown sits 7px below its title and the menu stays open on :hover of
+   the title's box, which the gap is not part of — so moving the pointer from
+   the title into the menu closed it before it arrived, at every window size.
+   This invisible strip belongs to the dropdown, so the pointer never leaves
+   the hover target. Scoped to top-level menus: submenus are flush against
+   their parent row and a strip there would cover the row above. */
+.menu-item>.menu-dropdown::before{
+  content:'';
+  position:absolute;
+  left:0;
+  right:0;
+  top:-9px;
+  height:9px;
+}
 /* Menu rows only ever take focus from the keyboard, so the focus treatment has
    to be as loud as the hover treatment or the caret is invisible while moving. */
 .menu-item:focus-visible,.dd-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -13486,7 +13502,12 @@ self.onmessage = async function(e) {
         item.classList.remove('open');
         if (item.hasAttribute('aria-expanded')) item.setAttribute('aria-expanded', 'false');
     },
+    _menuCloseTimer: null,
+    _cancelMenuClose() {
+        if (this._menuCloseTimer) { clearTimeout(this._menuCloseTimer); this._menuCloseTimer = null; }
+    },
     _closeAllMenus() {
+        this._cancelMenuClose();
         this._menuRoots().forEach(root => this._closeMenuPopup(root));
     },
     _focusMenuRoot(root, { open = false, last = false } = {}) {
@@ -13535,6 +13556,27 @@ self.onmessage = async function(e) {
             root.setAttribute('tabindex', index === 0 ? '0' : '-1');
             const label = this._menuOwnText(root);
             if (label) root.setAttribute('aria-label', label);
+        });
+
+        // Opening on :hover alone means the menu closes the instant the pointer
+        // is over neither the title nor the dropdown — which is every diagonal
+        // path into a dropdown wider than its title, and the offset between the
+        // two. Latch it open on enter and close on a short grace period so the
+        // pointer can take any route it likes.
+        roots.forEach(root => {
+            root.addEventListener('pointerenter', () => {
+                this._cancelMenuClose();
+                this._openMenuPopup(root);
+            });
+            root.addEventListener('pointerleave', () => {
+                this._cancelMenuClose();
+                this._menuCloseTimer = setTimeout(() => {
+                    this._menuCloseTimer = null;
+                    // Keyboard focus inside the menu outranks the pointer.
+                    if (root.contains(document.activeElement)) return;
+                    this._closeMenuPopup(root);
+                }, 260);
+            });
         });
 
         bar.addEventListener('keydown', event => this._onMenuKeydown(event));

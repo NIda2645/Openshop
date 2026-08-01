@@ -2223,6 +2223,65 @@ test('drives the whole menubar from the keyboard with clean accessible names @cr
   expect(shortcut).toBe('Ctrl+A');
 });
 
+test('menus stay open while the pointer travels from the title into them @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await expect(page.locator('#welcome-overlay')).toBeHidden();
+
+  // The dropdown is offset below its title. Every previous menu test clicked,
+  // which latches the menu open; hovering is what real users do, and the
+  // pointer used to lose the menu while crossing the offset.
+  const count = await page.locator('.menu-bar > .menu-item').count();
+  expect(count).toBeGreaterThan(3);
+
+  for (const index of [0, 4, count - 1]) {
+    const item = page.locator('.menu-bar > .menu-item').nth(index);
+    await page.mouse.move(600, 500);
+    const title = await item.boundingBox();
+    await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
+    await expect
+      .poll(() => page.evaluate(i => {
+        const dd = document.querySelectorAll('.menu-bar > .menu-item')[i].querySelector('.menu-dropdown');
+        return dd.getBoundingClientRect().height > 0;
+      }, index))
+      .toBe(true);
+
+    // Straight down from the title, through the offset, into the menu — the
+    // motion the bug report describes. Moving sideways along the menubar is a
+    // different gesture and correctly opens the neighbouring menu.
+    const column = title.x + title.width / 2;
+    const entry = await page.evaluate(i => {
+      const dd = document.querySelectorAll('.menu-bar > .menu-item')[i].querySelector('.menu-dropdown');
+      return dd.getBoundingClientRect().top + 14;
+    }, index);
+    for (let y = title.y + title.height / 2; y <= entry; y += 2) {
+      await page.mouse.move(column, y);
+    }
+    expect(await page.evaluate(i => {
+      const dd = document.querySelectorAll('.menu-bar > .menu-item')[i].querySelector('.menu-dropdown');
+      return dd.getBoundingClientRect().height > 0;
+    }, index)).toBe(true);
+
+    // And then across to a row, inside the menu.
+    const target = await page.evaluate(i => {
+      const dd = document.querySelectorAll('.menu-bar > .menu-item')[i].querySelector('.menu-dropdown');
+      const r = dd.querySelector('.dd-item').getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, index);
+    await page.mouse.move(target.x, target.y);
+
+    const state = await page.evaluate(i => {
+      const dd = document.querySelectorAll('.menu-bar > .menu-item')[i].querySelector('.menu-dropdown');
+      const row = dd.querySelector('.dd-item');
+      const r = row.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { open: dd.getBoundingClientRect().height > 0, rowReachable: row.contains(top) };
+    }, index);
+    expect(state.open).toBe(true);
+    expect(state.rowReachable).toBe(true);
+  }
+});
+
 test('Tab moves focus through the editor instead of toggling panels @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

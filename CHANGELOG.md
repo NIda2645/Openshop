@@ -9,6 +9,9 @@ All notable changes to Openshop will be documented in this file.
 - Stop the modal focus trap leaking Tab to the global shortcut handler. `_onModalTabKey` only intervened at the first and last focusable, so every press from the middle of a dialog fell through and was cancelled — the trap passed its test because the test only ever pressed at the two ends
 - Release the welcome overlay when it is dismissed. It fades to `opacity:0` but keeps its layout box, so it stayed focusable and stayed on the modal stack forever: Tab traversed an invisible dialog, and every check of "is a modal open" answered yes for the rest of the session. It is now `inert`, released from the stack, and focus moves to the editor instead of being stranded in an inert subtree
 - Prune disconnected entries whenever the modal stack is read, not only inside the Tab handler
+- Keep menus open while the pointer travels into them. The dropdown sits 7px below its title and the menu closed as soon as the pointer was over neither, so crossing that offset dismissed the menu before the pointer arrived — at every window size. The offset is now bridged, and a short close delay lets the pointer take any route into the menu instead of only the one path that never leaves a hover target
+
+## [v0.24.0] - 2026-07-30
 
 ### Performance
 - Move the highlight during animation playback instead of rebuilding the whole thumbnail strip on every tick. A 20-frame timeline at 12 fps was creating a div, an 80px canvas, an image decode and two listeners per frame, 12 times a second — roughly 240 decodes a second purely to move a border
