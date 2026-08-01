@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-HRHZ8gKI+uUIgudULrqiU0hFoxBft6lTRBxoi5+BeCs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-QELTohLEOq6mPvFplO4ZXB6z+5xDW+GPzTDR0SQcoa0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -7173,14 +7173,15 @@ self.onmessage = function(event) {
                 if (Math.abs(data[ni] - data[ci]) <= tol &&
                     Math.abs(data[ni+1] - data[ci+1]) <= tol &&
                     Math.abs(data[ni+2] - data[ci+2]) <= tol) {
-                    newMask[ny * m.w + nx] = 1;
+                    // 255, not 1: the mask is 0-255 coverage. A 1 reads as
+                    // 0.4% selected, so grown pixels drew no tint and survived
+                    // a delete almost intact.
+                    newMask[ny * m.w + nx] = 255;
                 }
             }
         }
-        m.mask = newMask;
-        this._recalcSelectionBounds(m);
-        this._showMaskOverlay(m);
-        this.toast('Selection grown', 'info');
+        const grown = this._setPixelSelectionMask(newMask, m.w, m.h, { coverage:true });
+        this.toast('Selection grown: ' + grown.toLocaleString() + ' px', 'info');
     },
 
     // Similar: select all pixels with similar color to current selection
@@ -7198,15 +7199,15 @@ self.onmessage = function(event) {
         }
         if (cnt === 0) return;
         tr = Math.round(tr / cnt); tg = Math.round(tg / cnt); tb = Math.round(tb / cnt);
-        // Select all pixels matching average color
-        let count = 0;
+        // Select all pixels matching average color. 255, not 1 — see the note
+        // in growSelection; a 1 here is 0.4% coverage, not a selected pixel.
+        const next = new Uint8Array(m.mask);
         for (let i = 0; i < m.mask.length; i++) {
             if (Math.abs(data[i*4] - tr) <= tol && Math.abs(data[i*4+1] - tg) <= tol && Math.abs(data[i*4+2] - tb) <= tol) {
-                m.mask[i] = 1; count++;
+                next[i] = 255;
             }
         }
-        this._recalcSelectionBounds(m);
-        this._showMaskOverlay(m);
+        const count = this._setPixelSelectionMask(next, m.w, m.h, { coverage:true });
         this.toast('Selected similar: ' + count.toLocaleString() + ' px', 'info');
     },
 

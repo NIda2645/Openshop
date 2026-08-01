@@ -2863,6 +2863,43 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('Grow and Similar write full coverage, not a token 1 @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // The mask is 0-255 coverage. These two wrote 1, which reads as 0.4%
+  // selected: the tint rounded to invisible and a delete left the pixels
+  // ~99.6% intact while reporting success.
+  const result = await page.evaluate(() => {
+    OS.createNewDocument(120, 90, '#ffffff');
+    const block = new fabric.Rect({ left: 20, top: 20, width: 60, height: 40, fill: '#2244ff', selectable: false });
+    OS.canvas.add(block);
+    OS.layers[OS.activeLayerIdx].objects.push(block);
+    OS.canvas.renderAll();
+
+    const w = Math.round(OS.canvasW), h = Math.round(OS.canvasH);
+    const seed = new Uint8Array(w * h);
+    for (let y = 30; y < 40; y++) for (let x = 30; x < 40; x++) seed[y * w + x] = 255;
+    OS.state.wandTolerance = 30;
+
+    OS._setPixelSelectionMask(seed, w, h);
+    OS.growSelection();
+    const afterGrow = [...new Set(OS._selectionMask.mask)].sort((a, b) => a - b);
+
+    OS._setPixelSelectionMask(seed.slice(), w, h);
+    OS.similarSelection();
+    const afterSimilar = [...new Set(OS._selectionMask.mask)].sort((a, b) => a - b);
+    let similarCount = 0;
+    for (const v of OS._selectionMask.mask) if (v === 255) similarCount++;
+    return { afterGrow, afterSimilar, similarCount };
+  });
+
+  expect(result.afterGrow).toEqual([0, 255]);
+  expect(result.afterSimilar).toEqual([0, 255]);
+  // Similar spreads from the seed across the whole blue block.
+  expect(result.similarCount).toBeGreaterThan(2000);
+});
+
 test('the magic wand selects the same pixels at any zoom or pan @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
