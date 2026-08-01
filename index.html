@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-TdaF6f0/EYfAOEWhddBDs2iiDJtwHesBLWfW7cUS58E=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-4NnpT98Hevr8wlwW7cyXc7K3ndcl7H0Y6W4t3dDYin0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3657,6 +3657,10 @@ const OS = {
             backgroundColor: '#1a1a1a', selection: true,
             preserveObjectStacking: true, enableRetinaScaling: true,
             stopContextMenu: true, fireRightClick: true,
+            // A render per add is wasted work during a PSD import or a project
+            // open, which add every object in one pass; the callers that do
+            // that request one render at the end instead.
+            renderOnAddRemove: false,
         });
         this.createNewDocument(this.canvasW, this.canvasH, { resetProject:true, clean:true });
         this.canvas.on('mouse:move', e => this.onMouseMove(e));
@@ -7441,6 +7445,8 @@ self.onmessage = function(event) {
             }
         }
         this._selectionBounds = count > 0 ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : null;
+        // The mask was rewritten in place, so the cached count has to follow it.
+        m.count = count;
         this._placeSelectionBox();
         this._showMaskOverlay(this._selectionMask);
         this.toast('Selection inverted: ' + count.toLocaleString() + ' px', 'info');
@@ -15141,13 +15147,19 @@ self.onmessage = async function(e) {
             // and stamping image pixels: a layer scaled below 100% has more
             // image pixels than document pixels, and stamping left gaps.
             // The mask is document-space, so the viewport plays no part here.
+            // Stepping the affine transform instead of calling transformPoint
+            // per pixel: that allocated two object literals for every pixel, so
+            // a 4000x3000 layer meant 12 million matrix calls and 24 million
+            // short-lived objects on the main thread.
+            const [ma, mb, mc, md, me, mf] = matrix;
+            const halfW = oc.width / 2, halfH = oc.height / 2;
             for (let iy = 0; iy < oc.height; iy++) {
-                for (let ix = 0; ix < oc.width; ix++) {
-                    const doc = fabric.util.transformPoint(
-                        { x:ix + 0.5 - oc.width / 2, y:iy + 0.5 - oc.height / 2 },
-                        matrix
-                    );
-                    const dx = Math.floor(doc.x), dy = Math.floor(doc.y);
+                const ly = iy + 0.5 - halfH;
+                // Row origin, then one horizontal step per pixel.
+                let docX = ma * (0.5 - halfW) + mc * ly + me;
+                let docY = mb * (0.5 - halfW) + md * ly + mf;
+                for (let ix = 0; ix < oc.width; ix++, docX += ma, docY += mb) {
+                    const dx = Math.floor(docX), dy = Math.floor(docY);
                     if (dx < 0 || dy < 0 || dx >= mask.w || dy >= mask.h) continue;
                     const coverage = mask.mask[dy * mask.w + dx];
                     if (!coverage) continue;
@@ -16663,7 +16675,10 @@ self.onmessage = async function(e) {
             this.canvas.renderAll();
             return 0;
         }
-        this._selectionMask = { mask, w, h };
+        // Cached here because _selectionSummary runs on every toast, and
+        // recounting an 8000x6000 mask 48 million elements at a time for a
+        // status message is not free.
+        this._selectionMask = { mask, w, h, count };
         this._recalcSelectionBounds(this._selectionMask);
         this._showMaskOverlay(this._selectionMask);
         return count;
@@ -17248,10 +17263,18 @@ self.onmessage = async function(e) {
         ];
         return `${layer.name}, ${state.join(', ')}`;
     },
+    // Masks built elsewhere (Grow, Invert, a restored project) may arrive
+    // without the cached count; compute it once and keep it.
+    _countMaskPixels(selection) {
+        let count = 0;
+        for (let i = 0; i < selection.mask.length; i++) if (selection.mask[i]) count++;
+        selection.count = count;
+        return count;
+    },
     _selectionSummary() {
         if (!this._selectionBounds) return 'none';
         const b = this._selectionBounds;
-        const count = this._selectionMask ? this._selectionMask.mask.reduce((sum, v) => sum + (v ? 1 : 0), 0) : null;
+        const count = this._selectionMask ? (this._selectionMask.count ?? this._countMaskPixels(this._selectionMask)) : null;
         const size = `${Math.round(b.w)} by ${Math.round(b.h)} pixels at ${Math.round(b.x)}, ${Math.round(b.y)}`;
         return count ? `${count.toLocaleString()} pixels selected, ${size}` : `selection bounds ${size}`;
     },

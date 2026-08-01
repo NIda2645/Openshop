@@ -2053,7 +2053,12 @@ describe('history eviction, coalescing, and commit guards', () => {
 
 describe('component treatment', () => {
   const source = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
-  const css = source.slice(source.indexOf('<style>'), source.lastIndexOf('</style>'));
+  const fullCss = source.slice(source.indexOf('<style>'), source.lastIndexOf('</style>'));
+  // The forced-colors block deliberately swaps the accent scale for system
+  // colours, so the "one accent-tinted hover treatment" rules below do not
+  // describe it. It gets its own assertions instead.
+  const forcedColorsStart = fullCss.indexOf('@media(forced-colors:active)');
+  const css = forcedColorsStart >= 0 ? fullCss.slice(0, forcedColorsStart) : fullCss;
 
   it('draws one slider thumb, in both engines', () => {
     const thumbs = [...css.matchAll(/([^\n{}]*::-(?:webkit-slider|moz-range)-thumb)\s*\{([^}]*)\}/g)]
@@ -2101,6 +2106,15 @@ describe('component treatment', () => {
     // overlapped its flex siblings.
     expect(css).toMatch(/\.frame-thumb\.active\{[^}]*\}/);
     expect(css.match(/\.frame-thumb\.active\{([^}]*)\}/)[1]).not.toMatch(/scale\(/);
+
+    // In forced colours those same rows follow the system palette instead,
+    // and the canvas opts out so the artwork is not repainted by the OS.
+    expect(forcedColorsStart).toBeGreaterThan(0);
+    const forced = fullCss.slice(forcedColorsStart);
+    expect(forced).toMatch(/\.dd-item:hover/);
+    expect(forced).toMatch(/background:Highlight/);
+    expect(forced).toMatch(/forced-color-adjust:none/);
+    expect(forced).toMatch(/backdrop-filter:none!important/);
   });
 
   it('uses the radius scale for the components that had drifted', () => {

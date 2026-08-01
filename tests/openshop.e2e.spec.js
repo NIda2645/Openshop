@@ -3193,13 +3193,20 @@ test('says what best-effort storage actually costs @cross-browser', async ({ pag
     const modal = document.querySelector('.recovery-manager');
     return {
       text: modal.textContent,
+      // WebKit exposes no origin-private file system to a file:// origin, so
+      // there is no recovery storage to describe there.
+      storageSupported: Boolean(navigator.storage?.getDirectory),
       hasKeep: [...modal.querySelectorAll('button')].some(b => b.textContent === 'Keep recovery data')
     };
   });
   expect(panel.text).toMatch(/Durability/);
-  // Chromium reports either state; whichever it is, the note explains it.
-  expect(panel.text).toMatch(/evict|delete|does not report/i);
-  if (/may delete|deletes this data/i.test(panel.text)) expect(panel.hasKeep).toBe(true);
+  if (panel.storageSupported) {
+    // Whichever state the engine reports, the note explains it.
+    expect(panel.text).toMatch(/evict|delete|does not report/i);
+    if (/may delete|deletes this data/i.test(panel.text)) expect(panel.hasKeep).toBe(true);
+  } else {
+    expect(panel.text).toMatch(/does not expose Origin Private File System/i);
+  }
 });
 
 test('toasts dismiss themselves, cap their stack, and stop repeating @cross-browser', async ({ page }) => {
