@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-t27mzdNG4jrl/96gMj0DKfEv9AYk08TZeM4yaGbaQEs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-hLPb7P9jpRC9Nk2Oi61gSik4UBOM6fBUHNutiFO2QOk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2581,7 +2581,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <div class="ai-actions" id="compute-actions" hidden><button type="button" class="btn btn-danger" id="compute-cancel">Cancel</button></div>
     </div>
 </div>
-<div id="toast-container" aria-hidden="true"></div>
+<div id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 <!-- ===== COMMAND PALETTE ===== -->
 <div id="cmd-palette" role="dialog" aria-label="Command palette" data-os-click="click-194">
     <div id="cmd-box">
@@ -6488,6 +6488,11 @@ self.onmessage = function(event) {
             d.querySelector('.layer-vis').addEventListener('click', e => { e.stopPropagation(); this.toggleLayerVisibility(i); });
             d.querySelector('.layer-lock').addEventListener('click', e => { e.stopPropagation(); this.toggleLayerLock(i); });
             d.querySelector('.layer-name').addEventListener('dblclick', function() { OS.startRenameLayer(this, i); });
+            // The container claims role="listbox" but had no options in it, so
+            // neither list was navigable as a list by assistive technology.
+            d.setAttribute('role', 'option');
+            d.setAttribute('aria-selected', i === this.activeLayerIdx ? 'true' : 'false');
+            d.setAttribute('aria-label', `${l.name}${l.visible === false ? ', hidden' : ''}${l.locked ? ', locked' : ''}`);
             d.addEventListener('click', () => this.selectLayer(i));
             this.initLayerDrag(d, i);
             list.appendChild(d);
@@ -6600,7 +6605,13 @@ self.onmessage = function(event) {
     setTool(tool) {
         const prevTool = this.state.tool;
         this.state.tool = tool;
-        document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool===tool));
+        // The active tool was communicated only by a CSS class, so assistive
+        // technology could not tell which of the 42 buttons was selected.
+        document.querySelectorAll('.tool-btn').forEach(b => {
+            const isActive = b.dataset.tool === tool;
+            b.classList.toggle('active', isActive);
+            b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
         document.querySelectorAll('#tool-options .opt-group').forEach(g => g.style.display='none');
         const c = this.canvas; c.isDrawingMode = false; c.selection = false;
         c.defaultCursor = 'crosshair'; c.hoverCursor = 'crosshair';
@@ -8696,12 +8707,18 @@ self.onmessage = function(event) {
         const baseline = document.createElement('div');
         baseline.className = 'history-item' + (this.historyIdx < 0 ? ' current' : '');
         baseline.textContent = this._historyBaseLabel;
+        baseline.setAttribute('role', 'option');
+        baseline.setAttribute('aria-selected', this.historyIdx < 0 ? 'true' : 'false');
         baseline.addEventListener('click', () => this._restoreHistory(-1, this.history[0]?.beforeSnapshot || this._historyBaseSnapshot));
         list.appendChild(baseline);
         this.history.forEach((entry, index) => {
             const item = document.createElement('div');
             item.className = 'history-item' + (index === this.historyIdx ? ' current' : '') + (index > this.historyIdx ? ' future' : '');
             item.textContent = entry.action;
+            item.setAttribute('role', 'option');
+            item.setAttribute('aria-selected', index === this.historyIdx ? 'true' : 'false');
+            // Steps ahead of the cursor are still listed but are not current.
+            if (index > this.historyIdx) item.setAttribute('aria-disabled', 'true');
             item.addEventListener('click', () => this._restoreHistory(index));
             list.appendChild(item);
         });

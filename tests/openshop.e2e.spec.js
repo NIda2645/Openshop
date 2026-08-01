@@ -2866,6 +2866,52 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('exposes list, tool and status state to assistive technology @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(40, 30, '#ffffff');
+    OS.addLayer();
+    OS.setTool('brush');
+    OS.updateHistoryPanel();
+    await new Promise(r => setTimeout(r, 100));
+
+    const optionsIn = (id) => [...document.querySelectorAll(`#${id} [role="option"]`)];
+    const layers = optionsIn('layers-list');
+    const history = optionsIn('history-list');
+    const tools = [...document.querySelectorAll('.tool-btn')];
+    const toasts = document.getElementById('toast-container');
+    return {
+      listboxes: document.querySelectorAll('[role="listbox"]').length,
+      layerOptions: layers.length,
+      layerSelected: layers.filter(el => el.getAttribute('aria-selected') === 'true').length,
+      historyOptions: history.length,
+      historySelected: history.filter(el => el.getAttribute('aria-selected') === 'true').length,
+      toolsWithPressed: tools.filter(el => el.hasAttribute('aria-pressed')).length,
+      toolCount: tools.length,
+      pressedTool: tools.filter(el => el.getAttribute('aria-pressed') === 'true').map(el => el.dataset.tool),
+      toastHidden: toasts.getAttribute('aria-hidden'),
+      toastLive: toasts.getAttribute('aria-live')
+    };
+  });
+
+  expect(result.listboxes).toBe(2);
+  // A listbox with no options is not a list to a screen reader.
+  expect(result.layerOptions).toBeGreaterThan(1);
+  expect(result.layerSelected).toBe(1);
+  expect(result.historyOptions).toBeGreaterThan(0);
+  expect(result.historySelected).toBe(1);
+  // Every tool button reports whether it is the active one.
+  expect(result.toolsWithPressed).toBe(result.toolCount);
+  // A tool can appear both in the dock and in its flyout group.
+  expect(result.pressedTool.length).toBeGreaterThan(0);
+  expect([...new Set(result.pressedTool)]).toEqual(['brush']);
+  // Toasts carry errors and destructive-action feedback, so they must reach AT.
+  expect(result.toastHidden).toBeNull();
+  expect(result.toastLive).toBe('polite');
+});
+
 test('dismissing the welcome screen twice does not double-bind the editor @cross-browser', async ({ page }) => {
   await openApp(page);
 
