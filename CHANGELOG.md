@@ -27,6 +27,7 @@ All notable changes to Openshop will be documented in this file.
 - Clamp the crop rectangle to the document. Dragging clamped only to the viewport edge and the handles were not clamped at all, so a crop could describe a rectangle partly outside the document — passed straight through to the export and producing a new document with blank regions and no warning. The result is also checked against the maximum image size
 - Stop "open as copy" from deleting the source document's recovery generations. The copy assigned its new id directly instead of adopting it, so the alias list still pointed at the document it was branched from and the two counted as one lineage; saving the copy cleared both
 - Only initialise the editor once when the welcome screen is dismissed. A PWA file launch dismisses it after an await chain, so clicking through while that resolved ran the whole initialisation block again — a second flyout host and a duplicate set of document-level paste, drop and keydown listeners, so one Ctrl+Z performed two undos and one paste inserted the image twice
+- Compress the image stream in exported PDFs. The document was created without compression and `addImage` was given no compression level, so every export embedded a raw stream — a 600x400 page came to roughly 940 KB. It now uses the Paeth-predicted FlateDecode path, which is more than three times smaller on the export the test measures
 
 ## [v0.24.0] - 2026-07-30
 

@@ -4721,16 +4721,24 @@ test('sizes exported PDF pages and PSD resolution to the document', async ({ pag
     const { jsPDF } = window.jspdf;
     const pageW = OS.canvasW * 72 / 96;
     const pageH = OS.canvasH * 72 / 96;
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [pageW, pageH] });
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [pageW, pageH], compress: true });
     pdf.setProperties({ title: 'Fidelity', creator: 'OpenShop' });
     pdf.setLanguage('en-US');
     const captured = OS._captureExportRaster({ format: 'png', transparent: false, matte: '#ffffff' });
-    pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH);
+    pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH, undefined, 'SLOW');
     const bytes = new Uint8Array(pdf.output('arraybuffer'));
     let text = '';
     for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
 
+    // The same page with the compression the exporter used to omit.
+    const raw = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [pageW, pageH] });
+    raw.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH);
+    const rawBytes = new Uint8Array(raw.output('arraybuffer')).length;
+
     return {
+      compressedBytes: bytes.length,
+      rawBytes,
+      hasFlate: /\/Filter\s*\/FlateDecode/.test(text),
       resolution: structure.imageResources?.resolutionInfo || null,
       psdSize: [structure.width, structure.height],
       mediaBox: (text.match(/\/MediaBox\s*\[([^\]]+)\]/) || [])[1],
@@ -4750,6 +4758,10 @@ test('sizes exported PDF pages and PSD resolution to the document', async ({ pag
   expect(result.imageWidth).toBe('600');
   expect(result.hasLang).toBe(true);
   expect(result.hasTitle).toBe(true);
+  // The image stream used to be embedded raw, which made a 600x400 export
+  // roughly 940 KB.
+  expect(result.hasFlate).toBe(true);
+  expect(result.compressedBytes).toBeLessThan(result.rawBytes / 3);
 
   // Without a resolution resource Photoshop picks its own density and the
   // document's physical size becomes whatever the reader guesses.

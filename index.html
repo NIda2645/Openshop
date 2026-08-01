@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-u12EkZ3zqVc4Bg8v+dlZhGOeXbqYgWYRNxaHAhe5Fm4=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-t27mzdNG4jrl/96gMj0DKfEv9AYk08TZeM4yaGbaQEs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -8899,7 +8899,10 @@ self.onmessage = function(event) {
             // pixels (96 per inch), so the page is the document's real size.
             const pageW = this.canvasW * 72 / 96;
             const pageH = this.canvasH * 72 / 96;
-            const pdf = new jsPDF({ orientation:landscape ? 'landscape' : 'portrait', unit:'pt', format:[pageW, pageH] });
+            // Without compress the image stream is embedded raw, which made a
+            // 600x400 export about 940 KB. With it, addImage defaults to the
+            // 'SLOW' Paeth-predicted FlateDecode path.
+            const pdf = new jsPDF({ orientation:landscape ? 'landscape' : 'portrait', unit:'pt', format:[pageW, pageH], compress:true });
             pdf.setProperties?.({
                 title: this._docName || 'Untitled',
                 creator: 'OpenShop',
@@ -8909,7 +8912,7 @@ self.onmessage = function(event) {
             // is announced in the reader's default voice.
             pdf.setLanguage?.(document.documentElement.getAttribute('lang') || 'en-US');
             const captured = this._captureExportRaster({ format:'png', transparent:false, matte });
-            pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH);
+            pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH, undefined, 'SLOW');
             pdf.save(this._exportFileName('pdf'));
             this.toast('Exported as PDF', 'success');
             return true;
