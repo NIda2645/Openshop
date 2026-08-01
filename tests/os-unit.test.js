@@ -504,10 +504,6 @@ describe('OpenShop core object', () => {
     OS._showAIProgress = vi.fn();
     OS._hideAIProgress = vi.fn();
     OS._showMaskOverlay = vi.fn();
-    // Pipelines take canvas pixels, not a data: URL — Transformers.js reads a
-    // URL with fetch(), and connect-src blocks data:.
-    OS._imageToRawImage = vi.fn(() => ({ width: 16, height: 16, channels: 4, data: new Uint8ClampedArray(16 * 16 * 4) }));
-
     const makeMask = (predicate) => {
       const data = new Uint8Array(16 * 16);
       for (let y = 0; y < 16; y++) {
@@ -521,22 +517,82 @@ describe('OpenShop core object', () => {
       { label: 'left-object', score: 0.95, mask: makeMask((x, y) => x >= 1 && x <= 4 && y >= 4 && y <= 11) },
       { label: 'right-object', score: 0.9, mask: makeMask((x, y) => x >= 12 && x <= 15 && y >= 4 && y <= 11) }
     ];
-    const segmenter = vi.fn().mockResolvedValue(results);
-    OS._loadPipeline = vi.fn().mockResolvedValue(segmenter);
+    OS._segmentResultsAtPoint = vi.fn().mockResolvedValue(results);
 
     await OS.aiSegmentSelectAt({ x: 14, y: 8 });
 
-    expect(OS._loadPipeline).toHaveBeenCalledWith(
-      'image-segmentation',
-      'Xenova/detr-resnet-50-panoptic',
-      'Segment Select',
+    expect(OS._segmentResultsAtPoint).toHaveBeenCalledWith(
+      expect.objectContaining({ target, clickX: 14, clickY: 8, imageW: 16, imageH: 16 }),
       expect.objectContaining({ kind: 'Segment Select', generation: 0, revision: 0 })
     );
-    expect(segmenter).toHaveBeenCalledWith(expect.objectContaining({ width: 16, height: 16, channels: 4 }));
     expect(OS._selectionBounds).toEqual({ x: 13, y: 5, w: 4, h: 8 });
     expect(OS._selectionMask.mask.filter(Boolean)).toHaveLength(32);
     expect(OS._showMaskOverlay).toHaveBeenCalledWith(OS._selectionMask);
     expect(OS.toast).toHaveBeenCalledWith('Selected segment: right-object (32 px)', 'success');
+  });
+
+  it('loads pinned SlimSAM artifacts and selects the highest-IoU point mask', async () => {
+    const OS = loadOpenShop();
+    quietUiMethods(OS);
+    OS._showAIProgress = vi.fn();
+    OS._hideAIProgress = vi.fn();
+    OS._aiDevice = 'wasm';
+
+    const model = vi.fn().mockResolvedValue({
+      pred_masks: { tag: 'predictions' },
+      iou_scores: { data: new Float32Array([0.2, 0.93, 0.5]) }
+    });
+    const postProcess = vi.fn().mockResolvedValue([{
+      dims: [1, 3, 2, 2],
+      data: new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 1, 0,
+        0, 0, 0, 1
+      ])
+    }]);
+    const processor = vi.fn().mockResolvedValue({
+      original_sizes: { tag: 'original' },
+      reshaped_input_sizes: { tag: 'reshaped' }
+    });
+    processor.post_process_masks = postProcess;
+    const samFromPretrained = vi.fn().mockResolvedValue(model);
+    const processorFromPretrained = vi.fn().mockResolvedValue(processor);
+    OS._loadTransformers = vi.fn().mockResolvedValue({
+      SamModel: { from_pretrained: samFromPretrained },
+      AutoProcessor: { from_pretrained: processorFromPretrained }
+    });
+    OS._modelDownloadFootprint = vi.fn().mockResolvedValue(null);
+    OS._imageToRawImage = vi.fn().mockResolvedValue({ width: 8, height: 6, channels: 4 });
+
+    const job = OS._startComputeJob('Segment Select', { group: 'image-processing' });
+    const results = await OS._segmentResultsAtPoint({
+      target: { name: 'Photo' },
+      clickX: 5,
+      clickY: 3,
+      imageW: 8,
+      imageH: 6
+    }, job);
+    OS._finishComputeJob(job);
+
+    const revision = OS._modelRevisions['Xenova/slimsam-77-uniform'];
+    expect(samFromPretrained).toHaveBeenCalledWith('Xenova/slimsam-77-uniform', expect.objectContaining({
+      device: 'wasm', dtype: 'q8', revision
+    }));
+    expect(processorFromPretrained).toHaveBeenCalledWith('Xenova/slimsam-77-uniform', expect.objectContaining({ revision }));
+    expect(processor).toHaveBeenCalledWith(expect.objectContaining({ width: 8, height: 6 }), {
+      input_points: [[[5, 3]]]
+    });
+    expect(model).toHaveBeenCalledWith(expect.objectContaining({ original_sizes: { tag: 'original' } }));
+    expect(postProcess).toHaveBeenCalledWith(
+      { tag: 'predictions' },
+      { tag: 'original' },
+      { tag: 'reshaped' }
+    );
+    expect(results).toEqual([{
+      label: 'subject',
+      score: expect.closeTo(0.93, 5),
+      mask: { width: 2, height: 2, channels: 1, data: new Uint8Array([0, 255, 255, 0]) }
+    }]);
   });
 
   it('cancels a filter job by rejecting its promise, terminating its worker, and preserving document state', async () => {
@@ -597,17 +653,12 @@ describe('OpenShop core object', () => {
     OS.canvas = canvas;
     OS.layers = [{ name: 'Photo', visible: true, locked: false, objects: [target] }];
     quietUiMethods(OS);
-    // Pipelines take canvas pixels, not a data: URL — Transformers.js reads a
-    // URL with fetch(), and connect-src blocks data:.
-    OS._imageToRawImage = vi.fn(() => ({ width: 16, height: 16, channels: 4, data: new Uint8ClampedArray(16 * 16 * 4) }));
-
     let resolveInference;
     const inference = new Promise(resolve => { resolveInference = resolve; });
-    const segmenter = vi.fn(() => inference);
-    OS._loadPipeline = vi.fn().mockResolvedValue(segmenter);
+    OS._segmentResultsAtPoint = vi.fn(() => inference);
 
     const pending = OS.aiSegmentSelectAt({ x: 8, y: 8 });
-    await vi.waitFor(() => expect(segmenter).toHaveBeenCalled());
+    await vi.waitFor(() => expect(OS._segmentResultsAtPoint).toHaveBeenCalled());
     OS._documentRevision += 1;
     resolveInference([{ label: 'subject', score: 1, mask: { width: 1, height: 1, channels: 1, data: new Uint8Array([255]) } }]);
 

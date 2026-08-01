@@ -245,14 +245,7 @@ test('creates a pixel selection from a mocked AI segment mask', async ({ page })
     for (let y = 4; y <= 11; y++) {
       for (let x = 12; x <= 15; x++) data[y * 16 + x] = 255;
     }
-    // A pipeline implies a loaded runtime; stub both so this stays offline.
-    class StubRawImage {
-      constructor(pixels, width, height, channels) {
-        Object.assign(this, { data: pixels, width, height, channels });
-      }
-    }
-    OS._loadTransformers = async () => ({ RawImage: StubRawImage, env: {} });
-    OS._loadPipeline = async () => async () => [
+    OS._segmentResultsAtPoint = async () => [
       { label: 'bright-block', score: 0.99, mask: { width: 16, height: 16, channels: 1, data } }
     ];
 
@@ -5320,11 +5313,11 @@ test('selects WebGPU only when an adapter resolves and falls back to WASM', asyn
   expect(Object.keys(result.report.pinnedRevisions).length).toBeGreaterThan(0);
 });
 
-test('passes the selected device through to the model pipeline', async ({ page }) => {
+test('preflights the exact model download and passes the selected device to the pipeline', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
-  const options = await page.evaluate(async () => {
+  const result = await page.evaluate(async () => {
     Object.defineProperty(navigator, 'gpu', {
       configurable: true,
       value: { requestAdapter: async () => ({ name: 'fake' }) }
@@ -5334,17 +5327,178 @@ test('passes the selected device through to the model pipeline', async ({ page }
     OS._aiPipelines = {};
 
     let captured = null;
+    let downloadMessage = null;
     OS._loadTransformers = async () => ({
-      pipeline: async (task, model, opts) => { captured = { task, model, opts }; return { tag: 'pipe' }; }
+      ModelRegistry: {
+        get_pipeline_files: async (task, model, opts) => {
+          captured = { ...captured, registry:{ task, model, opts } };
+          return ['config.json', 'onnx/model_q8.onnx'];
+        },
+        get_file_metadata: async (_model, file) => ({
+          exists:true,
+          size:file === 'config.json' ? 2 * 1024 * 1024 : 8 * 1024 * 1024,
+          fromCache:file === 'config.json'
+        })
+      },
+      pipeline: async (task, model, opts) => {
+        captured = { ...captured, task, model, opts };
+        downloadMessage = document.getElementById('ai-msg').textContent;
+        return { tag: 'pipe' };
+      }
     });
     await OS._loadPipeline('image-segmentation', 'test/model', 'Test');
-    return captured;
+    return { captured, downloadMessage, footprint:OS._modelFootprints['test/model'] };
   });
 
   // The README promised WebGPU with a WASM fallback while this was pinned to
   // 'wasm' in both pipelines.
-  expect(options.opts.device).toBe('webgpu');
-  expect(options.opts.revision).toBeTruthy();
+  expect(result.captured.opts.device).toBe('webgpu');
+  expect(result.captured.opts.revision).toBeTruthy();
+  expect(result.captured.registry).toEqual({
+    task:'image-segmentation',
+    model:'test/model',
+    opts:expect.objectContaining({ device:'webgpu', dtype:'q8' })
+  });
+  expect(result.downloadMessage).toBe('8.0 MB download · 10.0 MB installed size (webgpu)');
+  expect(result.footprint).toEqual(expect.objectContaining({
+    exact:true,
+    totalBytes:10 * 1024 * 1024,
+    cachedBytes:2 * 1024 * 1024,
+    downloadBytes:8 * 1024 * 1024
+  }));
+});
+
+test('reloads the verified Transformers.js WASM runtime offline after one online use', async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-http', 'Service workers require the hosted lane');
+  testInfo.setTimeout(120_000);
+  await openApp(page);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once:true }));
+    }
+  });
+
+  const online = await page.evaluate(async () => {
+    const lib = await OS._loadTransformers();
+    const cache = await OS._inspectAIBackendCache();
+    const names = OS._aiBackendAssetNames();
+    const model = 'onnx-community/depth-anything-v2-small';
+    const footprint = await OS._modelDownloadFootprint(lib, {
+      task:'depth-estimation',
+      model,
+      revision:OS._modelRevisions[model],
+      dtype:'q8',
+      device:'wasm'
+    });
+    return {
+      version:lib.env.version,
+      cache,
+      footprint:footprint && {
+        exact:footprint.exact,
+        files:footprint.files.length,
+        totalBytes:footprint.totalBytes,
+        message:OS._modelDownloadMessage(footprint, 'wasm')
+      },
+      paths:{ ...lib.env.backends.onnx.wasm.wasmPaths },
+      expected:{
+        wasm:OS._runtimeAssets[names.wasm].url,
+        mjs:OS._runtimeAssets[names.factory].url
+      }
+    };
+  });
+  expect(online.version).toBe('4.2.0');
+  expect(online.cache).toEqual(expect.objectContaining({ cached:2, total:2 }));
+  expect(online.cache.bytes).toBeGreaterThan(12_000_000);
+  expect(online.footprint).toEqual(expect.objectContaining({ exact:true }));
+  expect(online.footprint.files).toBeGreaterThan(2);
+  expect(online.footprint.totalBytes).toBeGreaterThan(10_000_000);
+  expect(online.footprint.message).toMatch(/^\d+\.\d (?:MB|GB) (?:download|model verified in cache)/);
+  expect(online.paths).toEqual(online.expected);
+
+  await context.setOffline(true);
+  try {
+    await page.reload({ waitUntil:'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout:30_000 });
+    const offline = await page.evaluate(async () => {
+      const lib = await OS._loadTransformers();
+      return {
+        version:lib.env.version,
+        cache:await OS._inspectAIBackendCache(),
+        paths:{ ...lib.env.backends.onnx.wasm.wasmPaths }
+      };
+    });
+    expect(offline.version).toBe('4.2.0');
+    expect(offline.cache).toEqual(expect.objectContaining({ cached:2, total:2, bytes:online.cache.bytes }));
+    expect(offline.paths).toEqual(online.expected);
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
+test('uses the Transformers.js 4.x background-removal pipeline with pinned MODNet', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const target = {
+      name:'Portrait',
+      type:'image',
+      getElement:() => ({ naturalWidth:2, naturalHeight:2 })
+    };
+    OS._getActiveImage = () => target;
+    OS._isEditCurrent = () => true;
+    OS._imageToRawImage = async () => ({ tag:'raw-pixels' });
+    let loadArgs = null;
+    let pipelineInput = null;
+    OS._loadPipeline = async (...args) => {
+      loadArgs = args.slice(0, 4).map(value => typeof value === 'object' ? { kind:value.kind } : value);
+      loadArgs.push(args[4]);
+      return async input => {
+        pipelineInput = input;
+        return {
+          width:2,
+          height:2,
+          channels:4,
+          data:new Uint8ClampedArray([
+            255, 0, 0, 255,
+            0, 255, 0, 0,
+            0, 0, 255, 128,
+            255, 255, 255, 255
+          ])
+        };
+      };
+    };
+    let replacement = null;
+    OS._replaceActiveImage = async (_target, url, label, guards) => {
+      replacement = { url, label, guards };
+      return true;
+    };
+    const returned = await OS.aiRemoveBackground();
+    return {
+      returned,
+      loadArgs,
+      pipelineInput,
+      replacement:{
+        label:replacement?.label,
+        isPng:replacement?.url?.startsWith('data:image/png;base64,'),
+        guarded:Boolean(replacement?.guards?.targetId)
+      },
+      revision:OS._modelRevisions['Xenova/modnet']
+    };
+  });
+
+  expect(result.returned).toBe(true);
+  expect(result.loadArgs).toEqual([
+    'background-removal',
+    'Xenova/modnet',
+    'Background Removal',
+    { kind:'Background Removal' },
+    { dtype:'fp32' }
+  ]);
+  expect(result.pipelineInput).toEqual({ tag:'raw-pixels' });
+  expect(result.replacement).toEqual({ label:'AI BG Remove', isPng:true, guarded:true });
+  expect(result.revision).toMatch(/^[0-9a-f]{40}$/);
 });
 
 test('describes the enlarge command as the resample it is, outside the AI menu', async ({ page }) => {
@@ -5423,8 +5577,7 @@ test('reports and clears cached model files per model', async ({ page }) => {
       afterBytes: after.bytes,
       untouched,
       pipelineDropped: !OS._aiPipelines[`image-segmentation:${model}`],
-      disposed: window.__disposed === true,
-      rmbgReset: OS._aiRmbgModel === null
+      disposed: window.__disposed === true
     };
   });
 
@@ -5438,7 +5591,6 @@ test('reports and clears cached model files per model', async ({ page }) => {
   expect(result.untouched).toBe(true);
   expect(result.pipelineDropped).toBe(true);
   expect(result.disposed).toBe(true);
-  expect(result.rmbgReset).toBe(true);
 });
 
 test('boots its libraries from verified blobs with no CDN in script-src @cross-browser', async ({ page }) => {
@@ -5868,18 +6020,22 @@ test('hands AI pipelines canvas pixels, and cancels or fails without touching th
       }
     }
     let seen = null;
+    let pipelineLoad = null;
     let behaviour = 'record';
     OS._aiPipelines = {};
     OS._aiDevice = 'wasm';
     const fakeLib = {
       RawImage: FakeRawImage,
       env: {},
-      pipeline: async () => (input) => {
+      pipeline: async (task, model, options) => {
+        pipelineLoad = { task, model, revision:options.revision };
+        return (input) => {
         seen = input;
         if (behaviour === 'throw') throw new Error('pipeline exploded');
         if (behaviour === 'hang') return new Promise(() => {});
         // A depth result the caller can consume.
         return { depth: { width: 12, height: 9, data: new Uint8ClampedArray(12 * 9) } };
+        };
       }
     };
     // _loadTransformers is what caches the runtime the pipelines read.
@@ -5921,7 +6077,7 @@ test('hands AI pipelines canvas pixels, and cancels or fails without touching th
       elementUnchanged: OS.canvas.getObjects().some(object => object.getElement?.().src === originalElement)
     };
 
-    return { input, afterThrow, afterCancel };
+    return { input, afterThrow, afterCancel, pipelineLoad };
   });
 
   expect(result.input.isString).toBe(false);
@@ -5930,6 +6086,11 @@ test('hands AI pipelines canvas pixels, and cancels or fails without touching th
   expect(result.input.height).toBe(9);
   expect(result.input.channels).toBe(4);
   expect(result.input.bytes).toBe(12 * 9 * 4);
+  expect(result.pipelineLoad).toEqual({
+    task:'depth-estimation',
+    model:'onnx-community/depth-anything-v2-small',
+    revision:expect.stringMatching(/^[0-9a-f]{40}$/)
+  });
 
   expect(result.afterThrow.returned).toBe(false);
   expect(result.afterThrow.progressVisible).toBe(false);

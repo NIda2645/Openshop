@@ -53,16 +53,16 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 
 Batch export to multiple formats in one click. Export Settings previews real PNG/WebP alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
 
-### AI Features (Client-Side, via Transformers.js 4.0)
+### AI Features (Client-Side, via Transformers.js 4.2)
 
 | Feature | Description |
 |---------|-------------|
 | **Background Removal** | MODNet-based automatic background removal |
 | **Depth Map** | Depth-Anything monocular depth estimation |
 | **Object Detection** | DETR-based object detection with bounding boxes |
-| **Segment Select** | Click-to-segment pixel selections via pinned DETR panoptic segmentation |
+| **Segment Select** | Click-guided subject masks via pinned SlimSAM |
 
-All AI models download once and run entirely in-browser. OpenShop probes for a usable WebGPU adapter at load time and falls back to WASM when there is none; the chosen backend is reported alongside the download progress. No API keys, no server calls. Model revisions are pinned to immutable commit SHAs for supply-chain security. Segment Select uses `Xenova/detr-resnet-50-panoptic`; SAM-style mask-generation is not available in current Transformers.js browser pipelines. Model loading, inference, and CPU post-processing expose one cancel action; late results are discarded if the document revision or target layer changes.
+All AI models download once and run entirely in-browser. Before the first download, OpenShop uses Transformers.js 4.2's model registry to report the exact transfer and installed sizes. It probes for a usable WebGPU adapter and falls back to WASM; the verified WASM engine is cached separately so the hosted app can reuse it offline after one online run. No API keys or image uploads are involved. Model revisions are pinned to immutable commit SHAs: Segment Select uses Apache-2.0 `Xenova/slimsam-77-uniform`, Depth Map uses Apache-2.0 `onnx-community/depth-anything-v2-small`, and Background Removal stays on the permissively licensed MODNet rather than noncommercial or GPL alternatives. Model loading, inference, and CPU post-processing expose one cancel action; late results are discarded if the document revision or target layer changes.
 
 ### Adjustments & Filters
 
@@ -142,7 +142,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | [Fabric.js 7.4.0](https://fabricjs.com/) | Canvas rendering, object manipulation, serialization |
 | [ag-psd 31.0.2](https://github.com/Agamnentzar/ag-psd) | Photoshop PSD file import and export |
 | [jsPDF 4.2.1](https://github.com/parallax/jsPDF) | PDF document generation |
-| [Transformers.js 4.0](https://huggingface.co/docs/transformers.js) | Client-side AI inference via WebGPU/WASM (loaded on demand) |
+| [Transformers.js 4.2](https://huggingface.co/docs/transformers.js) | Client-side AI inference via WebGPU/WASM (loaded on demand) |
 | [Photon 0.3.3](https://github.com/silvia-odwyer/photon) | Optional WASM acceleration for supported pixel filters (loaded on demand) |
 | [Google Fonts](https://fonts.google.com/) | JetBrains Mono + DM Sans |
 

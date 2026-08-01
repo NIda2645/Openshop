@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-tjb8dMPIesPUW+wVI8vzv53dIVYqDmt9jLCjcafHuUg=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-Sf2BIfOWRc+42tc3xQh+/lacn50n3L+ydurXFRWrh/Y=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3083,19 +3083,29 @@ const OS = {
             type:'application/javascript'
         }),
         transformers: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0',
-            integrity:'sha384-LFJpqah1n9Owp3PD9FPMMtLHFQQix0O9QHOpP1S755RwXJM+Op4YYORRnp/NdSZx',
+            url:'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
+            integrity:'sha384-3TA7bWonh/FGdhkvnr9EMFCoFqikJ5aJQEV8RlUgOmBFIF9z3W+h67aRdQPRxN9d',
             type:'application/javascript'
         }),
         onnxWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.asyncify.wasm',
-            integrity:'sha384-T4JlwUUF/CSO/pgSDr7Vr9tMqB4XcaEQvrkyTJQn3jO/jx2tnJhAVnEIrR6X6u7x',
+            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.wasm',
+            integrity:'sha384-ppxy8GpR5oK0pciZqI/PSDs0fl2gPFvA509fIkdyEwIAvXabDahpzW9fPyZq/fLs',
             type:'application/wasm'
         }),
+        onnxWasmFactory: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.mjs',
+            integrity:'sha384-3PtbyJKPDRoZCNL6u5IQ3uw3aYqeALuxedvWoGF8Syni60K8769ZoBCVSyxZVllq',
+            type:'application/javascript'
+        }),
         onnxSafariWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.wasm',
-            integrity:'sha384-y8o0JlZRmNSfnpvf0RTT4XrbzIhrfBpR01bMDGFUDPl5l1vOUeXi+rWMwCFBju2i',
+            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm',
+            integrity:'sha384-ac1etqJINZEQKCzyc73jLkiBdavxbNEJ9zaX0uKADcjBIU3+Uj5sx7bW2kasMiZA',
             type:'application/wasm'
+        }),
+        onnxSafariWasmFactory: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.mjs',
+            integrity:'sha384-CclkOX/Bse5EM7hBknuVBkrt9XxuaHzaSDsqYGa8L7gW9g9aVQJmmeuWugYUKPGs',
+            type:'application/javascript'
         })
     }),
     _runtimeAssetPromises: new Map(),
@@ -10384,7 +10394,8 @@ self.onmessage = function(event) {
             revision,
             matches:0,
             bytes:0,
-            loaded:this._isModelLoaded(model)
+            loaded:this._isModelLoaded(model),
+            footprint:this._modelFootprints?.[model] || null
         }));
         if (!('caches' in window)) return models;
         try {
@@ -10427,13 +10438,20 @@ self.onmessage = function(event) {
             void Promise.resolve(this._aiPipelines[key]).then(pipe => pipe?.dispose?.()).catch(() => {});
             delete this._aiPipelines[key];
         });
-        if (model === 'Xenova/modnet') { this._aiRmbgModel = null; this._aiRmbgProcessor = null; }
+        const artifacts = this._aiArtifacts?.[model];
+        if (artifacts) {
+            Object.values(artifacts).forEach(value => { void Promise.resolve(value?.dispose?.()).catch(() => {}); });
+            delete this._aiArtifacts[model];
+        }
         return removed;
     },
     async showOfflineManager() {
         await this._refreshOfflineStatus();
         const state = this._offlineState;
-        const aiModels = await this._inspectAIAssetCache();
+        const [aiModels, aiRuntime] = await Promise.all([
+            this._inspectAIAssetCache(),
+            this._inspectAIBackendCache()
+        ]);
         const o = document.createElement('div');
         o.className = 'modal-overlay';
         const modal = document.createElement('div');
@@ -10481,19 +10499,32 @@ self.onmessage = function(event) {
         aiTitle.style.marginBottom = '4px';
         const aiNote = document.createElement('p');
         aiNote.className = 'offline-manager-note';
-        aiNote.textContent = `AI models are not part of the core offline shell. Each pinned model must be used online once; this inventory reports only model responses visible in CacheStorage. Inference backend: ${this._aiDevice || 'selected on first use'}.`;
+        aiNote.textContent = `AI models are not part of the core offline shell. Each pinned model must be used online once; model and verified WASM runtime caches are reported separately. Inference backend: ${this._aiDevice || 'selected on first use'}.`;
         const aiList = document.createElement('div');
         aiList.className = 'offline-model-list';
+        const runtimeRow = document.createElement('div');
+        runtimeRow.className = 'offline-model';
+        const runtimeName = document.createElement('strong');
+        runtimeName.textContent = 'Transformers.js WASM runtime';
+        const runtimeState = document.createElement('span');
+        const runtimeSize = aiRuntime.bytes ? ` · ${this._formatBytes(aiRuntime.bytes)}` : '';
+        runtimeState.textContent = aiRuntime.cached === aiRuntime.total
+            ? `Offline ready${runtimeSize}`
+            : `${aiRuntime.cached}/${aiRuntime.total} verified files cached`;
+        runtimeRow.append(runtimeName, runtimeState);
+        aiList.appendChild(runtimeRow);
         aiModels.forEach(entry => {
             const row = document.createElement('div');
             row.className = 'offline-model';
             const name = document.createElement('strong');
-            name.textContent = entry.model.replace('Xenova/', '');
+            name.textContent = entry.model.split('/').pop();
             const cacheState = document.createElement('span');
             const size = entry.bytes ? ` · ${(entry.bytes / 1024 / 1024).toFixed(1)} MB` : '';
             cacheState.textContent = entry.matches
                 ? `${entry.matches} cached response${entry.matches === 1 ? '' : 's'}${size}${entry.loaded ? ' · loaded' : ''}`
-                : 'No cached model responses';
+                : entry.footprint?.exact
+                    ? `${this._formatBytes(entry.footprint.totalBytes)} first download`
+                    : 'Size checked on first use';
             row.append(name, cacheState);
             if (entry.matches) {
                 const clear = document.createElement('button');
@@ -16404,8 +16435,9 @@ self.onmessage = async function(e) {
 
     // ====================== AI MODULE (Transformers.js) ======================
     // On-demand model loading — no API keys, runs 100% in-browser
-    // Models cached in IndexedDB after first download
+    // Models cached in browser storage after first download
     _aiPipelines: {},
+    _aiArtifacts: {},
     _aiLib: null,
     // Keyed to the owning job rather than a bare flag: starting a second AI
     // operation cancels the first, and a mutex held by a cancelled job would
@@ -16433,16 +16465,12 @@ self.onmessage = async function(e) {
         return this._aiDevicePromise;
     },
     _isModelLoaded(model) {
-        // Background removal keeps its handles outside _aiPipelines.
-        if (model === 'Xenova/modnet' && this._aiRmbgModel) return true;
-        return Object.keys(this._aiPipelines || {}).some(key => key.endsWith(':' + model));
+        return Object.keys(this._aiPipelines || {}).some(key => key.endsWith(':' + model))
+            || Object.prototype.hasOwnProperty.call(this._aiArtifacts || {}, model);
     },
     aiBackendReport() {
         return {
             device: this._aiDevice || 'not yet selected',
-            // Background removal keeps its handles outside _aiPipelines, so
-            // reading that map alone reported "nothing loaded" while a model
-            // was resident.
             cachedModels: Object.keys(this._modelRevisions).filter(model => this._isModelLoaded(model)),
             pinnedRevisions: { ...this._modelRevisions }
         };
@@ -16507,23 +16535,91 @@ self.onmessage = async function(e) {
         if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus();
     },
 
+    _aiRuntimeCacheKey: 'openshop-transformers-4.2.0',
+    _aiWasmFactoryUrl: null,
+    _aiBackendAssetNames() {
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '');
+        return isSafari
+            ? { wasm:'onnxSafariWasm', factory:'onnxSafariWasmFactory' }
+            : { wasm:'onnxWasm', factory:'onnxWasmFactory' };
+    },
+    async _cacheVerifiedAIBackendAssets(lib, resources) {
+        lib.env.cacheKey = this._aiRuntimeCacheKey;
+        if (!('caches' in globalThis)) {
+            lib.env.useWasmCache = false;
+            return false;
+        }
+        try {
+            const cache = await caches.open(this._aiRuntimeCacheKey);
+            for (const { asset, bytes } of resources) {
+                const body = bytes.slice(0);
+                await cache.put(asset.url, new Response(body, {
+                    headers: {
+                        'Content-Type':asset.type,
+                        'Content-Length':String(body.byteLength),
+                        'X-OpenShop-Integrity':asset.integrity
+                    }
+                }));
+            }
+            lib.env.useBrowserCache = true;
+            lib.env.useWasmCache = true;
+            return true;
+        } catch (error) {
+            console.warn('Verified AI runtime cache unavailable:', error.message);
+            lib.env.useWasmCache = false;
+            return false;
+        }
+    },
+    async _inspectAIBackendCache() {
+        const names = this._aiBackendAssetNames();
+        const assets = [this._runtimeAssets[names.wasm], this._runtimeAssets[names.factory]];
+        const result = { cached:0, total:assets.length, bytes:0, cacheKey:this._aiRuntimeCacheKey };
+        if (!('caches' in globalThis)) return result;
+        try {
+            const cache = await caches.open(this._aiRuntimeCacheKey);
+            for (const asset of assets) {
+                const response = await cache.match(asset.url);
+                if (!response) continue;
+                result.cached++;
+                const declared = Number(response.headers.get('content-length'));
+                result.bytes += Number.isFinite(declared) && declared > 0
+                    ? declared
+                    : (await response.clone().blob()).size;
+            }
+        } catch (error) {
+            console.debug('AI runtime cache inventory unavailable:', error.message);
+        }
+        return result;
+    },
     async _loadTransformers(job = null) {
         if (this._aiLib) return this._aiLib;
         this._showAIProgress('Loading Transformers.js', 'Verifying AI runtime and inference engine...', job);
         try {
-            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '');
-            const wasmName = isSafari ? 'onnxSafariWasm' : 'onnxWasm';
+            const backendNames = this._aiBackendAssetNames();
             const loading = Promise.all([
                 this._verifiedRuntimeBlobUrl('transformers'),
-                this._fetchVerifiedRuntimeAsset(wasmName)
+                this._fetchVerifiedRuntimeAsset(backendNames.wasm),
+                this._fetchVerifiedRuntimeAsset(backendNames.factory)
             ]);
-            const [moduleUrl, wasm] = job ? await this._raceComputeJob(loading, job) : await loading;
+            const [moduleUrl, wasm, factory] = job ? await this._raceComputeJob(loading, job) : await loading;
             const importing = import(moduleUrl);
             const lib = job ? await this._raceComputeJob(importing, job) : await importing;
+            if (lib.env?.version !== '4.2.0') throw new Error('Unexpected Transformers.js runtime version');
             const wasmConfig = lib.env?.backends?.onnx?.wasm;
             if (!wasmConfig) throw new Error('Transformers.js did not expose its ONNX runtime configuration');
-            wasmConfig.wasmPaths = undefined;
-            wasmConfig.wasmBinary = new Uint8Array(wasm.bytes);
+            const cached = await this._cacheVerifiedAIBackendAssets(lib, [wasm, factory]);
+            if (cached) {
+                // Transformers.js reads these exact requests from its cache,
+                // which was populated only after OpenShop verified both SRI
+                // declarations. A later offline run never has to trust a new
+                // response from the runtime CDN.
+                wasmConfig.wasmPaths = { wasm:wasm.asset.url, mjs:factory.asset.url };
+                wasmConfig.wasmBinary = undefined;
+            } else {
+                this._aiWasmFactoryUrl ||= URL.createObjectURL(new Blob([factory.bytes], { type:factory.asset.type }));
+                wasmConfig.wasmPaths = { mjs:this._aiWasmFactoryUrl };
+                wasmConfig.wasmBinary = new Uint8Array(wasm.bytes);
+            }
             wasmConfig.numThreads = 1;
             wasmConfig.proxy = false;
             this._aiLib = lib;
@@ -16537,9 +16633,50 @@ self.onmessage = async function(e) {
 
     _modelRevisions: {
         'Xenova/modnet': 'fa2fa546052fba4c08921230a26cc69a333fca12',
-        'Xenova/depth-anything-small-hf': '2e942621ab9f2371c1df9eb223291b5ac31475e6',
+        'onnx-community/depth-anything-v2-small': '4472b7362082ad9968fee890ca0f1e5aca36b93d',
+        'Xenova/slimsam-77-uniform': '5850ab45f587c112167512ffef949107115e26a0',
         'Xenova/detr-resnet-50': '8be7ab59ff663484ee9ba2e8d8f267330d5ad03e',
-        'Xenova/detr-resnet-50-panoptic': 'ea24b2d4e0bfae31f0a1299ba3fb892a2df064de',
+    },
+    _modelFootprints: {},
+    async _modelDownloadFootprint(lib, { task = null, model, revision, dtype, device }) {
+        const registry = lib?.ModelRegistry;
+        if (!registry?.get_file_metadata) return null;
+        try {
+            const options = { revision, dtype, device };
+            const files = task
+                ? await registry.get_pipeline_files(task, model, options)
+                : await registry.get_files(model, options);
+            const metadata = await Promise.all(files.map(file =>
+                registry.get_file_metadata(model, file, { revision })
+            ));
+            const exact = files.length > 0 && metadata.every(entry =>
+                entry?.exists && Number.isFinite(entry.size) && entry.size >= 0
+            );
+            const totalBytes = exact ? metadata.reduce((sum, entry) => sum + entry.size, 0) : 0;
+            const cachedBytes = exact ? metadata.reduce((sum, entry) => sum + (entry.fromCache ? entry.size : 0), 0) : 0;
+            const footprint = {
+                exact,
+                files:files.map((file, index) => ({ file, ...metadata[index] })),
+                totalBytes,
+                cachedBytes,
+                downloadBytes:Math.max(0, totalBytes - cachedBytes),
+                revision,
+                dtype,
+                device
+            };
+            this._modelFootprints[model] = footprint;
+            return footprint;
+        } catch (error) {
+            console.warn(`Could not preflight ${model}:`, error.message);
+            return null;
+        }
+    },
+    _modelDownloadMessage(footprint, device) {
+        if (!footprint?.exact) return `First-time download, cached for future use (${device})`;
+        if (!footprint.downloadBytes) {
+            return `${this._formatBytes(footprint.totalBytes)} model verified in cache (${device})`;
+        }
+        return `${this._formatBytes(footprint.downloadBytes)} download · ${this._formatBytes(footprint.totalBytes)} installed size (${device})`;
     },
     _modelProgressCallback(operation) {
         let lastPct = 0;
@@ -16558,7 +16695,7 @@ self.onmessage = async function(e) {
     // plumbing, dispose-on-cancel and failure toast were written twice, so any
     // change to the download experience had to land in both places. Resolves to
     // an array of loaded artefacts, or null if the load did not happen.
-    async _loadModelArtifacts({ job = null, jobKind, busyMessage, title, failure }, start) {
+    async _loadModelArtifacts({ job = null, jobKind, busyMessage, title, failure, modelSpec = null }, start) {
         const operation = job || this._startComputeJob(jobKind, { group:'image-processing' });
         const ownsJob = !job;
         if (this._aiModelLoadBusy()) {
@@ -16570,7 +16707,10 @@ self.onmessage = async function(e) {
         try {
             const lib = await this._loadTransformers(operation);
             const device = await this._raceComputeJob(this._selectAIDevice(), operation);
-            this._showAIProgress(title, `First-time download, cached for future use (${device})`, operation);
+            const footprint = modelSpec
+                ? await this._raceComputeJob(this._modelDownloadFootprint(lib, { ...modelSpec, device }), operation)
+                : null;
+            this._showAIProgress(title, this._modelDownloadMessage(footprint, device), operation);
             const pending = [].concat(start(lib, device, this._modelProgressCallback(operation), operation));
             let loaded;
             try {
@@ -16595,28 +16735,110 @@ self.onmessage = async function(e) {
             if (ownsJob) this._finishComputeJob(operation);
         }
     },
-    async _loadPipeline(task, model, label, job = null) {
+    async _loadPipeline(task, model, label, job = null, loadOptions = {}) {
         const key = task + ':' + model;
         if (this._aiPipelines[key]) {
             this.toast(label + ' model ready (cached)', 'info');
             return this._aiPipelines[key];
         }
+        const revision = this._modelRevisions[model] || 'main';
+        const dtype = loadOptions.dtype || 'q8';
         const loaded = await this._loadModelArtifacts({
             job,
             jobKind: `AI ${label}`,
             busyMessage: 'Another AI model is loading, please wait',
             title: 'Downloading ' + label + ' Model',
-            failure: 'Failed to load ' + label
+            failure: 'Failed to load ' + label,
+            modelSpec:{ task, model, revision, dtype }
         }, (lib, device, onProgress) => lib.pipeline(task, model, {
-            dtype: 'q8',
+            dtype,
             device,
-            revision: this._modelRevisions[model] || 'main',
+            revision,
             progress_callback: onProgress
         }));
         if (!loaded) return null;
         this._aiPipelines[key] = loaded[0];
         this.toast(label + ' model ready', 'success');
         return loaded[0];
+    },
+
+    async _loadSegmentArtifacts(job = null) {
+        const model = 'Xenova/slimsam-77-uniform';
+        if (this._aiArtifacts[model]) {
+            this.toast('Segment Select model ready (cached)', 'info');
+            return this._aiArtifacts[model];
+        }
+        const revision = this._modelRevisions[model];
+        const dtype = 'q8';
+        const loaded = await this._loadModelArtifacts({
+            job,
+            jobKind: 'AI Segment Select',
+            busyMessage: 'Another AI model is loading, please wait',
+            title: 'Downloading Segment Select Model',
+            failure: 'Failed to load Segment Select',
+            modelSpec:{ model, revision, dtype }
+        }, (lib, device, onProgress) => [
+            lib.SamModel.from_pretrained(model, {
+                device,
+                dtype,
+                revision,
+                progress_callback:onProgress
+            }),
+            lib.AutoProcessor.from_pretrained(model, {
+                revision,
+                progress_callback:onProgress
+            })
+        ]);
+        if (!loaded) return null;
+        this._aiArtifacts[model] = { model:loaded[0], processor:loaded[1] };
+        this.toast('Segment Select model ready', 'success');
+        return this._aiArtifacts[model];
+    },
+
+    _bestSamSegment(processedMasks, iouScores) {
+        const scores = Array.from(iouScores?.data || iouScores || []);
+        if (!scores.length) return null;
+        let bestIndex = 0;
+        for (let i = 1; i < scores.length; i++) {
+            if (scores[i] > scores[bestIndex]) bestIndex = i;
+        }
+
+        let tensor = Array.isArray(processedMasks) ? processedMasks[0] : processedMasks;
+        if (Array.isArray(tensor)) tensor = tensor[bestIndex] || tensor[0];
+        if (!tensor?.data) return null;
+        const dims = tensor.dims || [tensor.height, tensor.width].filter(Boolean);
+        const height = tensor.height || dims[dims.length - 2];
+        const width = tensor.width || dims[dims.length - 1];
+        if (!width || !height) return null;
+        const pixelCount = width * height;
+        const candidates = Math.max(1, Math.floor(tensor.data.length / pixelCount));
+        const selected = Math.min(bestIndex, candidates - 1);
+        const offset = selected * pixelCount;
+        const data = new Uint8Array(pixelCount);
+        for (let i = 0; i < pixelCount; i++) data[i] = tensor.data[offset + i] > 0 ? 255 : 0;
+        return {
+            label:'subject',
+            score:scores[bestIndex],
+            mask:{ width, height, channels:1, data }
+        };
+    },
+
+    async _segmentResultsAtPoint(hit, job) {
+        const artifacts = await this._loadSegmentArtifacts(job);
+        if (!artifacts) return [];
+        this._showAIProgress('Segment Select', 'Analyzing image at the selected point...', job);
+        const input = await this._raceComputeJob(this._imageToRawImage(hit.target), job);
+        const inputs = await this._raceComputeJob(artifacts.processor(input, {
+            input_points:[[[hit.clickX, hit.clickY]]]
+        }), job);
+        const outputs = await this._raceComputeJob(artifacts.model(inputs), job);
+        const processed = await this._raceComputeJob(artifacts.processor.post_process_masks(
+            outputs.pred_masks,
+            inputs.original_sizes,
+            inputs.reshaped_input_sizes
+        ), job);
+        const segment = this._bestSamSegment(processed, outputs.iou_scores);
+        return segment ? [segment] : [];
     },
 
     _getActiveImage() {
@@ -16953,13 +17175,7 @@ self.onmessage = async function(e) {
         if (this.canvas.setActiveObject) this.canvas.setActiveObject(hit.target);
         const job = this._startComputeJob('Segment Select', { group:'image-processing', target:hit.target });
         try {
-            const pipe = await this._loadPipeline(
-                'image-segmentation', 'Xenova/detr-resnet-50-panoptic', 'Segment Select', job
-            );
-            if (!pipe) return false;
-            this._showAIProgress('Segment Select', 'Analyzing image...', job);
-            const input = await this._raceComputeJob(this._imageToRawImage(hit.target), job);
-            const results = await this._raceComputeJob(pipe(input), job);
+            const results = await this._segmentResultsAtPoint(hit, job);
             const segment = this._selectSegmentFromResults(results, hit.clickX, hit.clickY, hit.imageW, hit.imageH);
             if (!segment) {
                 this.toast('No segment found at click point', 'info');
@@ -16984,76 +17200,37 @@ self.onmessage = async function(e) {
     },
 
     // === AI BACKGROUND REMOVAL ===
-    // Uses Xenova/modnet — proper ONNX model with full Transformers.js support
-    _aiRmbgModel: null,
-    _aiRmbgProcessor: null,
-    async _loadRmbgModel(job = null) {
-        if (this._aiRmbgModel) return true;
-        const revision = this._modelRevisions['Xenova/modnet'] || 'main';
-        const loaded = await this._loadModelArtifacts({
-            job,
-            jobKind: 'AI Background Removal',
-            busyMessage: 'Another AI model is loading',
-            title: 'Downloading Background Removal Model',
-            failure: 'Failed to load BG model'
-        }, (lib, device, onProgress) => {
-            lib.env.allowLocalModels = false;
-            return [
-                lib.AutoModel.from_pretrained('Xenova/modnet', {
-                    device,
-                    dtype: 'fp32',
-                    revision,
-                    progress_callback: onProgress
-                }),
-                lib.AutoProcessor.from_pretrained('Xenova/modnet', { revision })
-            ];
-        });
-        if (!loaded) return false;
-        [this._aiRmbgModel, this._aiRmbgProcessor] = loaded;
-        this.toast('Background Removal model ready', 'success');
-        return true;
-    },
+    // Transformers.js 4.x owns MODNet preprocessing and alpha compositing.
     async aiRemoveBackground() {
         const target = this._getActiveImage();
         if (!target) return;
         const job = this._startComputeJob('Background Removal', { group:'image-processing', target });
         try {
-            const ready = await this._loadRmbgModel(job);
-            if (!ready) return false;
+            const pipe = await this._loadPipeline(
+                'background-removal', 'Xenova/modnet', 'Background Removal', job, { dtype:'fp32' }
+            );
+            if (!pipe) return false;
             this._showAIProgress('Removing Background', 'Processing image...', job);
-            const lib = this._aiLib;
             const el = target.getElement();
             const origW = el.naturalWidth || el.width;
             const origH = el.naturalHeight || el.height;
-            const image = await this._raceComputeJob(this._imageToRawImage(target, lib), job);
-            const { pixel_values } = await this._raceComputeJob(this._aiRmbgProcessor(image), job);
-            const { output } = await this._raceComputeJob(this._aiRmbgModel({ input: pixel_values }), job);
-            // output is a tensor — convert to mask and resize to original dimensions
-            const mask = await this._raceComputeJob(
-                lib.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(origW, origH),
-                job
-            );
-            // Apply mask as alpha channel on original image
-            const resultCanvas = document.createElement('canvas');
-            resultCanvas.width = origW; resultCanvas.height = origH;
-            const rctx = resultCanvas.getContext('2d');
-            rctx.drawImage(el, 0, 0);
-            const imgData = rctx.getImageData(0, 0, origW, origH);
-            const d = imgData.data;
-            const mPx = mask.data;
-            const channels = mask.channels || 1;
-            for (let y = 0; y < origH; y++) {
-                if (y > 0 && y % 64 === 0) {
-                    this._updateAIProgress(70 + y / origH * 25, 'Applying transparency mask…', job);
-                    await this._yieldComputeJob(job);
-                }
-                for (let x = 0; x < origW; x++) {
-                    const i = y * origW + x;
-                    d[i * 4 + 3] = mPx[i * channels];
-                }
+            const image = await this._raceComputeJob(this._imageToRawImage(target), job);
+            const output = await this._raceComputeJob(pipe(image), job);
+            const result = Array.isArray(output) ? output[0] : output;
+            if (!result?.data || !result.width || !result.height || result.channels !== 4) {
+                throw new Error('Background-removal pipeline returned an invalid RGBA image');
             }
-            rctx.putImageData(imgData, 0, 0);
-            const newUrl = resultCanvas.toDataURL('image/png');
+            const resultCanvas = document.createElement('canvas');
+            resultCanvas.width = result.width; resultCanvas.height = result.height;
+            const rctx = resultCanvas.getContext('2d');
+            rctx.putImageData(new ImageData(new Uint8ClampedArray(result.data), result.width, result.height), 0, 0);
+            let finalCanvas = resultCanvas;
+            if (result.width !== origW || result.height !== origH) {
+                finalCanvas = document.createElement('canvas');
+                finalCanvas.width = origW; finalCanvas.height = origH;
+                finalCanvas.getContext('2d').drawImage(resultCanvas, 0, 0, origW, origH);
+            }
+            const newUrl = finalCanvas.toDataURL('image/png');
             this._assertComputeJobCurrent(job);
             const committed = await this._replaceActiveImage(target, newUrl, 'AI BG Remove', {
                 generation:job.generation,
@@ -17083,7 +17260,7 @@ self.onmessage = async function(e) {
         const job = this._startComputeJob('Depth Map', { group:'image-processing', target });
         try {
             const pipe = await this._loadPipeline(
-                'depth-estimation', 'Xenova/depth-anything-small-hf', 'Depth Estimation', job
+                'depth-estimation', 'onnx-community/depth-anything-v2-small', 'Depth Estimation', job
             );
             if (!pipe) return false;
             this._showAIProgress('Generating Depth Map', 'Processing image...', job);

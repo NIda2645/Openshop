@@ -61,9 +61,11 @@ const RUNTIME_ORIGINS = new Set([
 const CACHEABLE_RUNTIME_URLS = new Set([
     ...REQUIRED_ASSETS,
     ...OPTIONAL_ASSETS,
-    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.asyncify.wasm',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.wasm'
+    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.wasm',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.mjs',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.mjs'
 ].map(resolveAsset));
 
 function shellCacheName(revision) {

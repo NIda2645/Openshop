@@ -90,8 +90,10 @@ test.describe('hosted offline contract', () => {
     expect(status.requiredCached).toBe(status.requiredTotal);
 
     await page.locator('#offline-state').click();
-    await expect(page.getByRole('dialog', { name: 'Offline & Install' })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Offline & Install' })).toContainText('No cached model responses');
+    const offlineDialog = page.getByRole('dialog', { name: 'Offline & Install' });
+    await expect(offlineDialog).toBeVisible();
+    await expect(offlineDialog).toContainText('0/2 verified files cached');
+    await expect(offlineDialog).toContainText('Size checked on first use');
     await page.getByRole('button', { name: 'Close' }).click();
 
     if (browserName === 'webkit') await setServerState(request, { networkDown: true });
