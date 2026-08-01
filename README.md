@@ -45,13 +45,14 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **PNG** | Yes | Yes |
 | **JPEG** | Yes | Yes |
 | **WebP** | Yes | Yes |
+| **AVIF** | Yes (verified WASM decoder) | Yes (deterministic verified WASM encoder) |
 | **SVG** | — | Yes |
 | **PDF** | — | Yes |
 | **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text) | Yes (same supported semantics; explicit raster fallbacks) |
 | **GIF** | Yes (animated, frame-based) | Yes (animated, frame-based) |
 | **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
 
-Batch export to multiple formats in one click. Export Settings previews real PNG/WebP alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
+Batch export to multiple formats in one click. Export Settings previews PNG/WebP/AVIF alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
 
 ### AI Features (Client-Side, via Transformers.js 4.2)
 
@@ -144,6 +145,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | [jsPDF 4.2.1](https://github.com/parallax/jsPDF) | PDF document generation |
 | [Transformers.js 4.2](https://huggingface.co/docs/transformers.js) | Client-side AI inference via WebGPU/WASM (loaded on demand) |
 | [Photon 0.3.3](https://github.com/silvia-odwyer/photon) | Optional WASM acceleration for supported pixel filters (loaded on demand) |
+| [jSquash AVIF 2.1.1](https://github.com/jamsinclair/jSquash) (Apache-2.0) | Deterministic AVIF encode/decode via libavif WASM (loaded on demand) |
 | [Google Fonts](https://fonts.google.com/) | JetBrains Mono + DM Sans |
 
 OpenShop `.openshop` files are JSON-encoded document schema v1. The same envelope drives project save/open, recovery, and undo/redo so layer membership and order, masks, guides, selections, animation frames, and active state stay synchronized. Legacy `.json`, Fabric 5, and OpenShop 0.18.13 projects are migrated on load.
@@ -153,7 +155,7 @@ Recovery uses checksum-verified, immutable generations keyed by stable document 
 ## Security
 
 - Core startup CDN scripts are version-pinned and loaded with [Subresource Integrity (SRI)](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hashes
-- PSD, Photon, GIF, Transformers.js, and ONNX lazy runtime bytes are version-pinned, SHA-384 verified before execution, and discarded on any digest mismatch
+- PSD, Photon, GIF, AVIF, Transformers.js, and ONNX lazy runtime bytes are version-pinned, SHA-384 verified before execution, and discarded on any digest mismatch
 - Static controls carry opaque action IDs resolved by a frozen listener registry; executable HTML event attributes are forbidden by the release security check
 - Recent files, saved palettes, templates, and photo presets render through DOM APIs so persisted values remain inert text
 - Worker-backed filters use a named operation registry, so filter jobs no longer pass executable source strings or require `unsafe-eval`

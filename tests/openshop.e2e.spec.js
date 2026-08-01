@@ -1896,6 +1896,155 @@ test('exports real alpha or matte pixels and presents format loss before downloa
   expect(pageErrors).toEqual([]);
 });
 
+test('encodes deterministic verified AVIF and reopens it @cross-browser', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const originalFetch = window.fetch;
+    const fetched = [];
+    window.fetch = (...args) => {
+      fetched.push(String(args[0]));
+      return originalFetch(...args);
+    };
+    const hash = async (bytes) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+      .map(value => value.toString(16).padStart(2, '0'))
+      .join('');
+    try {
+      const rgba = new Uint8ClampedArray(4 * 4 * 4);
+      for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 4; x++) {
+          const offset = (y * 4 + x) * 4;
+          rgba.set([x * 60, y * 70, (x + y) * 35, (x + y) % 2 ? 255 : 96], offset);
+        }
+      }
+      const pixels = new ImageData(rgba, 4, 4);
+      const lazyBefore = !OS._runtimeAssetPromises.has('avifEncoderModule')
+        && !OS._runtimeAssetPromises.has('avifEncoderWasm')
+        && !OS._runtimeAssetPromises.has('avifDecoderModule')
+        && !OS._runtimeAssetPromises.has('avifDecoderWasm');
+      const first = new Uint8Array(await OS._encodeAvifImageData(pixels, 0.73));
+      const second = new Uint8Array(await OS._encodeAvifImageData(pixels, 0.73));
+      const firstHash = await hash(first.buffer);
+      const secondHash = await hash(second.buffer);
+      const decoded = await OS._decodeAvif(first);
+      const decodedAlpha = [...decoded.data].filter((value, index) => index % 4 === 3);
+      const oversized = first.slice();
+      const ispeOffset = oversized.findIndex((value, index) => value === 0x69
+        && oversized[index + 1] === 0x73 && oversized[index + 2] === 0x70
+        && oversized[index + 3] === 0x65);
+      new DataView(oversized.buffer).setUint32(ispeOffset + 8, 30_001, false);
+      let oversizedRejected = false;
+      try { OS._readAvifDimensions(oversized); } catch (error) {
+        oversizedRejected = error.message === 'AVIF dimensions exceed import limits';
+      }
+
+      await OS._loadRasterFile(new File([first], 'verified-fixture.avif', { type:'image/avif' }));
+      const imported = {
+        name:OS._docName,
+        width:OS.canvasW,
+        height:OS.canvasH,
+        objectType:OS.canvas.getObjects().find(object => object.type === 'image')?.type
+      };
+
+      let downloaded = null;
+      const originalDownload = OS._downloadBlob;
+      OS._downloadBlob = (blob, filename) => {
+        downloaded = { blob, filename };
+        return true;
+      };
+      const exported = await OS.saveFile('avif', { quality:0.73, transparent:true });
+      OS._downloadBlob = originalDownload;
+      const downloadedBytes = downloaded ? new Uint8Array(await downloaded.blob.arrayBuffer()) : null;
+
+      OS.addLayer();
+      const marker = new fabric.Rect({ left:0, top:0, width:1, height:1, fill:'#ffffff' });
+      OS.canvas.add(marker);
+      OS.layers[OS.activeLayerIdx].objects.push(marker);
+      OS._enforceLayerInvariants();
+      const overlay = OS.showExportSettings('avif');
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await new Promise(resolve => setTimeout(resolve, 90));
+      const ui = {
+        active:overlay.querySelector('.export-format-row .btn.active')?.dataset.fmt,
+        qualityVisible:overlay.querySelector('#es-quality-row').style.display,
+        alphaHelp:overlay.querySelector('#es-alpha-help').textContent,
+        preview:overlay.querySelector('#es-preview').getAttribute('aria-label'),
+        impact:overlay.querySelector('#es-impact').textContent,
+        menu:Boolean([...document.querySelectorAll('.dd-item')].find(item => item.textContent.trim() === 'AVIF')),
+        command:OS._getCommands().some(command => command.label === 'Export AVIF')
+      };
+      overlay.remove();
+
+      return {
+        lazyBefore,
+        fetched:[...new Set(fetched)].filter(url => url.includes('@jsquash/avif')),
+        declared:[
+          OS._runtimeAssets.avifEncoderModule,
+          OS._runtimeAssets.avifEncoderWasm,
+          OS._runtimeAssets.avifDecoderModule,
+          OS._runtimeAssets.avifDecoderWasm
+        ]
+          .map(asset => ({ url:asset.url, integrity:asset.integrity })),
+        deterministic:first.length === second.length
+          && first.every((value, index) => value === second[index]),
+        hash:firstHash,
+        secondHash,
+        brand:String.fromCharCode(...first.slice(4, 12)),
+        decodedAlpha:{ min:Math.min(...decodedAlpha), max:Math.max(...decodedAlpha) },
+        oversizedRejected,
+        imported,
+        exported,
+        download:downloadedBytes && {
+          filename:downloaded.filename,
+          type:downloaded.blob.type,
+          brand:String.fromCharCode(...downloadedBytes.slice(4, 12)),
+          bytes:downloadedBytes.length
+        },
+        ui
+      };
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
+  expect(result.lazyBefore).toBe(true);
+  expect(result.fetched).toEqual(result.declared.map(asset => asset.url));
+  expect(result.declared.every(asset => asset.integrity.startsWith('sha384-'))).toBe(true);
+  expect(result.deterministic).toBe(true);
+  expect(result.secondHash).toBe(result.hash);
+  expect(result.hash).toBe('c192cfec1279626c98a4fc6293be0309a4a77917429d1285b8dd8118322ad131');
+  expect(result.brand).toBe('ftypavif');
+  expect(result.decodedAlpha.min).toBeLessThan(200);
+  expect(result.decodedAlpha.max).toBe(255);
+  expect(result.oversizedRejected).toBe(true);
+  expect(result.imported).toEqual({
+    name: 'verified-fixture',
+    width: 4,
+    height: 4,
+    objectType: 'image'
+  });
+  expect(result.exported).toBe(true);
+  expect(result.download).toEqual(expect.objectContaining({
+    filename: 'verified-fixture.avif',
+    type: 'image/avif',
+    brand: 'ftypavif'
+  }));
+  expect(result.download.bytes).toBeGreaterThan(100);
+  expect(result.ui).toEqual(expect.objectContaining({
+    active: 'avif',
+    qualityVisible: 'flex',
+    menu: true,
+    command: true
+  }));
+  expect(result.ui.alphaHelp).toContain('AVIF');
+  expect(result.ui.preview).toContain('AVIF · alpha preview');
+  expect(result.ui.impact).toContain('will be flattened');
+  expect(pageErrors).toEqual([]);
+});
+
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -5408,7 +5557,7 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
   // units, and the single-letter typographic controls, which are the same in
   // every locale.
   const sameEverywhere = new Set([
-    'PNG', 'JPEG', 'WebP', 'SVG', 'PDF', 'PSD (Photoshop)', 'AI', '100%', 'B', 'I', 'W', 'x', 'H'
+    'PNG', 'JPEG', 'WebP', 'AVIF', 'SVG', 'PDF', 'PSD (Photoshop)', 'AI', '100%', 'B', 'I', 'W', 'x', 'H'
   ]);
   const domSet = new Set(result.domKeys);
   const missingInChrome = result.missingInChinese

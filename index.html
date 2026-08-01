@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-/4tmbH76yqvmWtEDUJURVJ+WNZYv1CKVjKaYXsgXIkM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-+u62dvsdEQAy8P9IGovklCeoPnMcQXoTK7SUf1EsxlI=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -1917,6 +1917,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
                     <div class="dd-item" data-os-click="click-004">PNG</div>
                     <div class="dd-item" data-os-click="click-005">JPEG</div>
                     <div class="dd-item" data-os-click="click-006">WebP</div>
+                    <div class="dd-item" data-os-click="click-219">AVIF</div>
                     <div class="dd-item" data-os-click="click-007">SVG</div>
                     <div class="dd-item" data-os-click="click-008">PDF</div>
                     <div class="dd-item" data-os-click="click-009">PSD (Photoshop)</div>
@@ -2780,6 +2781,7 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-004": function(event) { OS.saveFile('png') },
         "click-005": function(event) { OS.saveFile('jpeg') },
         "click-006": function(event) { OS.saveFile('webp') },
+        "click-219": function(event) { OS.saveFile('avif') },
         "click-007": function(event) { OS.saveFile('svg') },
         "click-008": function(event) { OS.exportPDF() },
         "click-009": function(event) { OS.exportPSD() },
@@ -3130,6 +3132,26 @@ const OS = {
             integrity:'sha384-/AE2XoJ6rgtq/wlcIHqFn5/zSGrXTfrwuH5NQ2BjgflUjtjIJAz9/C0JSldf8Hr+',
             type:'application/javascript'
         }),
+        avifEncoderModule: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.js',
+            integrity:'sha384-CSCv5W4tWhwNEV016b7Cf+Z7a+XAf4Z8tY/79BEKL+PJSO96cZrxu+ryYFU+den3',
+            type:'application/javascript'
+        }),
+        avifEncoderWasm: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.wasm',
+            integrity:'sha384-05Hrg6MAEOyGEl+DBp138l7mH4bs/srHNfuLKY1bXS0R9WI/amgsW509B8FkaZWr',
+            type:'application/wasm'
+        }),
+        avifDecoderModule: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.js',
+            integrity:'sha384-pQijokcrYgIbNNMYKnZu0dEAsqNQJ0lC/666Tk0hVjrDNVx5QZJ9Y3fXt34Ad39p',
+            type:'application/javascript'
+        }),
+        avifDecoderWasm: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.wasm',
+            integrity:'sha384-WXzHutwoBnplk2hri8J5IvzXrMqwzK8SJSgK71upLLSvawD7CtQd7Ylgs5nMkpuh',
+            type:'application/wasm'
+        }),
         transformers: Object.freeze({
             url:'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
             integrity:'sha384-3TA7bWonh/FGdhkvnr9EMFCoFqikJ5aJQEV8RlUgOmBFIF9z3W+h67aRdQPRxN9d',
@@ -3158,6 +3180,8 @@ const OS = {
     }),
     _runtimeAssetPromises: new Map(),
     _runtimeBlobPromises: new Map(),
+    _avifEncoderPromise: null,
+    _avifDecoderPromise: null,
     // Interactive image-filter previews use a separate low-resolution pipe.
     // Apply still runs against the original pixels; this cap keeps a 12 MP
     // slider drag from repeatedly filtering all 12 million pixels.
@@ -3213,6 +3237,130 @@ const OS = {
             this._runtimeBlobPromises.set(name, pending);
         }
         return this._runtimeBlobPromises.get(name);
+    },
+    async _loadAvifEncoder() {
+        if (!this._avifEncoderPromise) {
+            this._avifEncoderPromise = (async () => {
+                const [moduleAsset, wasmAsset] = await Promise.all([
+                    this._fetchVerifiedRuntimeAsset('avifEncoderModule'),
+                    this._fetchVerifiedRuntimeAsset('avifEncoderWasm')
+                ]);
+                const moduleUrl = URL.createObjectURL(new Blob([moduleAsset.bytes], { type:moduleAsset.asset.type }));
+                try {
+                    const codec = await import(moduleUrl);
+                    if (typeof codec.default !== 'function') throw new Error('Verified AVIF module has an unexpected interface');
+                    // Supplying the verified bytes prevents Emscripten from
+                    // resolving or fetching its own sibling WASM file.
+                    const instance = await codec.default({
+                        noInitialRun:true,
+                        wasmBinary:new Uint8Array(wasmAsset.bytes),
+                        locateFile:path => {
+                            if (path !== 'avif_enc.wasm') throw new Error(`Unexpected AVIF runtime dependency: ${path}`);
+                            return 'blob:openshop-verified-avif-encoder';
+                        }
+                    });
+                    if (typeof instance?.encode !== 'function') throw new Error('Verified AVIF encoder did not initialize');
+                    return instance;
+                } finally {
+                    URL.revokeObjectURL(moduleUrl);
+                }
+            })().catch(error => {
+                this._avifEncoderPromise = null;
+                throw error;
+            });
+        }
+        return this._avifEncoderPromise;
+    },
+    async _encodeAvifImageData(imageData, quality = 0.5) {
+        const width = Number(imageData?.width || 0);
+        const height = Number(imageData?.height || 0);
+        const data = imageData?.data;
+        if (!(data instanceof Uint8ClampedArray) || width < 1 || height < 1 || data.length !== width * height * 4) {
+            throw new Error('AVIF encoder received invalid RGBA pixels');
+        }
+        const encoder = await this._loadAvifEncoder();
+        const output = encoder.encode(
+            new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+            width,
+            height,
+            {
+                quality:Math.round(Math.max(0.01, Math.min(1, Number(quality) || 0.5)) * 100),
+                qualityAlpha:-1,
+                denoiseLevel:0,
+                tileRowsLog2:0,
+                tileColsLog2:0,
+                speed:6,
+                subsample:1,
+                chromaDeltaQ:false,
+                sharpness:0,
+                enableSharpYUV:false,
+                tune:0,
+                bitDepth:8
+            }
+        );
+        if (!(output instanceof Uint8Array) || output.byteLength < 16) throw new Error('AVIF encoding failed');
+        return output.slice().buffer;
+    },
+    async _loadAvifDecoder() {
+        if (!this._avifDecoderPromise) {
+            this._avifDecoderPromise = (async () => {
+                const [moduleAsset, wasmAsset] = await Promise.all([
+                    this._fetchVerifiedRuntimeAsset('avifDecoderModule'),
+                    this._fetchVerifiedRuntimeAsset('avifDecoderWasm')
+                ]);
+                const moduleUrl = URL.createObjectURL(new Blob([moduleAsset.bytes], { type:moduleAsset.asset.type }));
+                try {
+                    const codec = await import(moduleUrl);
+                    if (typeof codec.default !== 'function') throw new Error('Verified AVIF decoder has an unexpected interface');
+                    const instance = await codec.default({
+                        noInitialRun:true,
+                        wasmBinary:new Uint8Array(wasmAsset.bytes),
+                        locateFile:path => {
+                            if (path !== 'avif_dec.wasm') throw new Error(`Unexpected AVIF runtime dependency: ${path}`);
+                            return 'blob:openshop-verified-avif-decoder';
+                        }
+                    });
+                    if (typeof instance?.decode !== 'function') throw new Error('Verified AVIF decoder did not initialize');
+                    return instance;
+                } finally {
+                    URL.revokeObjectURL(moduleUrl);
+                }
+            })().catch(error => {
+                this._avifDecoderPromise = null;
+                throw error;
+            });
+        }
+        return this._avifDecoderPromise;
+    },
+    _readAvifDimensions(bytes) {
+        const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        for (let typeOffset = 4; typeOffset + 16 <= data.length; typeOffset++) {
+            if (data[typeOffset] !== 0x69 || data[typeOffset + 1] !== 0x73
+                || data[typeOffset + 2] !== 0x70 || data[typeOffset + 3] !== 0x65) continue;
+            const boxSize = view.getUint32(typeOffset - 4, false);
+            if (boxSize < 20 || typeOffset - 4 + boxSize > data.length) continue;
+            const width = view.getUint32(typeOffset + 8, false);
+            const height = view.getUint32(typeOffset + 12, false);
+            if (width < 1 || height < 1) continue;
+            if (width > this._importLimits.maxImageDimension || height > this._importLimits.maxImageDimension
+                || width * height > this._importLimits.maxImagePixels) {
+                throw new Error('AVIF dimensions exceed import limits');
+            }
+            return { width, height };
+        }
+        throw new Error('AVIF dimensions are missing or invalid');
+    },
+    async _decodeAvif(bytes) {
+        const source = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        const expected = this._readAvifDimensions(source);
+        const decoder = await this._loadAvifDecoder();
+        const decoded = decoder.decode(source, 8);
+        if (!decoded || decoded.width !== expected.width || decoded.height !== expected.height
+            || !(decoded.data instanceof Uint8ClampedArray) || decoded.data.length !== expected.width * expected.height * 4) {
+            throw new Error('AVIF decoder returned invalid pixels');
+        }
+        return new ImageData(new Uint8ClampedArray(decoded.data), decoded.width, decoded.height);
     },
     _prepareClassicPhotonSource(bytes) {
         const source = new TextDecoder().decode(bytes);
@@ -4960,7 +5108,12 @@ const OS = {
         }
         void this._loadRasterFile(file);
     },
+    _isAvifFile(file) {
+        return String(file?.type || '').toLowerCase() === 'image/avif'
+            || String(file?.name || '').toLowerCase().endsWith('.avif');
+    },
     async _loadRasterFile(file) {
+        if (this._isAvifFile(file)) return this._loadAvifFile(file, 'open');
         try {
             const buffer = /jpeg|jpg/i.test(file.type || file.name) ? await file.arrayBuffer() : null;
             const exif = buffer ? this._readExif(buffer) : null;
@@ -4992,6 +5145,23 @@ const OS = {
             }
         } catch (err) {
             this.toast(err.message, 'error');
+        }
+    },
+    async _loadAvifFile(file, mode = 'open') {
+        try {
+            const decoded = await this._decodeAvif(await file.arrayBuffer());
+            const canvas = document.createElement('canvas');
+            canvas.width = decoded.width;
+            canvas.height = decoded.height;
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('Could not create the AVIF import canvas');
+            context.putImageData(decoded, 0, 0);
+            const image = await fabric.Image.fromURL(canvas.toDataURL('image/png'));
+            this._lastImportExif = null;
+            return await this._addDecodedImageToCanvas(image, { name:file.name || 'Imported AVIF', mode });
+        } catch (error) {
+            this.toast(`AVIF import failed: ${error.message}`, 'error');
+            return false;
         }
     },
     async _importGifFrames(file) {
@@ -5085,6 +5255,10 @@ const OS = {
             return;
         }
         try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }
+        if (this._isAvifFile(file)) {
+            void this._loadAvifFile(file, 'drop');
+            return;
+        }
         const r = new FileReader(); r.onload = ev => {
             fabric.Image.fromURL(ev.target.result, img => {
                 void Promise.resolve(this._addDecodedImageToCanvas(img, { name:file.name, mode:'drop' })).catch(err => this.toast(err.message, 'error'));
@@ -5098,7 +5272,7 @@ const OS = {
     },
     _normalizeExportOptions(options = {}) {
         const format = String(options.format || 'png').toLowerCase();
-        if (!['png','jpeg','webp'].includes(format)) throw new Error('Unsupported raster export format');
+        if (!['png','jpeg','webp','avif'].includes(format)) throw new Error('Unsupported raster export format');
         const quality = Math.max(0.01, Math.min(1, Number(options.quality ?? (format === 'png' ? 1 : 0.92))));
         const scale = Math.max(0.01, Math.min(4, Number(options.scale ?? 1)));
         const width = Math.round(this.canvasW * scale);
@@ -5190,6 +5364,28 @@ const OS = {
         }
         return { dataUrl, options:normalized };
     },
+    _captureExportImageData(options = {}) {
+        const normalized = this._normalizeExportOptions(options);
+        const width = Math.round(this.canvasW * normalized.scale);
+        const height = Math.round(this.canvasH * normalized.scale);
+        const imageData = this._withExportCanvasState(normalized, () => {
+            if (typeof this.canvas.toCanvasElement !== 'function') throw new Error('Pixel export is unavailable');
+            const rendered = this.canvas.toCanvasElement(normalized.scale, {
+                left:0,
+                top:0,
+                width:this.canvasW,
+                height:this.canvasH
+            });
+            const copy = document.createElement('canvas');
+            copy.width = width;
+            copy.height = height;
+            const context = copy.getContext('2d', { willReadFrequently:true });
+            if (!context) throw new Error('Could not create the AVIF export canvas');
+            context.drawImage(rendered, 0, 0, width, height);
+            return context.getImageData(0, 0, width, height);
+        });
+        return { imageData, options:normalized };
+    },
     _downloadDataUrl(dataUrl, filename) {
         const link = document.createElement('a');
         link.download = filename;
@@ -5202,7 +5398,7 @@ const OS = {
         const objects = this.canvas.getObjects().filter(object => object.name !== '__boundary__' && !object.excludeFromExport);
         const contentLayers = this.layers.filter(layer => layer.objects.some(object => object.name !== '__boundary__' && !object.excludeFromExport));
         const warnings = [];
-        const raster = ['png','jpeg','webp'].includes(normalizedFormat);
+        const raster = ['png','jpeg','webp','avif'].includes(normalizedFormat);
         const textCount = objects.filter(object => ['text','i-text','textbox'].includes(object.type)).length;
         const vectorCount = objects.filter(object => ['rect','circle','ellipse','triangle','polygon','polyline','line','path'].includes(object.type)).length;
         const maskCount = objects.filter(object => object.clipPath || object._hasMask).length;
@@ -5230,13 +5426,15 @@ const OS = {
         }
         if (this._animFrames.length > 1) warnings.push(`Only the current canvas is exported; ${this._animFrames.length} animation frames remain in the project.`);
         if (normalizedFormat === 'jpeg') warnings.push('JPEG has no alpha channel; transparent pixels will use the selected matte color.');
-        else if ((normalizedFormat === 'png' || normalizedFormat === 'webp') && !transparent) warnings.push('Transparency is disabled; transparent pixels will use the selected matte color.');
+        else if (['png','webp','avif'].includes(normalizedFormat) && !transparent) warnings.push('Transparency is disabled; transparent pixels will use the selected matte color.');
         warnings.push('History, selections, guides, and other project-only editing state are not included in this export.');
         if (this._isDirty) warnings.push('This export does not save the editable project; unsaved project changes will remain.');
         return { format:normalizedFormat, warnings };
     },
     saveFile(format, options = {}) {
+        format = String(format || '').toLowerCase();
         if (format === 'svg') return this._exportSVG();
+        if (format === 'avif') return this._exportAVIF(options);
         try {
             const captured = this._captureExportRaster({
                 format,
@@ -5251,6 +5449,26 @@ const OS = {
         } catch (error) {
             console.error('Raster export error:', error);
             this.toast(`Export failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
+    async _exportAVIF(options = {}) {
+        try {
+            const captured = this._captureExportImageData({
+                format:'avif',
+                quality:options.quality,
+                scale:options.scale,
+                transparent:options.transparent !== false,
+                matte:options.matte || '#ffffff'
+            });
+            this.toast('Encoding AVIF with the verified local codec…', 'info');
+            const bytes = await this._encodeAvifImageData(captured.imageData, captured.options.quality);
+            this._downloadBlob(new Blob([bytes], { type:'image/avif' }), this._exportFileName('avif'));
+            this.toast('Exported as AVIF', 'success');
+            return true;
+        } catch (error) {
+            console.error('AVIF export error:', error);
+            this.toast(`AVIF export failed: ${error.message}`, 'error');
             return false;
         }
     },
@@ -5307,7 +5525,7 @@ const OS = {
         }
     },
     batchExport() {
-        const fmts = ['png','jpeg','webp','svg','pdf'];
+        const fmts = ['png','jpeg','webp','avif','svg','pdf'];
         const o = document.createElement('div'); o.className = 'modal-overlay';
         o.innerHTML = `<div class="modal"><h3>Batch Export</h3>
             <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Export canvas to multiple formats at once.</p>
@@ -5318,7 +5536,7 @@ const OS = {
         document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
     },
     async doBatchExport(o) {
-        const formats = ['png','jpeg','webp','svg','pdf'].filter(f => o.querySelector('#batch-'+f).checked);
+        const formats = ['png','jpeg','webp','avif','svg','pdf'].filter(f => o.querySelector('#batch-'+f).checked);
         if (!formats.length) {
             this.toast('Select at least one format to export', 'info');
             return false;
@@ -13826,6 +14044,7 @@ self.onmessage = async function(e) {
                 <button class="btn" id="es-png" data-fmt="png">PNG</button>
                 <button class="btn" id="es-jpeg" data-fmt="jpeg">JPEG</button>
                 <button class="btn" id="es-webp" data-fmt="webp">WebP</button>
+                <button class="btn" id="es-avif" data-fmt="avif">AVIF</button>
             </div>
             <div class="modal-row" id="es-quality-row" style="display:none"><label>Quality</label><input id="es-quality" type="range" min="1" max="100" value="92" data-suffix="%"><span class="opt-val">92%</span></div>
             <div class="modal-row"><label>Scale</label><select id="es-scale"><option value="1">1x (Original)</option><option value="0.5">0.5x (Half)</option><option value="2">2x (Double)</option><option value="0.25">0.25x (Quarter)</option></select></div>
@@ -13854,7 +14073,7 @@ self.onmessage = async function(e) {
         });
         o.querySelector('[data-modal-action]').addEventListener('click', () => this._doExportSettings(o));
         document.body.appendChild(o);
-        const requested = ['png','jpeg','webp'].includes(String(initialFormat).toLowerCase()) ? String(initialFormat).toLowerCase() : 'png';
+        const requested = ['png','jpeg','webp','avif'].includes(String(initialFormat).toLowerCase()) ? String(initialFormat).toLowerCase() : 'png';
         const button = o.querySelector(`[data-fmt="${requested}"]`);
         requestAnimationFrame(() => {
             o.classList.add('show');
@@ -13882,7 +14101,7 @@ self.onmessage = async function(e) {
             alpha.disabled = false;
             alpha.checked = alpha.dataset.previous ? alpha.dataset.previous === 'true' : true;
             matteRow.style.display = alpha.checked ? 'none' : 'flex';
-            alphaHelp.textContent = 'PNG and WebP can preserve alpha';
+            alphaHelp.textContent = 'PNG, WebP, and AVIF can preserve alpha';
         }
         this._esUpdate(overlay);
     },
@@ -13904,7 +14123,7 @@ self.onmessage = async function(e) {
         const w = Math.round(cw * scale), h = Math.round(ch * scale);
         const bpp = fmt === 'jpeg' || !settings.transparent ? 3 : 4;
         const raw = w * h * bpp;
-        const ratio = fmt === 'png' ? 0.5 : fmt === 'jpeg' ? 0.1 : 0.08;
+        const ratio = fmt === 'png' ? 0.5 : fmt === 'jpeg' ? 0.1 : fmt === 'avif' ? 0.06 : 0.08;
         const est = Math.round(raw * ratio / 1024);
         const el = overlay.querySelector('#es-size');
         if (el) el.textContent = `${w}x${h} — Est. ~${est > 1024 ? (est/1024).toFixed(1)+'MB' : est+'KB'}`;
@@ -13931,7 +14150,13 @@ self.onmessage = async function(e) {
         const preview = overlay.querySelector('#es-preview');
         try {
             const previewScale = Math.max(0.01, Math.min(1, 300 / this.canvasW, 100 / this.canvasH));
-            const captured = this._captureExportRaster({ ...settings, scale:previewScale });
+            // The deterministic WASM encoder is intentionally lazy; use a PNG
+            // proxy for the visual preview instead of downloading 3.5 MB when
+            // the user merely tabs through the format choices.
+            const previewSettings = settings.format === 'avif'
+                ? { ...settings, format:'png', scale:previewScale }
+                : { ...settings, scale:previewScale };
+            const captured = this._captureExportRaster(previewSettings);
             this._clearNode(preview);
             preview.classList.toggle('alpha', captured.options.transparent);
             if (!captured.options.transparent) preview.style.background = captured.options.matte;
@@ -13942,8 +14167,8 @@ self.onmessage = async function(e) {
             const label = document.createElement('span');
             label.className = 'export-preview-label';
             label.textContent = captured.options.transparent
-                ? `${captured.options.format.toUpperCase()} · alpha preview`
-                : `${captured.options.format.toUpperCase()} · matte ${captured.options.matte}`;
+                ? `${settings.format.toUpperCase()} · alpha preview`
+                : `${settings.format.toUpperCase()} · matte ${captured.options.matte}`;
             preview.append(image, label);
             preview.setAttribute('aria-label', label.textContent);
         } catch (error) {
@@ -13961,10 +14186,13 @@ self.onmessage = async function(e) {
         clearTimeout(this._exportPreviewTimer);
         this._exportPreviewTimer = setTimeout(() => this._renderExportPreview(overlay), 60);
     },
-    _doExportSettings(overlay) {
+    async _doExportSettings(overlay) {
         const settings = this._readExportSettings(overlay);
-        const success = this.saveFile(settings.format, settings);
+        const button = overlay.querySelector('[data-modal-action]');
+        if (button) button.disabled = true;
+        const success = await this.saveFile(settings.format, settings);
         if (success) overlay.remove();
+        else if (button?.isConnected) button.disabled = false;
         return success;
     },
 
@@ -14114,6 +14342,7 @@ self.onmessage = async function(e) {
             {label:'Export PNG',cat:'File',fn:()=>this.saveFile('png')},
             {label:'Export JPEG',cat:'File',fn:()=>this.saveFile('jpeg')},
             {label:'Export WebP',cat:'File',fn:()=>this.saveFile('webp')},
+            {label:'Export AVIF',cat:'File',fn:()=>this.saveFile('avif')},
             {label:'Export SVG',cat:'File',fn:()=>this.saveFile('svg')},
             {label:'Export PDF',cat:'File',fn:()=>this.exportPDF()},
             {label:'Export PSD',cat:'File',fn:()=>this.exportPSD()},
@@ -15061,6 +15290,10 @@ self.onmessage = async function(e) {
                     e.preventDefault();
                     const blob = item.getAsFile();
                     try { this._validateImageFile(blob); } catch(err) { this.toast(err.message, 'error'); return; }
+                    if (this._isAvifFile(blob)) {
+                        void this._loadAvifFile(blob, 'paste');
+                        return;
+                    }
                     const reader = new FileReader();
                     reader.onload = ev => {
                         fabric.Image.fromURL(ev.target.result, img => {
