@@ -117,7 +117,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Single HTML File (~7,300 lines)                             │
+│  Single HTML File (~17,000 lines)                            │
 │                                                              │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────┐               │
 │  │  CSS     │  │  HTML    │  │  JavaScript  │               │
