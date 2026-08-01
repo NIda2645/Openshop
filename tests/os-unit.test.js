@@ -1030,6 +1030,33 @@ describe('OpenShop core object', () => {
     expect(history.valid).toBe(false);
   });
 
+  it('keeps the open document when an image open is cancelled', async () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    quietUiMethods(OS);
+    installModalDelegation();
+    OS.createNewDocument = vi.fn();
+    OS.zoomFit = vi.fn();
+    OS.trackRecentFile = vi.fn();
+    OS.layers = [{ id: 'l1', name: 'Background', objects: [] }];
+    OS.activeLayerIdx = 0;
+    const image = () => ({ width: 10, height: 10, set() {} });
+
+    // Cancelling has to report the refusal, not just skip the add — the GIF
+    // frame import keys the rest of its work off this answer.
+    OS._isDirty = true;
+    const declined = OS._addDecodedImageToCanvas(image(), { name: 'x.png', mode: 'open' });
+    document.querySelector('.modal-overlay [data-modal-cancel]').click();
+    await expect(declined).resolves.toBe(false);
+    expect(OS.createNewDocument).not.toHaveBeenCalled();
+
+    OS._isDirty = false;
+    await expect(
+      OS._addDecodedImageToCanvas(image(), { name: 'x.png', mode: 'open' })
+    ).resolves.toBe(true);
+    expect(OS.createNewDocument).toHaveBeenCalled();
+  });
+
   it('guards document-replacing actions when the document is dirty', async () => {
     const OS = loadOpenShop();
     OS.canvas = createCanvasMock();

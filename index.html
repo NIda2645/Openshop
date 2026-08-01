@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-iy6Mc0+58Zvse2TXgiaWZnSIjF895O1N73U6x0eFR3c=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-ekp3FggjWEQ7vuR4JDQRxkT+AXHfqJDmyT6hslg3oYA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4534,7 +4534,9 @@ const OS = {
     async _addDecodedImageToCanvas(img, { name, mode }) {
         const { width } = this._validateDecodedImage(img);
         if (mode === 'open') {
-            if (!await this._confirmDiscardUnsaved('Opening an image')) return;
+            // Returns false when the user keeps their work, so callers that do
+            // more than add the image — the GIF frame import — can stop too.
+            if (!await this._confirmDiscardUnsaved('Opening an image')) return false;
             this.createNewDocument(img.width, img.height, { resetProject:true });
             this._docName = this._safeText(String(name || '').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
             this._setPersistenceState('dirty');
@@ -4543,13 +4545,14 @@ const OS = {
             this.zoomFit(); this.saveHistory('Open Image'); this.updateLayersPanel();
             this.trackRecentFile(this._docName, img.width, img.height);
             this.toast(`Opened: ${this._safeText(name, 80)}`, 'success');
-            return;
+            return true;
         }
         if (width > this.canvasW) img.scaleToWidth(this.canvasW * 0.8);
         img.set({ left:50, top:50, selectable:true, name:this._safeText(name, 120) });
         this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img);
         this.canvas.setActiveObject(img); this.saveHistory(mode === 'paste' ? 'Paste Image' : 'Drop Image'); this.updateLayersPanel();
         this.toast(mode === 'paste' ? 'Image pasted from clipboard' : `Added: ${this._safeText(name, 80)}`, 'success');
+        return true;
     },
     async openFile() {
         if (window.showOpenFilePicker) {
@@ -4629,7 +4632,11 @@ const OS = {
             }
             if (decodedFrames.length > 0) {
                 const img = await fabric.Image.fromURL(decodedFrames[0]);
-                await this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' });
+                // Declining the discard prompt has to stop the whole import.
+                // Frames used to be installed regardless, so cancelling replaced
+                // an unsaved animation with the one the user just refused —
+                // without a history entry, so undo could not bring it back.
+                if (await this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' }) === false) return;
             }
             this._animFrames = decodedFrames;
             this._animIdx = 0;
