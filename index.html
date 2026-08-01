@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-RN3e+OA9ttH3ps8eu0j5c4dFCXpQv52MHxhUtvlUug4=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-tSfANmNcBIQ78R8ecXNPLbRMc8M6nvZ1VXX50wQ2vyA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4361,12 +4361,7 @@ const OS = {
             this._placeSelectionBox({ borderRadius:'0' });
             this._showMaskOverlay(this._selectionMask);
         } else if (this._selectionBounds && overlay) {
-            overlay.style.display = 'block';
-            overlay.style.left = this._selectionBounds.x + 'px';
-            overlay.style.top = this._selectionBounds.y + 'px';
-            overlay.style.width = this._selectionBounds.w + 'px';
-            overlay.style.height = this._selectionBounds.h + 'px';
-            overlay.style.borderRadius = '0';
+            this._placeSelectionBox({ borderRadius:'0' });
         }
     },
     _restoreGuidesState(guides) {
@@ -6878,7 +6873,17 @@ self.onmessage = function(event) {
             const sw=parseFloat(el.style.width)||0,sh=parseFloat(el.style.height)||0;
             const vpt=this.canvas.viewportTransform;
             if(sw>2&&sh>2){
-                this._selectionBounds={x:parseFloat(el.style.left)||0,y:parseFloat(el.style.top)||0,w:sw,h:sh};
+                // Store the document rectangle, not the screen one. Bounds used
+                // to mean screen pixels for a marquee and document pixels for a
+                // mask, so consumers disagreed about which they held and a
+                // project saved at one zoom reopened with the box in the wrong
+                // place and the wrong size.
+                this._selectionBounds={
+                    x:(parseFloat(el.style.left)||0 - vpt[4])/vpt[0],
+                    y:(parseFloat(el.style.top)||0 - vpt[5])/vpt[3],
+                    w:sw/vpt[0],
+                    h:sh/vpt[3]
+                };
                 this._selectionMask=null;
                 this.toast('Selection: '+Math.round(sw/vpt[0])+' x '+Math.round(sh/vpt[3])+' px','info');
             } else { el.style.display='none'; this._selectionBounds=null; }
@@ -7137,21 +7142,7 @@ self.onmessage = function(event) {
             ? { mask:new Uint8Array(stored.mask.mask), w:stored.mask.w, h:stored.mask.h }
             : null;
         this._selectionBounds = stored.bounds ? { ...stored.bounds } : null;
-        if (this._selectionMask) {
-            // Mask bounds are document space, so the overlay needs the viewport
-            // applied — writing them as raw CSS pixels put the marching ants in
-            // the wrong place at any zoom but 100%.
-            this._placeSelectionBox({ borderRadius:'0' });
-        } else if (this._selectionBounds) {
-            // A marquee with no mask keeps its own screen-space box.
-            const el = document.getElementById('selection-overlay');
-            el.style.display = 'block';
-            el.style.left = this._selectionBounds.x + 'px';
-            el.style.top = this._selectionBounds.y + 'px';
-            el.style.width = this._selectionBounds.w + 'px';
-            el.style.height = this._selectionBounds.h + 'px';
-            el.style.borderRadius = '0';
-        }
+        if (this._selectionBounds) this._placeSelectionBox({ borderRadius:'0' });
         if (this._selectionMask) this._showMaskOverlay(this._selectionMask);
         this.toast('Selection restored', 'info');
     },
@@ -7162,13 +7153,14 @@ self.onmessage = function(event) {
     _maskFromMarqueeBounds() {
         const b = this._selectionBounds;
         if (!b) return null;
-        const vpt = this.canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+        // Bounds are already document space; this used to undo a viewport that
+        // was no longer baked into them.
         const dw = Math.max(1, Math.round(this.canvasW));
         const dh = Math.max(1, Math.round(this.canvasH));
-        const x0 = Math.round((b.x - vpt[4]) / (vpt[0] || 1));
-        const y0 = Math.round((b.y - vpt[5]) / (vpt[3] || 1));
-        const x1 = x0 + Math.round(b.w / (vpt[0] || 1));
-        const y1 = y0 + Math.round(b.h / (vpt[3] || 1));
+        const x0 = Math.round(b.x);
+        const y0 = Math.round(b.y);
+        const x1 = x0 + Math.round(b.w);
+        const y1 = y0 + Math.round(b.h);
         const mask = new Uint8Array(dw * dh);
         for (let y = Math.max(0, y0); y < Math.min(dh, y1); y++) {
             for (let x = Math.max(0, x0); x < Math.min(dw, x1); x++) mask[y * dw + x] = 255;
@@ -7396,7 +7388,6 @@ self.onmessage = function(event) {
     _placeSelectionBox({ borderRadius = null } = {}) {
         const el = document.getElementById('selection-overlay');
         if (!el) return;
-        if (!this._selectionMask) return;   // lasso and marquee place their own box
         const bounds = this._selectionBounds;
         if (!bounds) { el.style.display = 'none'; return; }
         const vpt = this.canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
@@ -7640,17 +7631,11 @@ self.onmessage = function(event) {
     // Convert screen-space selection bounds to canvas coordinates
     _selToCanvasCoords() {
         if (!this._selectionBounds) return null;
+        // Bounds are document space for both marquee and mask selections now,
+        // so this is the identity — kept as the one named place callers ask
+        // for document coordinates.
         const b = this._selectionBounds;
-        // For magic wand, bounds are already in screen-canvas pixel space
-        if (this._selectionMask) return { x: b.x, y: b.y, w: b.w, h: b.h };
-        // For marquee, bounds are in canvas-area div offset space — convert via viewport
-        const vpt = this.canvas.viewportTransform;
-        return {
-            x: (b.x - vpt[4]) / vpt[0],
-            y: (b.y - vpt[5]) / vpt[3],
-            w: b.w / vpt[0],
-            h: b.h / vpt[3]
-        };
+        return { x: b.x, y: b.y, w: b.w, h: b.h };
     },
 
     // ====================== GRADIENT ======================

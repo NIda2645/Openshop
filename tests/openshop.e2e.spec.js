@@ -2866,6 +2866,65 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('selection bounds are document coordinates whatever made them @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Bounds used to mean screen pixels for a marquee and document pixels for a
+  // mask, so consumers disagreed about which they were holding and a project
+  // saved at one zoom reopened with the box in the wrong place and size.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(200, 150, '#ffffff');
+    OS.setTool('marquee-rect');
+
+    const dragMarquee = (zoom) => {
+      OS.canvas.setViewportTransform([zoom, 0, 0, zoom, 0, 0]);
+      const el = document.getElementById('selection-overlay');
+      // The overlay is written in screen pixels while dragging; the commit
+      // converts. A 40x30 document rect starting at (20,15).
+      el.style.display = 'block';
+      el.style.left = `${20 * zoom}px`;
+      el.style.top = `${15 * zoom}px`;
+      el.style.width = `${40 * zoom}px`;
+      el.style.height = `${30 * zoom}px`;
+      OS._marqueeStart = { x: 20, y: 15 };
+      OS.state.isDrawing = true;
+      OS.onMouseUp({ e: {} });
+      return { ...OS._selectionBounds };
+    };
+
+    const at1 = dragMarquee(1);
+    const at3 = dragMarquee(3);
+
+    // And the placed box tracks the viewport rather than being baked into it.
+    OS.canvas.setViewportTransform([2, 0, 0, 2, 10, 5]);
+    OS._placeSelectionBox({ borderRadius: '0' });
+    const box = document.getElementById('selection-overlay');
+    return {
+      at1,
+      at3,
+      toCanvas: OS._selToCanvasCoords(),
+      placed: {
+        left: parseFloat(box.style.left),
+        top: parseFloat(box.style.top),
+        width: parseFloat(box.style.width)
+      }
+    };
+  });
+
+  // Same document rectangle, whatever zoom it was drawn at.
+  expect(result.at1.w).toBeCloseTo(40, 1);
+  expect(result.at3.w).toBeCloseTo(40, 1);
+  expect(result.at1.x).toBeCloseTo(result.at3.x, 1);
+  expect(result.at1.y).toBeCloseTo(result.at3.y, 1);
+  // _selToCanvasCoords hands back document coordinates without converting.
+  expect(result.toCanvas.w).toBeCloseTo(40, 1);
+  // Placed at 2x with a pan: 20*2+10 = 50, 15*2+5 = 35, 40*2 = 80.
+  expect(result.placed.left).toBeCloseTo(50, 0);
+  expect(result.placed.top).toBeCloseTo(35, 0);
+  expect(result.placed.width).toBeCloseTo(80, 0);
+});
+
 test('exposes list, tool and status state to assistive technology @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
