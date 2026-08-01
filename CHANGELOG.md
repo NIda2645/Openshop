@@ -9,6 +9,13 @@ All notable changes to Openshop will be documented in this file.
 - Constrain the offline worker to the static runtime assets OpenShop actually uses, never cache private/no-store or credential-varying responses, reject state pointers to revisions that were never shipped, require the exact revision in the boot-health handshake, and accept shell-control messages only from the app document. The self-hosting recipe now keeps the worker in a dedicated subdirectory instead of granting it an origin-wide scope
 - Lock the contributor web harness to localhost Host and Origin values, serve only the six files its browser tests need, and return bounded 4xx responses for malformed paths, invalid JSON, and oversized control bodies instead of exposing repository contents or terminating the process
 
+### Fixed
+- Decode EXIF-bearing JPEGs exactly once. Browsers already apply the orientation while decoding, so OpenShop now neutralizes the copied tag before baking its own pixel transform instead of rotating camera photos twice
+- Carry the current verified offline shell into the next worker's trusted predecessor set so a failed update can still roll back after the shell revision advances
+
+### Testing
+- Run the full Chromium browser suite over both `file://` and localhost, add real Photoshop PSD, animated GIF, and EXIF JPEG fixtures plus clipboard and drag-and-drop coverage, and enforce coverage floors in the release gate
+
 ## [v0.26.0] - 2026-08-01
 
 ### Fixed

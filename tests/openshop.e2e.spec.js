@@ -3,17 +3,22 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const appUrl = pathToFileURL(join(process.cwd(), 'index.html')).toString();
+const fileAppUrl = pathToFileURL(join(process.cwd(), 'index.html')).toString();
+const fixturePath = name => join(process.cwd(), 'tests', 'fixtures', name);
+
+function projectAppUrl() {
+  return test.info().project.metadata?.appUrl || fileAppUrl;
+}
 
 // The three libraries the editor needs are fetched and SHA-384 verified in page
 // now rather than loaded from <script src>, so nothing is wired up until the
 // boot promise settles.
-async function openApp(page, url = appUrl) {
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
+async function openApp(page, url) {
+  await page.goto(url || projectAppUrl(), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
 }
 
-test('loads the editor shell and supports core UI interactions @cross-browser', async ({ page, browserName }) => {
+test('loads the editor shell and supports core UI interactions @cross-browser', async ({ page }, testInfo) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -42,7 +47,7 @@ test('loads the editor shell and supports core UI interactions @cross-browser', 
 
   // One rendering engine owns the visual baseline; the others are here to prove
   // the flow works, not to re-litigate sub-pixel text rasterisation.
-  if (browserName === 'chromium') {
+  if (testInfo.project.name === 'chromium') {
     await expect(page).toHaveScreenshot('openshop-editor-shell.png', {
       animations: 'disabled',
       fullPage: false,
@@ -516,6 +521,49 @@ test('decodes and bounds PSD pixels in a worker before committing the document',
   expect(result.bluePixel[2]).toBeGreaterThan(result.bluePixel[0]);
   expect(result.decodedLimit).toBe(256 * 1024 * 1024);
   expect(pageErrors).toEqual([]);
+});
+
+test('imports a Photoshop-authored nested PSD fixture', async ({ page }) => {
+  const payload = (await readFile(fixturePath('photoshop-nested.psd'))).toString('base64');
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async base64 => {
+    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    const imported = await OS._loadPSDFile(new File(
+      [bytes],
+      'photoshop-nested.psd',
+      { type: 'image/vnd.adobe.photoshop' }
+    ));
+    const groups = OS._psdInterchange?.groups || [];
+    const namesById = new Map(groups.map(group => [group.id, group.name]));
+    return {
+      imported,
+      dimensions: [OS.canvasW, OS.canvasH],
+      layers: OS.layers.slice(1).map(layer => ({
+        name: layer.name,
+        parent: namesById.get(layer.psd?.parentId) || null,
+        hasPixels: Boolean(layer.objects[0]?.getElement?.())
+      })),
+      groups: groups.map(group => ({
+        name: group.name,
+        parent: namesById.get(group.parentId) || null
+      })),
+      flattened: OS._lastPSDImportReport?.flattenWholeDocument
+    };
+  }, payload);
+
+  expect(result.imported).toBe(true);
+  expect(result.dimensions).toEqual([1, 1]);
+  expect(result.flattened).toBe(false);
+  expect(result.layers).toEqual([
+    { name: 'Layer1 (#ff)', parent: null, hasPixels: true },
+    { name: 'Layer10 (#00)', parent: 'Folder10', hasPixels: true }
+  ]);
+  expect(result.groups).toEqual(Array.from({ length: 10 }, (_, index) => ({
+    name: `Folder${index + 1}`,
+    parent: index === 0 ? null : `Folder${index}`
+  })));
 });
 
 test('round-trips nested PSD groups, blends, opacity, and basic text without duplicating the composite', async ({ page }) => {
@@ -2978,6 +3026,10 @@ test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
     };
 
     const parsed = [1, 3, 6, 8].map(o => OS._readExif(withOrientation(o))?.orientation);
+    const neutralized = [3, 6, 8].map(o => {
+      const source = withOrientation(o);
+      return OS._readExif(OS._neutralizeExifOrientation(source).buffer)?.orientation;
+    });
 
     // A 4x2 source: after a 90-degree rotation it must measure 2x4.
     const src = document.createElement('canvas');
@@ -2993,6 +3045,7 @@ test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
 
     return {
       parsed,
+      neutralized,
       rotatedSize: [rotated.width, rotated.height],
       topRight,
       unchanged,
@@ -3001,6 +3054,7 @@ test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
   });
 
   expect(result.parsed).toEqual([1, 3, 6, 8]);
+  expect(result.neutralized).toEqual([1, 1, 1]);
   // 4x2 rotated a quarter turn is 2x4.
   expect(result.rotatedSize).toEqual([2, 4]);
   // The blue corner moves from top-left to top-right under orientation 6.
@@ -3008,6 +3062,132 @@ test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
   // Orientation 1 needs no work, and a non-JPEG parses to nothing.
   expect(result.unchanged).toBeNull();
   expect(result.noExif).toBeNull();
+});
+
+test('imports an EXIF-bearing JPEG fixture upright', async ({ page }) => {
+  const payload = (await readFile(fixturePath('exif-orientation-6.jpg'))).toString('base64');
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async base64 => {
+    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    const file = new File([bytes], 'exif-orientation-6.jpg', { type: 'image/jpeg' });
+    const parsed = OS._readExif(bytes.buffer);
+    await OS._loadRasterFile(file);
+    const image = OS.layers.flatMap(layer => layer.objects).find(object => object.type === 'image');
+    return {
+      parsedOrientation: parsed?.orientation,
+      importedOrientation: OS._lastImportExif?.orientation,
+      dimensions: [OS.canvasW, OS.canvasH],
+      imageDimensions: [image?.width, image?.height]
+    };
+  }, payload);
+
+  expect(result).toEqual({
+    parsedOrientation: 6,
+    importedOrientation: 6,
+    dimensions: [1800, 1200],
+    imageDimensions: [1800, 1200]
+  });
+});
+
+test('imports every frame from a real animated GIF fixture', async ({ page }) => {
+  const payload = (await readFile(fixturePath('animated-multiframe.gif'))).toString('base64');
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async base64 => {
+    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    await OS._importGifFrames(new File([bytes], 'animated-multiframe.gif', { type: 'image/gif' }));
+    const frames = [];
+    for (let index = 0; index < OS._animFrames.length; index += 1) {
+      const dataUrl = OS._animFrames[index];
+      const image = await new Promise((resolve, reject) => {
+        const candidate = new Image();
+        candidate.onload = () => resolve(candidate);
+        candidate.onerror = reject;
+        candidate.src = dataUrl;
+      });
+      frames.push({
+        index,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        bytes: Math.floor((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4)
+      });
+    }
+    return {
+      frames,
+      uniqueFrames: new Set(OS._animFrames).size,
+      activeIndex: OS._animIdx,
+      timelineItems: document.getElementById('timeline-frames').children.length
+    };
+  }, payload);
+
+  expect(result.frames.map(frame => frame.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  expect(result.frames.every(frame => frame.width > 0 && frame.height > 0 && frame.bytes > 100)).toBe(true);
+  expect(result.uniqueFrames).toBeGreaterThan(1);
+  expect(result.activeIndex).toBe(0);
+  expect(result.timelineItems).toBe(11);
+});
+
+test('accepts image files from clipboard paste and drag-and-drop', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const makeFile = async (name, color) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 3;
+      canvas.height = 2;
+      const context = canvas.getContext('2d');
+      context.fillStyle = color;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      return new File([blob], name, { type: 'image/png' });
+    };
+    const waitForHistory = action => new Promise((resolve, reject) => {
+      const started = performance.now();
+      const poll = () => {
+        if (OS.history.at(-1)?.action === action) return resolve();
+        if (performance.now() - started > 5000) return reject(new Error(`Timed out waiting for ${action}`));
+        setTimeout(poll, 10);
+      };
+      poll();
+    });
+
+    const initialObjects = OS.canvas.getObjects().length;
+    const pastedFile = await makeFile('clipboard-fixture.png', '#e23b52');
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { items: [{ type: pastedFile.type, getAsFile: () => pastedFile }] }
+    });
+    document.dispatchEvent(paste);
+    await waitForHistory('Paste Image');
+    const afterPaste = OS.canvas.getObjects().length;
+
+    const droppedFile = await makeFile('drop-fixture.png', '#3978ff');
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', {
+      value: { files: [droppedFile], types: ['Files'] }
+    });
+    document.getElementById('canvas-area').dispatchEvent(drop);
+    await waitForHistory('Drop Image');
+
+    return {
+      pastePrevented: paste.defaultPrevented,
+      dropPrevented: drop.defaultPrevented,
+      objectCounts: [initialObjects, afterPaste, OS.canvas.getObjects().length],
+      history: OS.history.slice(-2).map(entry => entry.action),
+      names: OS.layers.flatMap(layer => layer.objects).map(object => object.name)
+    };
+  });
+
+  expect(result.pastePrevented).toBe(true);
+  expect(result.dropPrevented).toBe(true);
+  expect(result.objectCounts[1]).toBe(result.objectCounts[0] + 1);
+  expect(result.objectCounts[2]).toBe(result.objectCounts[1] + 1);
+  expect(result.history).toEqual(['Paste Image', 'Drop Image']);
+  expect(result.names).toEqual(expect.arrayContaining(['clipboard-fixture.png', 'drop-fixture.png']));
 });
 
 test('stays usable in forced-colors mode', async ({ page }) => {
@@ -5089,7 +5269,7 @@ test('refuses to start when a boot library fails its integrity check', async ({ 
   const consoleErrors = [];
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
 
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(projectAppUrl(), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'failed', null, { timeout: 30000 });
 
   // Substituted bytes must stop the editor, not quietly become the engine.

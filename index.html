@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-ZqmF+17xp11aS0tOI2NFWQX1zrpDcujerckpxujCkV0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-YH/sXfrt2ISIUKI7mtzXJ98+Kr3nH/hYIzf2s5DO2Iw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4794,6 +4794,39 @@ const OS = {
         }
         return null;
     },
+    _neutralizeExifOrientation(buffer) {
+        const bytes = new Uint8Array(buffer.slice(0));
+        const view = new DataView(bytes.buffer);
+        if (view.byteLength < 4 || view.getUint16(0) !== 0xFFD8) return bytes;
+        let offset = 2;
+        while (offset + 4 <= view.byteLength) {
+            if (view.getUint8(offset) !== 0xFF) break;
+            const marker = view.getUint8(offset + 1);
+            const size = view.getUint16(offset + 2);
+            if (marker === 0xE1) {
+                const start = offset + 4;
+                if (start + 14 > view.byteLength || view.getUint32(start) !== 0x45786966) return bytes;
+                const tiff = start + 6;
+                const endian = view.getUint16(tiff);
+                if (endian !== 0x4949 && endian !== 0x4D4D) return bytes;
+                const little = endian === 0x4949;
+                const directory = tiff + view.getUint32(tiff + 4, little);
+                if (directory + 2 > view.byteLength) return bytes;
+                const count = view.getUint16(directory, little);
+                for (let index = 0; index < count; index++) {
+                    const entry = directory + 2 + index * 12;
+                    if (entry + 12 > view.byteLength) return bytes;
+                    if (view.getUint16(entry, little) !== 0x0112) continue;
+                    view.setUint16(entry + 8, 1, little);
+                    return bytes;
+                }
+                return bytes;
+            }
+            if (marker === 0xDA || size < 2) break;
+            offset += 2 + size;
+        }
+        return bytes;
+    },
     _readTiff(view, tiff) {
         if (tiff + 8 > view.byteLength) return null;
         const endian = view.getUint16(tiff);
@@ -4868,14 +4901,20 @@ const OS = {
         try {
             const buffer = /jpeg|jpg/i.test(file.type || file.name) ? await file.arrayBuffer() : null;
             const exif = buffer ? this._readExif(buffer) : null;
+            const orientation = exif?.orientation;
+            // HTML image decoders apply EXIF by default. Clear only the copied
+            // orientation tag before decoding, then bake the transform below;
+            // the original file and the metadata shown in Info stay untouched.
+            const decodeSource = orientation > 1
+                ? new Blob([this._neutralizeExifOrientation(buffer)], { type:file.type || 'image/jpeg' })
+                : file;
             const url = await new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = ev => resolve(ev.target.result);
                 reader.onerror = () => reject(new Error('Could not read the file'));
-                reader.readAsDataURL(file);
+                reader.readAsDataURL(decodeSource);
             });
             let img = await fabric.Image.fromURL(url);
-            const orientation = exif?.orientation;
             if (orientation > 1) {
                 // Rotate the pixels rather than the object: the correction has
                 // to survive export, and every downstream consumer works on the

@@ -7,14 +7,16 @@
   "scripts": {
     "test": "vitest run",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test --project=chromium",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test --project=chromium --project=chromium-http",
     "security:check": "node tools/security.mjs --check",
     "security:write": "node tools/security.mjs --write",
-    "test:release": "npm run security:check && npm audit --audit-level=high && npm test && npm run test:e2e && npm run test:cross-browser",
+    "test:release": "npm run security:check && npm audit --audit-level=high && npm run test:coverage && npm run test:e2e && npm run test:cross-browser",
     "test:cross-browser": "playwright test --project=firefox --project=webkit"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^27.2.0",
     "vitest": "^4.0.15",
     "vitest-canvas-mock": "^0.3.3"
