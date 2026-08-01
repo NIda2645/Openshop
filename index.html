@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-4NnpT98Hevr8wlwW7cyXc7K3ndcl7H0Y6W4t3dDYin0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-yZZUHJXMqFtNW9+mDxVdENQ+8P2u3rnqr2HZULb7hoc=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4765,6 +4765,90 @@ const OS = {
         }
         document.getElementById('file-input').click();
     },
+    // JPEGs from phones and cameras carry their rotation in EXIF rather than in
+    // the pixels, and nothing here read it — so those photos imported sideways.
+    // A minimal APP1/TIFF walk is enough for orientation plus the few tags the
+    // Info panel shows; no dependency for ~60 lines.
+    _readExif(buffer) {
+        const view = new DataView(buffer);
+        if (view.byteLength < 4 || view.getUint16(0) !== 0xFFD8) return null;
+        let offset = 2;
+        while (offset + 4 <= view.byteLength) {
+            if (view.getUint8(offset) !== 0xFF) break;
+            const marker = view.getUint8(offset + 1);
+            const size = view.getUint16(offset + 2);
+            if (marker === 0xE1) {
+                const start = offset + 4;
+                // The six-byte Exif header: E x i f NUL NUL
+                if (start + 6 > view.byteLength || view.getUint32(start) !== 0x45786966) return null;
+                return this._readTiff(view, start + 6);
+            }
+            // Start of scan: pixel data from here, no more headers.
+            if (marker === 0xDA) break;
+            offset += 2 + size;
+        }
+        return null;
+    },
+    _readTiff(view, tiff) {
+        if (tiff + 8 > view.byteLength) return null;
+        const endian = view.getUint16(tiff);
+        if (endian !== 0x4949 && endian !== 0x4D4D) return null;
+        const little = endian === 0x4949;
+        const first = view.getUint32(tiff + 4, little);
+        const out = {};
+        const names = { 0x0112:'orientation', 0x010F:'make', 0x0110:'model', 0x0132:'dateTime', 0x8825:'gpsIfd' };
+        const readDir = (dirStart, wanted) => {
+            if (dirStart + 2 > view.byteLength) return;
+            const count = view.getUint16(dirStart, little);
+            for (let i = 0; i < count; i++) {
+                const entry = dirStart + 2 + i * 12;
+                if (entry + 12 > view.byteLength) return;
+                const tag = view.getUint16(entry, little);
+                const key = wanted[tag];
+                if (!key) continue;
+                const type = view.getUint16(entry + 2, little);
+                const length = view.getUint32(entry + 4, little);
+                if (type === 3) out[key] = view.getUint16(entry + 8, little);
+                else if (type === 4) out[key] = view.getUint32(entry + 8, little);
+                else if (type === 2) {
+                    const at = length > 4 ? tiff + view.getUint32(entry + 8, little) : entry + 8;
+                    let text = '';
+                    for (let c = 0; c < Math.min(length, 64) && at + c < view.byteLength; c++) {
+                        const code = view.getUint8(at + c);
+                        if (!code) break;
+                        text += String.fromCharCode(code);
+                    }
+                    out[key] = text.trim();
+                }
+            }
+        };
+        readDir(tiff + first, names);
+        if (out.gpsIfd) { out.hasGps = true; delete out.gpsIfd; }
+        return out;
+    },
+    // Orientation 1-8 as defined by TIFF: 2/4/5/7 mirror, 3/6/8 rotate.
+    _applyExifOrientation(source, orientation) {
+        const value = Number(orientation) || 1;
+        if (value <= 1 || value > 8) return null;
+        const width = source.naturalWidth || source.width;
+        const height = source.naturalHeight || source.height;
+        const swap = value >= 5;
+        const out = document.createElement('canvas');
+        out.width = swap ? height : width;
+        out.height = swap ? width : height;
+        const ctx = out.getContext('2d');
+        switch (value) {
+            case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
+            case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
+            case 4: ctx.transform(1, 0, 0, -1, 0, height); break;
+            case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+            case 6: ctx.transform(0, 1, -1, 0, height, 0); break;
+            case 7: ctx.transform(0, -1, -1, 0, height, width); break;
+            case 8: ctx.transform(0, -1, 1, 0, 0, width); break;
+        }
+        ctx.drawImage(source, 0, 0);
+        return out;
+    },
     _handleFileLoad(file) {
         try { this._validateImageFile(file); } catch(e) { this.toast(e.message, 'error'); return; }
         // _docName is set by _addDecodedImageToCanvas once the decode succeeds;
@@ -4773,11 +4857,35 @@ const OS = {
             this._importGifFrames(file);
             return;
         }
-        const r = new FileReader(); r.onload = ev => {
-            fabric.Image.fromURL(ev.target.result, img => {
-                void Promise.resolve(this._addDecodedImageToCanvas(img, { name:file.name, mode:'open' })).catch(err => this.toast(err.message, 'error'));
+        void this._loadRasterFile(file);
+    },
+    async _loadRasterFile(file) {
+        try {
+            const buffer = /jpeg|jpg/i.test(file.type || file.name) ? await file.arrayBuffer() : null;
+            const exif = buffer ? this._readExif(buffer) : null;
+            const url = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = ev => resolve(ev.target.result);
+                reader.onerror = () => reject(new Error('Could not read the file'));
+                reader.readAsDataURL(file);
             });
-        }; r.readAsDataURL(file);
+            let img = await fabric.Image.fromURL(url);
+            const orientation = exif?.orientation;
+            if (orientation > 1) {
+                // Rotate the pixels rather than the object: the correction has
+                // to survive export, and every downstream consumer works on the
+                // layer's pixels.
+                const corrected = this._applyExifOrientation(img.getElement(), orientation);
+                if (corrected) img = await fabric.Image.fromURL(corrected.toDataURL('image/png'));
+            }
+            this._lastImportExif = exif || null;
+            const added = await this._addDecodedImageToCanvas(img, { name:file.name, mode:'open' });
+            if (added !== false && exif && orientation > 1) {
+                this.toast(`Rotated to match the photo's EXIF orientation`, 'info');
+            }
+        } catch (err) {
+            this.toast(err.message, 'error');
+        }
     },
     async _importGifFrames(file) {
         const loadStatic = () => {

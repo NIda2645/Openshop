@@ -2866,6 +2866,59 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Phone and camera JPEGs carry rotation in EXIF rather than in the pixels,
+  // and nothing read it — so those photos imported sideways.
+  const result = await page.evaluate(async () => {
+    // Build a JPEG carrying an APP1/EXIF block with a given orientation.
+    const withOrientation = (orientation) => {
+      const tiff = [];
+      const u16 = v => [v >> 8 & 255, v & 255];
+      tiff.push(0x4D, 0x4D, 0x00, 0x2A, 0, 0, 0, 8);      // big-endian, IFD0 at 8
+      tiff.push(...u16(1));                                // one entry
+      tiff.push(...u16(0x0112), ...u16(3), 0, 0, 0, 1, ...u16(orientation), 0, 0);
+      tiff.push(0, 0, 0, 0);                               // no next IFD
+      const app1 = [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff];
+      const size = app1.length + 2;
+      return new Uint8Array([0xFF, 0xD8, 0xFF, 0xE1, size >> 8 & 255, size & 255, ...app1, 0xFF, 0xDA]).buffer;
+    };
+
+    const parsed = [1, 3, 6, 8].map(o => OS._readExif(withOrientation(o))?.orientation);
+
+    // A 4x2 source: after a 90-degree rotation it must measure 2x4.
+    const src = document.createElement('canvas');
+    src.width = 4; src.height = 2;
+    const sctx = src.getContext('2d');
+    sctx.fillStyle = '#ff0000'; sctx.fillRect(0, 0, 4, 2);
+    sctx.fillStyle = '#0000ff'; sctx.fillRect(0, 0, 1, 1);
+
+    const rotated = OS._applyExifOrientation(src, 6);
+    const rctx = rotated.getContext('2d');
+    const topRight = [...rctx.getImageData(rotated.width - 1, 0, 1, 1).data].slice(0, 3);
+    const unchanged = OS._applyExifOrientation(src, 1);
+
+    return {
+      parsed,
+      rotatedSize: [rotated.width, rotated.height],
+      topRight,
+      unchanged,
+      noExif: OS._readExif(new Uint8Array([1, 2, 3, 4]).buffer)
+    };
+  });
+
+  expect(result.parsed).toEqual([1, 3, 6, 8]);
+  // 4x2 rotated a quarter turn is 2x4.
+  expect(result.rotatedSize).toEqual([2, 4]);
+  // The blue corner moves from top-left to top-right under orientation 6.
+  expect(result.topRight).toEqual([0, 0, 255]);
+  // Orientation 1 needs no work, and a non-JPEG parses to nothing.
+  expect(result.unchanged).toBeNull();
+  expect(result.noExif).toBeNull();
+});
+
 test('stays usable in forced-colors mode', async ({ page }) => {
   // The chrome is glassmorphic — translucent panels over a blur — which in
   // Windows High Contrast renders as invisible controls on an invisible

@@ -1772,6 +1772,21 @@ describe('release metadata', () => {
   const read = (name) => readFileSync(join(process.cwd(), name), 'utf8');
   const version = JSON.parse(read('package.json')).version;
 
+  it('ships no stray control bytes', () => {
+    // A NUL that reached a comment once silently broke the CSP hash and the
+    // app would not boot at all; the error names the policy, not the cause.
+    for (const name of ['index.html', 'sw.js']) {
+      const bytes = readFileSync(join(process.cwd(), name));
+      const offenders = [];
+      for (let i = 0; i < bytes.length; i += 1) {
+        const byte = bytes[i];
+        const printable = byte === 0x09 || byte === 0x0a || byte === 0x0d || byte >= 0x20;
+        if (!printable) offenders.push(`${name}@${i}=0x${byte.toString(16)}`);
+      }
+      expect(offenders, `${name} control bytes`).toEqual([]);
+    }
+  });
+
   it('states one version everywhere a reader or a runtime can see it', () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     const [major, minor] = version.split('.');
