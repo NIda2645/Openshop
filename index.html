@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-GtVcmPwL0+f5KGQS9ib9kEzwpBXEiIXiw9kV+QVahXY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-OeaMkR5rc1FiswgIeXXNeDr+Q54cikP1ZV0lrR+WsYo=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -7989,9 +7989,15 @@ self.onmessage = function(event) {
             document.getElementById('adj-blur-val').textContent=values.blur;
             const active=this.canvas.getActiveObject();
             if(!active||active.type!=='image') {
-                this.toast('Select an image to adjust', 'info');
+                // Bound to `input` on five sliders, so one drag used to emit a
+                // stream of identical toasts. Say it once per interaction.
+                if (!this._adjustTargetWarned) {
+                    this._adjustTargetWarned = true;
+                    this.toast('Select an image to adjust', 'info');
+                }
                 return;
             }
+            this._adjustTargetWarned = false;
             this._applyImageAdjustmentsRaw(active, values);
         }, 80);
     },
@@ -8041,7 +8047,10 @@ self.onmessage = function(event) {
     _openFilterPanel(id, title, bodyHTML, onCancel, onApply) {
         // Remove any existing filter panel
         const existing = document.getElementById(id);
-        if (existing) existing.remove();
+        // Only _removeFilterPanel aborted the drag controller, so replacing a
+        // still-mounted panel leaked two permanent document-level listeners
+        // closing over the detached node — every time.
+        if (existing) { existing._dragAbort?.abort(); existing.remove(); }
         const panel = document.createElement('div');
         panel.className = 'filter-panel';
         panel.id = id;
@@ -16851,12 +16860,13 @@ self.onmessage = async function(e) {
         this._announceAccessibility(msg);
         return t;
     },
+    _maxToasts: 4,
     toast(msg, type='info') {
         const el=document.getElementById('toast-container');
+        // A stack that only ever grows covers the canvas. Oldest goes first.
+        while (el.children.length >= this._maxToasts) el.firstElementChild.remove();
         const t=document.createElement('div'); t.className=`toast ${type}`; t.textContent=msg;
         el.appendChild(t); requestAnimationFrame(()=>t.classList.add('show'));
-        // The visible container is aria-hidden; the canvas mirror is the single
-        // announcement channel so each message is read exactly once.
         this._announceAccessibility(msg);
         let dismissed = false;
         const dismiss = () => {
@@ -16868,9 +16878,12 @@ self.onmessage = async function(e) {
         // Errors need long enough to read and a way to keep them on screen.
         const base = type === 'error' ? 9000 : 2500;
         const duration = Math.min(20000, base + Math.max(0, String(msg).length - 40) * 45);
-        const timer = setTimeout(dismiss, duration);
+        let timer = setTimeout(dismiss, duration);
         t.addEventListener('click', () => { clearTimeout(timer); dismiss(); });
+        // Hovering pauses the countdown; leaving has to restart it, or any
+        // toast the pointer crossed on its way somewhere else stayed forever.
         t.addEventListener('mouseenter', () => clearTimeout(timer));
+        t.addEventListener('mouseleave', () => { if (!dismissed) timer = setTimeout(dismiss, 1200); });
         t.title = 'Click to dismiss';
     },
 };

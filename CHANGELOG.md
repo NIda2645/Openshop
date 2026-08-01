@@ -6,6 +6,8 @@ All notable changes to Openshop will be documented in this file.
 
 ### Fixed
 - Paint onto the layer instead of over it. A brush stroke stayed a selectable, draggable Fabric path sitting above the layer, and an eraser stroke was a path too — so its "erasure" could be dragged around afterwards, which is the second complaint in issue #3. A finished stroke is now composited into the layer's pixels and the path discarded; the layer gains a raster the first time it is painted on, or paints into the image it already holds, wherever that image sits and whatever transform it carries. Symmetry mirrors are composited in the same pass. Preferences has a "Keep brush strokes as editable paths" option for the previous behaviour
+- Let toasts go away again. Hovering paused the dismiss timer and nothing restarted it, so any toast the pointer crossed on its way somewhere else stayed on screen for good, and they piled up over the canvas. Leaving restarts the countdown, the stack is capped at four, and a slider drag with nothing selected says "Select an image to adjust" once instead of once per debounce tick
+- Abort a filter panel's drag listeners when it is replaced. Only the close path aborted them, so opening one filter panel over another leaked two permanent document-level listeners closing over the removed node
 
 ## [v0.25.0] - 2026-07-31
 

@@ -2866,6 +2866,52 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('toasts dismiss themselves, cap their stack, and stop repeating @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const container = document.getElementById('toast-container');
+    container.replaceChildren();
+
+    // Hovering pauses dismissal; leaving used to never restart it, so any
+    // toast the pointer crossed stayed on screen forever.
+    OS.toast('hover me', 'info');
+    const el = container.lastElementChild;
+    el.dispatchEvent(new MouseEvent('mouseenter'));
+    await new Promise(r => setTimeout(r, 300));
+    const heldWhileHovered = container.contains(el);
+    el.dispatchEvent(new MouseEvent('mouseleave'));
+    await new Promise(r => setTimeout(r, 1800));
+    const goneAfterLeave = !container.contains(el);
+
+    // The stack is capped rather than growing over the canvas.
+    container.replaceChildren();
+    for (let i = 0; i < 9; i += 1) OS.toast(`message ${i}`, 'info');
+    const capped = container.children.length;
+
+    // One slider drag with nothing selected says it once, not once per tick.
+    container.replaceChildren();
+    OS.canvas.discardActiveObject();
+    OS._adjustTargetWarned = false;
+    let warnings = 0;
+    const realToast = OS.toast.bind(OS);
+    OS.toast = (msg, type) => { if (/Select an image to adjust/.test(msg)) warnings += 1; return realToast(msg, type); };
+    for (let i = 0; i < 5; i += 1) {
+      OS.liveAdjust();
+      await new Promise(r => setTimeout(r, 120));
+    }
+    OS.toast = realToast;
+
+    return { heldWhileHovered, goneAfterLeave, capped, warnings };
+  });
+
+  expect(result.heldWhileHovered).toBe(true);
+  expect(result.goneAfterLeave).toBe(true);
+  expect(result.capped).toBeLessThanOrEqual(4);
+  expect(result.warnings).toBe(1);
+});
+
 test('brush and eraser strokes become layer pixels, not draggable paths @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
