@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-hLPb7P9jpRC9Nk2Oi61gSik4UBOM6fBUHNutiFO2QOk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-RN3e+OA9ttH3ps8eu0j5c4dFCXpQv52MHxhUtvlUug4=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -105,8 +105,8 @@ const OPENSHOP_BOOT_ASSETS = Object.freeze([
     }),
     Object.freeze({
         name:'ag-psd',
-        url:'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
-        integrity:'sha384-kla4KJzEnshZnuWyJ8+AF8KEX0YZ2rpxTaQpDtDUmDdUv7jK94knsRx/lcRZ/HF4'
+        url:'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
+        integrity:'sha384-9dhx2Gx3cKvCuBJwLZxPUmqz77LqKJIAzYABzUhCaCPDK5Rz+CFt6/jeKu84tBA6'
     }),
     Object.freeze({
         name:'jsPDF',
@@ -3004,8 +3004,8 @@ const OS = {
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
     _runtimeAssets: Object.freeze({
         psdDecoder: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
-            integrity:'sha384-kla4KJzEnshZnuWyJ8+AF8KEX0YZ2rpxTaQpDtDUmDdUv7jK94knsRx/lcRZ/HF4',
+            url:'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
+            integrity:'sha384-9dhx2Gx3cKvCuBJwLZxPUmqz77LqKJIAzYABzUhCaCPDK5Rz+CFt6/jeKu84tBA6',
             type:'application/javascript'
         }),
         photonModule: Object.freeze({
@@ -5416,8 +5416,12 @@ self.onmessage = function(event) {
             lib.initializeCanvas(function(width, height) { return new OffscreenCanvas(width, height); });
         }
         self.postMessage({ id: id, type: 'progress', message: 'Checking layer budget…' });
-        // ag-psd has no decode-time memory option, so bound the work before any
-        // pixels are allocated: parse structure only, then add up layer areas.
+        // Two passes, for two different limits. This one is the application's:
+        // parse structure only, then add up layer areas so a hostile file is
+        // rejected before a single pixel is allocated, and so per-layer and
+        // layer-count ceilings are enforced (ag-psd has neither). The decode
+        // pass below then also hands ag-psd its own totalMemoryLimit, which
+        // stops the allocator dead rather than trusting this estimate.
         var limits = event.data.limits;
         var structure = lib.readPsd(new Uint8Array(event.data.buffer), {
             skipLayerImageData: true,
@@ -5453,7 +5457,10 @@ self.onmessage = function(event) {
         const psd = lib.readPsd(new Uint8Array(event.data.buffer), {
             useImageData: true,
             skipThumbnail: true,
-            skipLinkedFilesData: true
+            skipLinkedFilesData: true,
+            // ag-psd 31 enforces this inside the allocator and throws
+            // "Exceeded memory limit" rather than committing the allocation.
+            totalMemoryLimit: limits.maxDecodedBytes
         });
         let layerCount = 0;
         let decodedBytes = 0;
