@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-miU52OTRilqKKFLf7VfVg2pfTeaDZxUMKUaGzmiX9wc=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-GtVcmPwL0+f5KGQS9ib9kEzwpBXEiIXiw9kV+QVahXY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3541,7 +3541,7 @@ const OS = {
     _macroRecording: false, _macroPlaying: false, _macroSteps: [],
     _liquifyData: null,
     _symmetryMode: 'off',
-    _prefs: { gridSize: 20, historyStates: 60, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false },
+    _prefs: { gridSize: 20, historyStates: 60, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false, vectorStrokes: false },
     _importLimits: {
         maxJsonBytes: 10 * 1024 * 1024,
         maxImageBytes: 100 * 1024 * 1024,
@@ -3646,8 +3646,16 @@ const OS = {
                 e.path.stroke = 'rgba(0,0,0,1)';
             }
             this.layers[this.activeLayerIdx].objects.push(e.path);
-            if (this._symmetryMode !== 'off') this._mirrorPath(e.path);
-            this.saveHistory('Draw'); this.updateLayersPanel();
+            (async () => {
+                const mirrors = this._symmetryMode !== 'off' ? await this._mirrorPath(e.path) : [];
+                if (this._prefs?.vectorStrokes) {
+                    this.saveHistory('Draw'); this.updateLayersPanel();
+                    return;
+                }
+                // Composite into the layer instead of leaving a draggable path.
+                // _replaceActiveImage inside there records the history entry.
+                await this._commitStrokeToLayer(e.path, mirrors);
+            })();
         });
         window.addEventListener('resize', () => { this.resizeCanvas(); this.drawGrid(); this.drawRulers(); });
         window.addEventListener('beforeunload', e => {
@@ -12098,6 +12106,7 @@ self.onmessage = async function(event) {
             <div class="pref-section">
                 <h4>Layers</h4>
                 <div class="pref-row"><label>Stack new objects in the active layer</label><input id="pref-stack" type="checkbox" ${this._prefs.stackNewObjects ? 'checked' : ''}></div>
+                <div class="pref-row"><label>Keep brush strokes as editable paths</label><input id="pref-vector" type="checkbox" ${this._prefs.vectorStrokes ? 'checked' : ''}></div>
             </div>
             <div class="pref-section">
                 <h4>Performance</h4>
@@ -12137,6 +12146,7 @@ self.onmessage = async function(event) {
         this.gridSize = grid.value;
         this._prefs.snapTolerance = snap.value;
         this._prefs.stackNewObjects = Boolean(overlay.querySelector('#pref-stack')?.checked);
+        this._prefs.vectorStrokes = Boolean(overlay.querySelector('#pref-vector')?.checked);
         this.maxHistory = history.value;
         const accent = overlay.querySelector('#pref-accent').value;
         document.documentElement.style.setProperty('--accent', accent);
@@ -14786,46 +14796,131 @@ self.onmessage = async function(e) {
         this._symmetryMode = mode;
         this.toast(mode === 'off' ? 'Symmetry off' : `Symmetry: ${mode}`, 'info');
     },
-    _mirrorPath(path) {
+    // Issue #3: a brush stroke stayed a selectable, draggable Fabric path
+    // sitting above the layer, and an eraser stroke was a path too — so its
+    // "erasure" could be dragged around afterwards, which is what the report
+    // calls unreasonable. A stroke is now composited into the layer's pixels
+    // and the path is discarded.
+    //
+    // The layer gains a raster surface the first time it is painted on. If it
+    // already holds an image, that image is what gets painted.
+    _layerRasterTarget(layer) {
+        return layer?.objects.find(o => o.type === 'image' && o.name !== '__boundary__') || null;
+    },
+    async _ensureLayerRaster(layer) {
+        const existing = this._layerRasterTarget(layer);
+        if (existing) return existing;
+        const width = Math.max(1, Math.round(this.canvasW));
+        const height = Math.max(1, Math.round(this.canvasH));
+        const blank = document.createElement('canvas');
+        blank.width = width;
+        blank.height = height;
+        const raster = await fabric.Image.fromURL(blank.toDataURL('image/png'));
+        raster.set({
+            left:0, top:0, selectable:true, name:layer.name,
+            _openShopObjectId:this._newDocumentId('object')
+        });
+        this.canvas.add(raster);
+        layer.objects.push(raster);
+        return raster;
+    },
+    // Draw a finished stroke into an image's own pixel grid. The path carries
+    // document coordinates; the image may sit anywhere under any transform, so
+    // the stroke goes through the inverse of that transform to land on the
+    // right pixels at the right size.
+    _renderPathsIntoImage(paths, image) {
+        const element = image.getElement();
+        const width = element.naturalWidth || element.width;
+        const height = element.naturalHeight || element.height;
+        const surface = document.createElement('canvas');
+        surface.width = width;
+        surface.height = height;
+        const ctx = surface.getContext('2d');
+        ctx.drawImage(element, 0, 0);
+        const inverse = fabric.util.invertTransform(image.calcTransformMatrix());
+        paths.forEach(path => {
+            ctx.save();
+            // Fabric object space is centred, so shift to the pixel origin.
+            ctx.translate(width / 2, height / 2);
+            ctx.transform(inverse[0], inverse[1], inverse[2], inverse[3], inverse[4], inverse[5]);
+            // render() applies the path's own transform and its composite
+            // operation, which is what makes destination-out erase.
+            path.render(ctx);
+            ctx.restore();
+        });
+        return surface;
+    },
+    async _commitStrokeToLayer(path, extraPaths = []) {
+        const layer = this.layers[this.activeLayerIdx];
+        const strokes = [path, ...extraPaths];
+        try {
+            const raster = await this._ensureLayerRaster(layer);
+            const surface = this._renderPathsIntoImage(strokes, raster);
+            strokes.forEach(stroke => {
+                this.canvas.remove(stroke);
+                const index = layer.objects.indexOf(stroke);
+                if (index >= 0) layer.objects.splice(index, 1);
+            });
+            const committed = await this._replaceActiveImage(raster, surface.toDataURL('image/png'), 'Draw');
+            if (!committed) return false;
+            // Painting is not selecting; leave nothing selected behind.
+            this.canvas.discardActiveObject();
+            this.canvas.requestRenderAll();
+            return true;
+        } catch (error) {
+            console.error('Stroke commit failed:', error);
+            this.toast('Could not paint onto this layer: ' + error.message, 'error');
+            return false;
+        }
+    },
+    // Clones are async, so the caller gets a promise for the mirrored paths —
+    // the stroke compositor needs them in hand before it flattens anything.
+    async _mirrorPath(path) {
         const cx = this.canvasW / 2, cy = this.canvasH / 2;
         const mode = this._symmetryMode;
-        const mirrors = [];
+        const clone = () => new Promise((resolve, reject) => {
+            try { path.clone(c => (c ? resolve(c) : reject(new Error('clone returned nothing')))); }
+            catch (error) { reject(error); }
+        });
+        const place = [];
         if (mode === 'horizontal' || mode === 'both') {
-            path.clone(c => {
-                c.set({ flipX: true, left: 2 * cx - path.left - path.width * path.scaleX });
-                this.canvas.add(c); this.layers[this.activeLayerIdx].objects.push(c);
-                mirrors.push(c);
-            });
+            place.push(c => c.set({ flipX: true, left: 2 * cx - path.left - path.width * path.scaleX }));
         }
         if (mode === 'vertical' || mode === 'both') {
-            path.clone(c => {
-                c.set({ flipY: true, top: 2 * cy - path.top - path.height * path.scaleY });
-                this.canvas.add(c); this.layers[this.activeLayerIdx].objects.push(c);
-                mirrors.push(c);
-            });
+            place.push(c => c.set({ flipY: true, top: 2 * cy - path.top - path.height * path.scaleY }));
         }
         if (mode === 'both') {
-            path.clone(c => {
-                c.set({ flipX: true, flipY: true, left: 2 * cx - path.left - path.width * path.scaleX, top: 2 * cy - path.top - path.height * path.scaleY });
-                this.canvas.add(c); this.layers[this.activeLayerIdx].objects.push(c);
-                mirrors.push(c);
-            });
+            place.push(c => c.set({
+                flipX: true, flipY: true,
+                left: 2 * cx - path.left - path.width * path.scaleX,
+                top: 2 * cy - path.top - path.height * path.scaleY
+            }));
         }
         if (mode === 'radial') {
             const folds = 6;
             for (let i = 1; i < folds; i++) {
                 const angle = (360 / folds) * i;
-                path.clone(c => {
+                place.push(c => {
                     const rad = angle * Math.PI / 180;
                     const px = path.left + path.width * path.scaleX / 2, py = path.top + path.height * path.scaleY / 2;
                     const nx = cx + (px - cx) * Math.cos(rad) - (py - cy) * Math.sin(rad);
                     const ny = cy + (px - cx) * Math.sin(rad) + (py - cy) * Math.cos(rad);
                     c.set({ left: nx - c.width * c.scaleX / 2, top: ny - c.height * c.scaleY / 2, angle: angle });
-                    this.canvas.add(c); this.layers[this.activeLayerIdx].objects.push(c);
                 });
             }
         }
+        const settled = await Promise.allSettled(place.map(async apply => {
+            const c = await clone();
+            apply(c);
+            return c;
+        }));
+        const mirrors = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        mirrors.forEach(c => {
+            this.canvas.add(c);
+            this.layers[this.activeLayerIdx].objects.push(c);
+        });
         this.canvas.renderAll();
+        return mirrors;
     },
 
     // ====================== THEME SYSTEM ======================

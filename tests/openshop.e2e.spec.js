@@ -2866,6 +2866,83 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('brush and eraser strokes become layer pixels, not draggable paths @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Issue #3: a stroke stayed a selectable Fabric path above the layer, so an
+  // eraser's "erasure" could be dragged around afterwards.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(120, 90, '#ffffff');
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    OS.setTool('brush');
+
+    const stroke = (opts) => {
+      const path = new fabric.Path('M 20 20 L 80 20', {
+        stroke: '#ff0000', strokeWidth: 12, fill: null, strokeLineCap: 'round', ...opts
+      });
+      OS.canvas.add(path);
+      OS.canvas.fire('path:created', { path });
+      return path;
+    };
+    const settle = () => new Promise(r => setTimeout(r, 500));
+    const pixel = (x, y) => {
+      const d = OS._readDocumentImageData().data;
+      const i = (y * 120 + x) * 4;
+      return [d[i], d[i + 1], d[i + 2], d[i + 3]];
+    };
+
+    const brushPath = stroke();
+    await settle();
+    const afterBrush = {
+      pathOnCanvas: OS.canvas.getObjects().includes(brushPath),
+      layerTypes: OS.layers[OS.activeLayerIdx].objects.map(o => o.type),
+      onStroke: pixel(50, 20),
+      offStroke: pixel(100, 70)
+    };
+
+    // Erasing removes those pixels rather than laying a path over them.
+    OS.setTool('eraser');
+    stroke({ globalCompositeOperation: 'destination-out', stroke: 'rgba(0,0,0,1)' });
+    await settle();
+    const afterErase = { onStroke: pixel(50, 20) };
+
+    // Undo puts the painted pixels back.
+    OS.undo();
+    await settle();
+    const afterUndo = { onStroke: pixel(50, 20) };
+
+    // With the opt-out on, the stroke stays an editable path.
+    OS._prefs.vectorStrokes = true;
+    OS.setTool('brush');
+    const vectorPath = stroke();
+    await settle();
+    const afterOptOut = {
+      pathOnCanvas: OS.canvas.getObjects().includes(vectorPath),
+      inLayer: OS.layers[OS.activeLayerIdx].objects.includes(vectorPath),
+      type: vectorPath.type
+    };
+    OS._prefs.vectorStrokes = false;
+
+    return { afterBrush, afterErase, afterUndo, afterOptOut };
+  });
+
+  // The path is gone; the layer holds one raster carrying the paint.
+  expect(result.afterBrush.pathOnCanvas).toBe(false);
+  expect(result.afterBrush.layerTypes).toEqual(['image']);
+  expect(result.afterBrush.onStroke).toEqual([255, 0, 0, 255]);
+  expect(result.afterBrush.offStroke[3]).toBe(0);
+  // Erasing clears the alpha it was drawn over.
+  expect(result.afterErase.onStroke[3]).toBe(0);
+  // And undo brings the paint back.
+  expect(result.afterUndo.onStroke[3]).toBeGreaterThan(200);
+  // The preference keeps the old vector behaviour available.
+  expect(result.afterOptOut.pathOnCanvas).toBe(true);
+  expect(result.afterOptOut.inLayer).toBe(true);
+  // Still a path, not flattened into the raster.
+  expect(result.afterOptOut.type).toBe('path');
+});
+
 test('object tools create their own layer instead of stacking @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

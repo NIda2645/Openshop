@@ -2,6 +2,11 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Paint onto the layer instead of over it. A brush stroke stayed a selectable, draggable Fabric path sitting above the layer, and an eraser stroke was a path too — so its "erasure" could be dragged around afterwards, which is the second complaint in issue #3. A finished stroke is now composited into the layer's pixels and the path discarded; the layer gains a raster the first time it is painted on, or paints into the image it already holds, wherever that image sits and whatever transform it carries. Symmetry mirrors are composited in the same pass. Preferences has a "Keep brush strokes as editable paths" option for the previous behaviour
+
 ## [v0.25.0] - 2026-07-31
 
 ### Fixed
