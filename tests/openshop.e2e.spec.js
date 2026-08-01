@@ -2202,6 +2202,46 @@ test('keeps dialog actions visible and operable across narrow portrait and lands
   }
 });
 
+test('keeps focus inside an open dialog when something behind it claims focus @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  // The welcome overlay only fades; it keeps its layout box for the length of
+  // the transition, and the class change that dismisses it is what wakes the
+  // observer that adopts dialogs. It must not be re-adopted on the way out.
+  expect(await page.evaluate(() => ({
+    active: OS._activeModal()?.id ?? null,
+    stack: OS._modalStack.map(entry => entry.overlay.id)
+  }))).toEqual({ active: null, stack: [] });
+  await page.evaluate(() => OS.showPreferences());
+  const overlay = page.locator('.modal-overlay').last();
+  await expect(overlay.locator('.modal')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('.modal-overlay'))))
+    .toBe(true);
+
+  // The platform restores focus behind a popover in a queued task, and the
+  // menu bar re-focuses its own row the same way, so a dialog can lose focus
+  // frames after it opened.
+  const escaped = await page.evaluate(async () => {
+    const root = document.querySelector('.menu-bar > .menu-item');
+    root.focus();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const stolen = document.activeElement === root;
+    return { stolen, containedTo: document.activeElement?.closest('.modal-overlay') ? 'dialog' : 'outside' };
+  });
+  expect(escaped.stolen).toBe(false);
+  expect(escaped.containedTo).toBe('dialog');
+
+  // ...and the next key still reaches the dialog rather than opening the menu
+  // whose own auto popover would evict the dialog from the top layer.
+  await overlay.locator('#pref-grid').fill('37');
+  await overlay.locator('[data-modal-action]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.modal-overlay')).toHaveCount(0);
+  expect(await page.evaluate(() => OS.gridSize)).toBe(37);
+  expect(await page.locator('.menu-item.open').count()).toBe(0);
+});
+
 test('renders persisted UI data without activating markup', async ({ page }) => {
   await openApp(page);
   await page.evaluate(() => {
@@ -3288,7 +3328,7 @@ test('collects diagnostics a bug report can attach @cross-browser', async ({ pag
       // Only scalars survive; nested objects are dropped.
       jobDetail: report.events.find(e => e.kind === 'job')?.detail,
       // A report must not carry what the user was working on.
-      leaksDocName: serialised.includes(OS._docName || ' nope'),
+      leaksDocName: serialised.includes(OS._docName || 'nope'),
       afterClear: (() => { OS.clearDiagnostics(); return OS.buildDiagnosticsReport().events.length; })()
     };
   });

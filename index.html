@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-+u62dvsdEQAy8P9IGovklCeoPnMcQXoTK7SUf1EsxlI=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-iU+DmYO/5hCD56GUcB6iPkz60TITlMNHEKH9XbSCGAM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -15198,7 +15198,15 @@ self.onmessage = async function(e) {
         if (returnTo && document.contains(returnTo) && this._isVisibleElement(returnTo) && typeof returnTo.focus === 'function') returnTo.focus();
     },
     _syncManagedDialog(el) {
-        if (this._isVisibleElement(el)) this._adoptModal(el);
+        // These two nodes are never removed from the document, they fade out —
+        // and for the length of that fade they keep their layout box. Judging
+        // them by client rects alone re-adopted the dialog the app had just
+        // released (the class change that dismisses one is exactly what wakes
+        // this observer), so `_activeModal()` still named it for another 400ms.
+        const dismissed = el.hasAttribute('inert')
+            || el.getAttribute('aria-hidden') === 'true'
+            || el.classList.contains('hidden');
+        if (!dismissed && this._isVisibleElement(el)) this._adoptModal(el);
         else this._releaseModal(el);
     },
     // The stack can retain entries whose overlay was removed from the DOM
@@ -15255,6 +15263,28 @@ self.onmessage = async function(e) {
         });
 
         document.addEventListener('keydown', event => this._onModalTabKey(event), true);
+        // A popover does not trap focus the way a modal `<dialog>` does, so the
+        // Tab trap above only covers the keys it sees. Both the platform's
+        // popover focus restoration and the menu bar's own re-focus land in a
+        // queued task, either of which can drop focus behind an open dialog
+        // some frames after it opened; the next Enter then reached the menu bar
+        // and its own auto popover evicted the dialog from the top layer.
+        const reclaimModalFocus = () => {
+            const top = this._activeModal();
+            if (!top || top === document.activeElement || top.contains(document.activeElement)) return;
+            const target = this._focusablesIn(top)[0];
+            if (target) { target.focus(); return; }
+            top.setAttribute('tabindex', '-1');
+            top.focus();
+        };
+        document.addEventListener('focusin', event => {
+            const top = this._activeModal();
+            if (!top || top === event.target || top.contains(event.target)) return;
+            reclaimModalFocus();
+            // WebKit discards a focus() issued from inside focus dispatch, so
+            // the synchronous reclaim has to be reaffirmed once it settles.
+            queueMicrotask(reclaimModalFocus);
+        });
     },
 
     // ====================== DROPZONE ======================

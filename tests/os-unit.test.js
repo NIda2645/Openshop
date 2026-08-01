@@ -1826,7 +1826,17 @@ describe('release metadata', () => {
   it('ships no stray control bytes', () => {
     // A NUL that reached a comment once silently broke the CSP hash and the
     // app would not boot at all; the error names the policy, not the cause.
-    for (const name of ['index.html', 'sw.js']) {
+    // The test files are covered too: git and grep call a file with a NUL in it
+    // binary, so a stray byte there hides every later diff and search hit.
+    for (const name of [
+      'index.html',
+      'sw.js',
+      'tools/security.mjs',
+      'tests/server.mjs',
+      'tests/os-unit.test.js',
+      'tests/openshop.e2e.spec.js',
+      'tests/offline.e2e.spec.js'
+    ]) {
       const bytes = readFileSync(join(process.cwd(), name));
       const offenders = [];
       for (let i = 0; i < bytes.length; i += 1) {
