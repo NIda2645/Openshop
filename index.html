@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-KsZhPXavQdLDeSmtyjNJY1Yiw2bGruacNZA3KwVXzTs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-VBp2J2wXS/XqAPzMayDXoV1ElyWh3/G8Ez6AZpE8NHE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -7111,9 +7111,21 @@ self.onmessage = function(event) {
     // Reselect: restore last cleared selection
     reselectSelection() {
         if (!this._lastSelection) { this.toast('No previous selection to restore', 'info'); return; }
-        this._selectionMask = this._lastSelection.mask;
-        this._selectionBounds = this._lastSelection.bounds;
-        if (this._selectionBounds) {
+        // Copy on the way out as well as in. Handing back the stored object
+        // meant a later Invert or Grow mutated it in place, so Reselect could
+        // never return to that selection a second time.
+        const stored = this._lastSelection;
+        this._selectionMask = stored.mask
+            ? { mask:new Uint8Array(stored.mask.mask), w:stored.mask.w, h:stored.mask.h }
+            : null;
+        this._selectionBounds = stored.bounds ? { ...stored.bounds } : null;
+        if (this._selectionMask) {
+            // Mask bounds are document space, so the overlay needs the viewport
+            // applied — writing them as raw CSS pixels put the marching ants in
+            // the wrong place at any zoom but 100%.
+            this._placeSelectionBox({ borderRadius:'0' });
+        } else if (this._selectionBounds) {
+            // A marquee with no mask keeps its own screen-space box.
             const el = document.getElementById('selection-overlay');
             el.style.display = 'block';
             el.style.left = this._selectionBounds.x + 'px';
@@ -7813,9 +7825,19 @@ self.onmessage = function(event) {
     applyCrop() {
         if(!this._cropRegion) return;
         const r=this._cropRegion, vpt=this.canvas.viewportTransform;
-        const cx=(r.x-vpt[4])/vpt[0], cy=(r.y-vpt[5])/vpt[3];
-        const cw=r.w/vpt[0], ch=r.h/vpt[3];
+        const rawX=(r.x-vpt[4])/vpt[0], rawY=(r.y-vpt[5])/vpt[3];
+        const rawW=r.w/vpt[0], rawH=r.h/vpt[3];
+        // The crop box is only clamped to the viewport edge while dragging, and
+        // its handles are not clamped at all, so it could describe a rectangle
+        // partly outside the document. That was passed straight to toDataURL
+        // and produced a document with blank regions and no warning.
+        const docW = Math.max(1, Math.round(this.canvasW)), docH = Math.max(1, Math.round(this.canvasH));
+        const cx = Math.min(Math.max(0, rawX), docW - 1);
+        const cy = Math.min(Math.max(0, rawY), docH - 1);
+        const cw = Math.min(rawW - (cx - rawX), docW - cx);
+        const ch = Math.min(rawH - (cy - rawY), docH - cy);
         if (cw < 1 || ch < 1) { this.toast(this._t('Crop region too small'),'error'); return; }
+        if (cw * ch > this._importLimits.maxImagePixels) { this.toast('Crop region exceeds the maximum image size', 'error'); return; }
         const command = this._makeCommand('canvas.crop', { x:cx, y:cy, width:cw, height:ch });
         const result = this._executeCommand(command);
         return Promise.resolve(result).then(success => {
@@ -10723,7 +10745,11 @@ self.onmessage = function(event) {
             this._advanceDocumentGeneration('A recovered project replaced this operation');
             await this._loadDocumentState(json, { fitToViewport:true });
             if (asCopy) {
-                this._documentId = this._newDocumentId('document');
+                // Assigning the field directly left _documentIdAliases pointing
+                // at the document this copy was branched from, so the copy was
+                // treated as the same lineage — and saving it cleared the
+                // source document's recovery generations along with its own.
+                this._adoptDocumentId(this._newDocumentId('document'));
                 this._docName = `${this._docName || 'Recovered Project'} Copy`.slice(0, 100);
                 this._activeRecoverySourceFilename = null;
             } else {
