@@ -26,6 +26,7 @@ All notable changes to Openshop will be documented in this file.
 - Let Reselect work more than once. It handed back the stored selection object rather than a copy, so a later Invert or Grow mutated the stored one in place and there was nothing to return to a second time. Its marching-ants box also went back as raw CSS pixels, which is only correct at 100% zoom for a mask selection
 - Clamp the crop rectangle to the document. Dragging clamped only to the viewport edge and the handles were not clamped at all, so a crop could describe a rectangle partly outside the document — passed straight through to the export and producing a new document with blank regions and no warning. The result is also checked against the maximum image size
 - Stop "open as copy" from deleting the source document's recovery generations. The copy assigned its new id directly instead of adopting it, so the alias list still pointed at the document it was branched from and the two counted as one lineage; saving the copy cleared both
+- Only initialise the editor once when the welcome screen is dismissed. A PWA file launch dismisses it after an await chain, so clicking through while that resolved ran the whole initialisation block again — a second flyout host and a duplicate set of document-level paste, drop and keydown listeners, so one Ctrl+Z performed two undos and one paste inserted the image twice
 
 ## [v0.24.0] - 2026-07-30
 

@@ -2866,6 +2866,44 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('dismissing the welcome screen twice does not double-bind the editor @cross-browser', async ({ page }) => {
+  await openApp(page);
+
+  // A PWA file launch calls dismissWelcome() after an await chain, so it can
+  // land after the user has already clicked through — which used to run the
+  // whole initialisation block a second time and duplicate every
+  // document-level listener.
+  const result = await page.evaluate(async () => {
+    OS.dismissWelcome();
+    OS.dismissWelcome();
+    OS.dismissWelcome();
+    await new Promise(r => setTimeout(r, 450));
+
+    OS.createNewDocument(60, 40, '#ffffff');
+
+    // Count how often one keystroke reaches the handler: a duplicate
+    // registration is exactly what the double dismissal used to create.
+    let undos = 0;
+    const realUndo = OS.undo.bind(OS);
+    OS.undo = () => { undos += 1; return realUndo(); };
+    let pastes = 0;
+    const realPaste = OS._pasteSelection.bind(OS);
+    OS._pasteSelection = () => { pastes += 1; };
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true }));
+    await new Promise(r => setTimeout(r, 250));
+
+    OS.undo = realUndo;
+    OS._pasteSelection = realPaste;
+    return { flyoutHosts: document.querySelectorAll('#flyout-host').length, undos, pastes };
+  });
+
+  expect(result.flyoutHosts).toBeLessThanOrEqual(1);
+  expect(result.undos).toBe(1);
+  expect(result.pastes).toBe(1);
+});
+
 test('applying a filter commits the value on screen, not the last debounce tick @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

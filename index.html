@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-VBp2J2wXS/XqAPzMayDXoV1ElyWh3/G8Ez6AZpE8NHE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-u12EkZ3zqVc4Bg8v+dlZhGOeXbqYgWYRNxaHAhe5Fm4=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -9238,6 +9238,13 @@ self.onmessage = function(event) {
         return card;
     },
     dismissWelcome() {
+        // Not idempotent, and reachable twice: a PWA file launch calls this
+        // after an await chain, so clicking "New Image" while that resolves ran
+        // the whole initialisation block again — a second flyout host and a
+        // duplicate set of document-level paste/drop/keydown listeners, so one
+        // Ctrl+Z performed two undos and one paste inserted the image twice.
+        if (this._welcomeDismissed) return;
+        this._welcomeDismissed = true;
         const el = document.getElementById('welcome-overlay');
         el.classList.add('hidden');
         // The fade only drops opacity, so for 400ms — and forever, if the
