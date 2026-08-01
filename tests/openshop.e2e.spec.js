@@ -2283,6 +2283,11 @@ test('menus stay open while the pointer travels from the title into them @cross-
     expect(state.open).toBe(true);
     expect(state.rowReachable).toBe(true);
   }
+
+  // This test deliberately leaves the pointer resting inside a dropdown, which
+  // :hover keeps painted. Park it away from the menubar so the next test does
+  // not inherit an open menu.
+  await page.mouse.move(600, 500);
 });
 
 test('Tab moves focus through the editor instead of toggling panels @cross-browser', async ({ page }) => {

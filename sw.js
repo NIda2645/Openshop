@@ -1,6 +1,6 @@
 'use strict';
 
-const SHELL_REVISION = '0.25.0-r1';
+const SHELL_REVISION = '0.26.0-r1';
 const STATE_SCHEMA = 1;
 const SHELL_CACHE_PREFIX = 'openshop-shell-';
 const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SHELL_REVISION}`;
