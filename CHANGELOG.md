@@ -2,7 +2,7 @@
 
 All notable changes to Openshop will be documented in this file.
 
-## [Unreleased]
+## [v0.25.0] - 2026-07-31
 
 ### Fixed
 - Give the Tab key back to focus navigation. The panel toggle ran `preventDefault()` on every Tab, so focus never advanced anywhere in the editor and the chrome blinked instead — the app was unusable by keyboard and failed WCAG 2.1.1 and 2.4.3. Tab now traverses; it toggles panels only while the canvas is the surface being worked on, which is the case the Photoshop binding was for, and the toggle is also in the command palette
