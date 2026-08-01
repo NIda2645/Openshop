@@ -4797,6 +4797,126 @@ test('previews Levels and Color Balance without a full-resolution PNG per tick',
   expect(result.lutWorstError).toBe(0);
 });
 
+test('keeps 4K adjustment and filter previews responsive while Apply stays full resolution', async ({ page }) => {
+  test.setTimeout(60000);
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const width = 4000, height = 3000;
+    const source = document.createElement('canvas');
+    source.width = width;
+    source.height = height;
+    const sourceContext = source.getContext('2d');
+    sourceContext.fillStyle = 'rgb(40,80,120)';
+    sourceContext.fillRect(0, 0, width, height);
+
+    const image = new fabric.Image(source, { left:0, top:0, name:'4K Preview' });
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+    OS.canvas.renderAll();
+    const displayedBefore = [image.getScaledWidth(), image.getScaledHeight()];
+
+    OS.showFilterDialog('Brightness');
+    const panel = document.getElementById('filter-dialog-overlay');
+    const slider = panel.querySelector('#fp-bright');
+    let frames = 0;
+    let measuring = true;
+    const started = performance.now();
+    const countFrame = () => {
+      if (!measuring) return;
+      frames += 1;
+      requestAnimationFrame(countFrame);
+    };
+    requestAnimationFrame(countFrame);
+    const previewDurations = [];
+
+    // Space ticks far enough apart that every one renders. The old path ran
+    // Fabric over all 12 million pixels per tick and stalled animation frames.
+    for (let tick = 0; tick < 8; tick += 1) {
+      slider.value = String(10 + tick * 5);
+      slider.dispatchEvent(new Event('input', { bubbles:true }));
+      await new Promise(resolve => setTimeout(resolve, 90));
+      if (OS._lastFilterRenderMetrics?.preview) previewDurations.push(OS._lastFilterRenderMetrics.durationMs);
+    }
+    await new Promise(resolve => setTimeout(resolve, 90));
+    measuring = false;
+    const elapsed = performance.now() - started;
+    const filterPreview = { ...OS._lastFilterRenderMetrics };
+    const filterPreviewSize = [image.getElement().width, image.getElement().height];
+    const displayedDuringPreview = [image.getScaledWidth(), image.getScaledHeight()];
+    const finalBrightness = Number(slider.value);
+
+    OS._filterApply();
+    const filterApply = { ...OS._lastFilterRenderMetrics };
+    const filterApplySize = [image.getElement().width, image.getElement().height];
+    const appliedPixel = [...image.getElement().getContext('2d').getImageData(0, 0, 1, 1).data];
+
+    // A one-pixel full-resolution reference exercises the same Fabric filter
+    // maths without allocating a second 12 MP output.
+    const referenceSource = document.createElement('canvas');
+    referenceSource.width = 1;
+    referenceSource.height = 1;
+    const referenceContext = referenceSource.getContext('2d');
+    referenceContext.fillStyle = 'rgb(40,80,120)';
+    referenceContext.fillRect(0, 0, 1, 1);
+    const reference = new fabric.Image(referenceSource);
+    reference.filters = [new fabric.Image.filters.Brightness({ brightness:finalBrightness / 250 })];
+    reference.applyFilters();
+    const referencePixel = [...reference.getElement().getContext('2d').getImageData(0, 0, 1, 1).data];
+
+    // The persistent adjustment strip uses the same preview pipe and still
+    // forces a full-size render when its Apply button is used.
+    document.getElementById('adj-bright').value = '25';
+    document.getElementById('adj-contrast').value = '0';
+    document.getElementById('adj-sat').value = '0';
+    document.getElementById('adj-hue').value = '0';
+    document.getElementById('adj-blur').value = '0';
+    OS.liveAdjust();
+    await new Promise(resolve => setTimeout(resolve, 120));
+    const adjustmentPreview = { ...OS._lastFilterRenderMetrics };
+    const adjustmentPreviewSize = [image.getElement().width, image.getElement().height];
+    OS.applyAdjustments();
+    const adjustmentApply = { ...OS._lastFilterRenderMetrics };
+    const adjustmentApplySize = [image.getElement().width, image.getElement().height];
+
+    return {
+      fps: frames * 1000 / elapsed,
+      previewDurations,
+      limit: OS._previewPixelLimit,
+      filterPreview,
+      filterPreviewSize,
+      filterApply,
+      filterApplySize,
+      adjustmentPreview,
+      adjustmentPreviewSize,
+      adjustmentApply,
+      adjustmentApplySize,
+      displayedBefore,
+      displayedDuringPreview,
+      appliedPixel,
+      referencePixel
+    };
+  });
+
+  expect(result.fps, JSON.stringify(result)).toBeGreaterThan(30);
+  for (const preview of [result.filterPreview, result.adjustmentPreview]) {
+    expect(preview.capped).toBe(true);
+    expect(preview.renderWidth * preview.renderHeight).toBeLessThanOrEqual(result.limit);
+    expect(preview.fullWidth * preview.fullHeight).toBe(4000 * 3000);
+  }
+  expect(result.filterPreviewSize[0] * result.filterPreviewSize[1]).toBeLessThanOrEqual(result.limit);
+  expect(result.adjustmentPreviewSize[0] * result.adjustmentPreviewSize[1]).toBeLessThanOrEqual(result.limit);
+  expect(result.displayedDuringPreview[0]).toBeCloseTo(result.displayedBefore[0], 3);
+  expect(result.displayedDuringPreview[1]).toBeCloseTo(result.displayedBefore[1], 3);
+  expect(result.filterApply.preview).toBe(false);
+  expect(result.adjustmentApply.preview).toBe(false);
+  expect(result.filterApplySize).toEqual([4000, 3000]);
+  expect(result.adjustmentApplySize).toEqual([4000, 3000]);
+  expect(result.appliedPixel).toEqual(result.referencePixel);
+});
+
 test('resolves one mobile layout rather than two blocks that fight each other', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openApp(page);

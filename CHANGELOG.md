@@ -13,6 +13,9 @@ All notable changes to Openshop will be documented in this file.
 - Decode EXIF-bearing JPEGs exactly once. Browsers already apply the orientation while decoding, so OpenShop now neutralizes the copied tag before baking its own pixel transform instead of rotating camera photos twice
 - Carry the current verified offline shell into the next worker's trusted predecessor set so a failed update can still roll back after the shell revision advances
 
+### Performance
+- Keep adjustment and filter sliders responsive on 4K images by reusing a capped Canvas2D preview pipe; Apply still runs Fabric's normal filter path over the original full-resolution pixels
+
 ### Testing
 - Run the full Chromium browser suite over both `file://` and localhost, add real Photoshop PSD, animated GIF, and EXIF JPEG fixtures plus clipboard and drag-and-drop coverage, and enforce coverage floors in the release gate
 
