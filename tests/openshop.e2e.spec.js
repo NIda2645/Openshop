@@ -2866,6 +2866,43 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('stays usable in forced-colors mode', async ({ page }) => {
+  // The chrome is glassmorphic — translucent panels over a blur — which in
+  // Windows High Contrast renders as invisible controls on an invisible
+  // background. There was no forced-colors handling at all.
+  await page.emulateMedia({ forcedColors: 'active' });
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(() => {
+    const read = (el, prop) => getComputedStyle(el).getPropertyValue(prop);
+    const glassy = [...document.querySelectorAll('#panels,#topbar,.modal,.filter-panel')]
+      .filter(el => {
+        const filter = read(el, 'backdrop-filter') || read(el, '-webkit-backdrop-filter');
+        return filter && filter !== 'none';
+      }).length;
+
+    const tool = document.querySelector('.tool-btn');
+    const canvasArea = document.getElementById('canvas-area');
+    return {
+      glassy,
+      toolHasBorder: read(tool, 'border-top-style') === 'solid',
+      canvasOptsOut: read(canvasArea, 'forced-color-adjust') === 'none',
+      // The tokens resolve to system colours rather than the dark palette.
+      accent: read(document.documentElement, '--accent').trim(),
+      border: read(document.documentElement, '--border').trim()
+    };
+  });
+
+  // Blur and shadows are off, so panels do not vanish into the background.
+  expect(result.glassy).toBe(0);
+  expect(result.toolHasBorder).toBe(true);
+  // The artwork is not repainted by the OS palette.
+  expect(result.canvasOptsOut).toBe(true);
+  expect(result.accent).toBe('Highlight');
+  expect(result.border).toBe('CanvasText');
+});
+
 test('selections add, subtract and intersect @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

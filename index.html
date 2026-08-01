@@ -189,6 +189,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 :focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .modal *,.filter-panel *{user-select:text;-webkit-user-select:text}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
 *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 
@@ -1811,6 +1812,40 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
   .welcome-inner .welcome-hero h1{font-size:37px}
   .template-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* Kept last so it overrides the component styles above. */
+/* Windows High Contrast and friends replace the palette wholesale. The chrome
+   is glassmorphic — translucent panels over blur — which in forced colours
+   renders as invisible controls on an invisible background, so the effects
+   come off and the system palette drives everything. The canvas itself opts
+   out: forcing colours onto the artwork would misrepresent it. */
+@media(forced-colors:active){
+  :root{
+    --bg-depth-0:Canvas;--bg-depth-1:Canvas;--bg-depth-2:Canvas;--bg-depth-3:Canvas;--bg-depth-4:Canvas;
+    --text-primary:CanvasText;--text-secondary:CanvasText;--text-muted:GrayText;
+    --border:CanvasText;--border-active:Highlight;
+    --accent:Highlight;--accent-hover:Highlight;--accent-solid:Highlight;--accent-dim:Canvas;
+    --glass:Canvas;--glass-border:CanvasText;
+    --focus-ring:0 0 0 2px Highlight;
+  }
+  *{backdrop-filter:none!important;box-shadow:none!important;text-shadow:none!important}
+  .btn,.tool-btn,.panel-tab,.menu-item,.dd-item,.selection-mode{border:1px solid CanvasText}
+  .btn:hover,.tool-btn:hover,.dd-item:hover,.menu-item:hover{background:Highlight;color:HighlightText;forced-color-adjust:none}
+  .tool-btn.active,.panel-tab.active,.selection-mode.active{background:Highlight;color:HighlightText;forced-color-adjust:none}
+  .modal,.filter-panel,#panels,#topbar,#toolbar,#tool-options,#statusbar{background:Canvas;border-color:CanvasText}
+  /* Icons are currentColor strokes, so they follow the system text colour. */
+  .panel-splitter::before{background:CanvasText}
+  /* The artwork and its checkerboard must not be repainted by the OS. */
+  #canvas-area,#canvas-area *{forced-color-adjust:none}
+}
+/* Users who want more contrast but are not in a forced-colours mode. */
+@media(prefers-contrast:more){
+  :root{
+    --text-secondary:var(--text-primary);--text-muted:var(--text-secondary);
+    --border:color-mix(in srgb, var(--text-primary) 55%, transparent);
+    --border-active:var(--accent);
+  }
+  .btn,.tool-btn,.panel-tab{border-width:1px;border-style:solid}
 </style>
 </head>
 <body>
