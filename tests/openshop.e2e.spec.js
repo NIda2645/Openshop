@@ -2866,6 +2866,53 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('warns before a document rebuild discards guides, frames or PSD metadata @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Crop, flatten and canvas rotate/flip all rebuild the document through
+  // createNewDocument, which silently drops all three. The user saw only
+  // "Cropped to W x H".
+  const clean = await page.evaluate(async () => {
+    OS.createNewDocument(80, 60, '#ffffff');
+    return { loss: OS._documentStateLoss(), modal: !!document.querySelector('.modal-overlay') };
+  });
+  expect(clean.loss).toEqual([]);
+
+  const withState = await page.evaluate(async () => {
+    OS.createNewDocument(80, 60, '#ffffff');
+    OS.guides = [{ axis: 'h', position: 20 }];
+    OS._animFrames = ['a', 'b'];
+    const loss = OS._documentStateLoss();
+    // A destructive rebuild now has to ask first.
+    const pending = OS.flattenImage();
+    await new Promise(r => setTimeout(r, 120));
+    const overlay = document.querySelector('.modal-overlay');
+    const text = overlay ? overlay.textContent : '';
+    overlay?.querySelector('[data-modal-cancel]')?.click();
+    const result = await pending;
+    return {
+      loss,
+      asked: Boolean(overlay),
+      mentionsGuide: /guide/i.test(text),
+      mentionsFrames: /animation frame/i.test(text),
+      result,
+      guidesKept: OS.guides.length,
+      framesKept: OS._animFrames.length
+    };
+  });
+
+  expect(withState.loss).toContain('1 guide');
+  expect(withState.loss).toContain('2 animation frames');
+  expect(withState.asked).toBe(true);
+  expect(withState.mentionsGuide).toBe(true);
+  expect(withState.mentionsFrames).toBe(true);
+  // Cancelling leaves the document exactly as it was.
+  expect(withState.result).toBe(false);
+  expect(withState.guidesKept).toBe(1);
+  expect(withState.framesKept).toBe(2);
+});
+
 test('selection bounds are document coordinates whatever made them @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

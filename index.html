@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-tSfANmNcBIQ78R8ecXNPLbRMc8M6nvZ1VXX50wQ2vyA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-Af0B3WHt+F3BZJyi5j69nmvHUDO7AO3qp/7+wISRdqk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4493,6 +4493,56 @@ const OS = {
         const presets = Array.isArray(data) ? data : [data];
         return presets.map(p => this._safePreset(p)).filter(Boolean).slice(0, this._importLimits.maxPresets);
     },
+    // Crop, flatten and canvas rotate/flip all rebuild the document through
+    // createNewDocument, which drops guides, animation frames and the PSD group
+    // metadata an export depends on. The user saw only "Cropped to W x H".
+    _documentStateLoss() {
+        const loss = [];
+        if (this.guides?.length) loss.push(`${this.guides.length} guide${this.guides.length === 1 ? '' : 's'}`);
+        if (this._animFrames?.length) loss.push(`${this._animFrames.length} animation frame${this._animFrames.length === 1 ? '' : 's'}`);
+        if (this._psdInterchange) loss.push('PSD group metadata used by PSD export');
+        return loss;
+    },
+    _confirmDocumentStateLoss(action) {
+        const loss = this._documentStateLoss();
+        if (!loss.length) return Promise.resolve(true);
+        return new Promise(resolve => {
+            let settled = false;
+            const finish = value => { if (settled) return; settled = true; o.remove(); resolve(value); };
+            const o = document.createElement('div');
+            o.className = 'modal-overlay';
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            const title = document.createElement('h3');
+            title.textContent = `${action} discards part of this document`;
+            const message = document.createElement('p');
+            message.style.cssText = 'font-size:12px;color:var(--text-secondary);margin:8px 0 8px';
+            message.textContent = `${action} rebuilds the document as a single image. This is undoable, but it removes:`;
+            const list = document.createElement('ul');
+            list.style.cssText = 'font-size:12px;color:var(--text-secondary);margin:0 0 16px 18px';
+            loss.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = item;
+                list.appendChild(li);
+            });
+            const buttons = document.createElement('div');
+            buttons.className = 'modal-btns';
+            const cancel = document.createElement('button');
+            cancel.className = 'btn';
+            cancel.dataset.modalCancel = '';
+            cancel.textContent = 'Cancel';
+            cancel.addEventListener('click', () => finish(false));
+            const proceed = document.createElement('button');
+            proceed.className = 'btn btn-primary';
+            proceed.textContent = action;
+            proceed.addEventListener('click', () => finish(true));
+            buttons.append(cancel, proceed);
+            modal.append(title, message, list, buttons);
+            o.appendChild(modal);
+            document.body.appendChild(o);
+            requestAnimationFrame(() => { o.classList.add('show'); cancel.focus(); });
+        });
+    },
     _confirmDiscardUnsaved(action = 'Replacing this document') {
         if (!this._isDirty) return Promise.resolve(true);
         return new Promise(resolve => {
@@ -6460,7 +6510,8 @@ self.onmessage = function(event) {
         const dataUrl = this._captureCanvasRaster();
         return this._replaceDocumentWithRaster(dataUrl, this.canvasW, this.canvasH, 'Flattened');
     },
-    flattenImage() {
+    async flattenImage() {
+        if (!await this._confirmDocumentStateLoss('Flatten')) return false;
         const result = this._executeCommand(this._makeCommand('canvas.flatten'));
         return Promise.resolve(result).then(success => {
             if (success) this.toast('Image flattened', 'success');
@@ -7825,8 +7876,9 @@ self.onmessage = function(event) {
         const dataUrl = this._captureCanvasRaster({ left:x, top:y, width, height });
         return this._replaceDocumentWithRaster(dataUrl, rasterWidth, rasterHeight, 'Cropped');
     },
-    applyCrop() {
+    async applyCrop() {
         if(!this._cropRegion) return;
+        if (!await this._confirmDocumentStateLoss('Crop')) return false;
         const r=this._cropRegion, vpt=this.canvas.viewportTransform;
         const rawX=(r.x-vpt[4])/vpt[0], rawY=(r.y-vpt[5])/vpt[3];
         const rawW=r.w/vpt[0], rawH=r.h/vpt[3];
@@ -13196,7 +13248,8 @@ self.onmessage = async function(e) {
         context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
         return this._replaceDocumentWithRaster(output.toDataURL('image/png'), width, height, 'Rotated Canvas');
     },
-    canvasRotate(degrees) {
+    async canvasRotate(degrees) {
+        if (!await this._confirmDocumentStateLoss('Rotate canvas')) return false;
         const command = this._makeCommand('canvas.rotate', { degrees });
         const result = this._executeCommand(command, { label:`Rotate Canvas ${command.args.degrees}` });
         return Promise.resolve(result).then(success => {
@@ -13223,7 +13276,8 @@ self.onmessage = async function(e) {
         context.drawImage(image, 0, 0);
         return this._replaceDocumentWithRaster(output.toDataURL('image/png'), width, height, 'Flipped Canvas');
     },
-    canvasFlip(axis) {
+    async canvasFlip(axis) {
+        if (!await this._confirmDocumentStateLoss('Flip canvas')) return false;
         const command = this._makeCommand('canvas.flip', { axis });
         const result = this._executeCommand(command, { label:`Flip Canvas ${command.args.axis}` });
         return Promise.resolve(result).then(success => {
