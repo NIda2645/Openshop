@@ -7,6 +7,7 @@ All notable changes to Openshop will be documented in this file.
 ### Security
 - Make the release gate audit the whole script-policy contract instead of one permissive happy path. Script directive overrides, wildcard or scheme sources, nonces and alternate hashes, unquoted event handlers, whitespace around `src`, foreign or duplicate verified-asset URLs, missing boundary directives, added inline blocks, and replacement-pattern corruption now all fail with regression coverage
 - Constrain the offline worker to the static runtime assets OpenShop actually uses, never cache private/no-store or credential-varying responses, reject state pointers to revisions that were never shipped, require the exact revision in the boot-health handshake, and accept shell-control messages only from the app document. The self-hosting recipe now keeps the worker in a dedicated subdirectory instead of granting it an origin-wide scope
+- Lock the contributor web harness to localhost Host and Origin values, serve only the six files its browser tests need, and return bounded 4xx responses for malformed paths, invalid JSON, and oversized control bodies instead of exposing repository contents or terminating the process
 
 ## [v0.26.0] - 2026-08-01
 

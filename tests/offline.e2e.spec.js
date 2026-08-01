@@ -5,6 +5,7 @@ const productionRevision = '0.26.0-r3';
 
 async function setServerState(request, state = {}) {
   const response = await request.post(`${origin}/__test/control`, {
+    headers: { origin },
     data: {
       revision: productionRevision,
       badShell: false,
@@ -17,6 +18,7 @@ async function setServerState(request, state = {}) {
 
 async function clearOfflineState(page) {
   await page.evaluate(async () => {
+    if (!navigator.serviceWorker || typeof caches === 'undefined') return;
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(registrations.map(registration => registration.unregister()));
     const names = await caches.keys();
@@ -35,6 +37,35 @@ test.describe('hosted offline contract', () => {
     await context.setOffline(false);
     await setServerState(request);
     if (!page.isClosed()) await clearOfflineState(page);
+  });
+
+  test('keeps the local harness bound to its public test surface', async ({ request }) => {
+    const rebound = await request.get(`${origin}/`, { headers: { host: 'rebound.example' } });
+    expect(rebound.status()).toBe(421);
+
+    const missingOrigin = await request.post(`${origin}/__test/control`, { data: '{}' });
+    expect(missingOrigin.status()).toBe(403);
+    const foreignOrigin = await request.post(`${origin}/__test/control`, {
+      headers: { origin: 'https://example.test' },
+      data: '{}'
+    });
+    expect(foreignOrigin.status()).toBe(403);
+
+    const malformedBody = await request.post(`${origin}/__test/control`, {
+      headers: { origin },
+      data: '{'
+    });
+    expect(malformedBody.status()).toBe(400);
+    const oversizedBody = await request.post(`${origin}/__test/control`, {
+      headers: { origin },
+      data: 'x'.repeat(20 * 1024)
+    });
+    expect(oversizedBody.status()).toBe(413);
+
+    expect((await request.get(`${origin}/package.json`)).status()).toBe(404);
+    expect((await request.get(`${origin}/.git/config`)).status()).toBe(404);
+    expect((await request.get(`${origin}/%`)).status()).toBe(400);
+    expect((await request.get(`${origin}/manifest.webmanifest`)).status()).toBe(200);
   });
 
   test('caches the complete core shell and reloads it offline', async ({ page, context, request, browserName }) => {
