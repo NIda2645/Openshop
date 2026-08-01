@@ -2189,6 +2189,139 @@ test('exposes onboarding and layer controls to the keyboard', async ({ page }) =
   await expect(page.locator('#ni-w')).toHaveValue('1920');
 });
 
+test('progressively enhances menus and dialogs with anchored native popovers @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await expect(page.locator('#welcome-overlay')).toBeHidden();
+
+  const support = await page.evaluate(() => ({
+    popover: typeof HTMLElement.prototype.showPopover === 'function',
+    anchors: CSS.supports('position-anchor: --os-anchor')
+      && CSS.supports('position-area: block-end span-inline-end'),
+    enhanced: OS._nativePopoverUI,
+    className: document.documentElement.classList.contains('os-native-popovers')
+  }));
+  expect(support.enhanced).toBe(support.popover && support.anchors);
+  expect(support.className).toBe(support.enhanced);
+
+  const file = page.locator('.menu-bar > .menu-item').first();
+  const dropdown = file.locator(':scope > .menu-dropdown');
+  await file.click();
+  await expect(dropdown).toBeVisible();
+
+  if (support.enhanced) {
+    const placement = await page.evaluate(() => {
+      const owner = document.querySelector('.menu-bar > .menu-item');
+      const popup = owner.querySelector(':scope > .menu-dropdown');
+      const ownerBox = owner.getBoundingClientRect();
+      const popupBox = popup.getBoundingClientRect();
+      return {
+        open: popup.matches(':popover-open'),
+        anchorName: owner.style.getPropertyValue('anchor-name'),
+        positionAnchor: popup.style.getPropertyValue('position-anchor'),
+        belowOwner: popupBox.top >= ownerBox.bottom - 1,
+        withinViewport: popupBox.left >= 0 && popupBox.right <= innerWidth
+          && popupBox.top >= 0 && popupBox.bottom <= innerHeight
+      };
+    });
+    expect(placement).toMatchObject({ open: true, belowOwner: true, withinViewport: true });
+    expect(placement.anchorName).toBeTruthy();
+    expect(placement.positionAnchor).toBe(placement.anchorName);
+  } else {
+    await expect(dropdown).not.toHaveAttribute('popover');
+    await expect(file).toHaveClass(/open/);
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(dropdown).toBeHidden();
+  await file.focus();
+  await page.evaluate(() => OS.showShortcuts());
+  const overlay = page.locator('.modal-overlay').last();
+  await expect(overlay).toBeVisible();
+
+  if (support.enhanced) {
+    expect(await overlay.evaluate((element) => ({
+      open: element.matches(':popover-open'),
+      mode: element.getAttribute('popover'),
+      legacyStacked: OS._modalStack.some((entry) => entry.overlay === element)
+    }))).toEqual({ open: true, mode: 'auto', legacyStacked: false });
+  } else {
+    await expect(overlay).not.toHaveAttribute('popover');
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.modal-overlay')).toHaveCount(0);
+  await expect(file).toBeFocused();
+
+  if (support.enhanced) {
+    await page.evaluate(() => {
+      const area = document.querySelector('#canvas-area');
+      const box = area.getBoundingClientRect();
+      area.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: box.left + 80,
+        clientY: box.top + 80
+      }));
+    });
+    const contextMenu = page.locator('#context-menu');
+    await expect(contextMenu).toBeVisible();
+    expect(await contextMenu.evaluate((element) => ({
+      open: element.matches(':popover-open'),
+      anchored: element.style.getPropertyValue('position-anchor').startsWith('--os-anchor-')
+    }))).toEqual({ open: true, anchored: true });
+    await page.keyboard.press('Escape');
+    await expect(contextMenu).toBeHidden();
+
+    const tool = page.locator('.tool-group > .tool-btn').first();
+    await tool.click();
+    const flyout = page.locator('#flyout-host .tool-flyout:popover-open');
+    await expect(flyout).toBeVisible();
+    expect(await flyout.evaluate((element) =>
+      element.style.getPropertyValue('position-anchor').startsWith('--os-anchor-'))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(flyout).toBeHidden();
+  }
+});
+
+test('retains the positioned menu and managed-dialog fallback without CSS anchors', async ({ page }) => {
+  await page.addInitScript(() => {
+    const supports = CSS.supports.bind(CSS);
+    Object.defineProperty(CSS, 'supports', {
+      configurable: true,
+      value(query, value) {
+        const feature = value === undefined ? String(query) : `${query}: ${value}`;
+        if (feature.startsWith('position-anchor:') || feature.startsWith('position-area:')) return false;
+        return value === undefined ? supports(query) : supports(query, value);
+      }
+    });
+  });
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  expect(await page.evaluate(() => OS._nativePopoverUI)).toBe(false);
+  await expect(page.locator('html')).not.toHaveClass(/os-native-popovers/);
+  const file = page.locator('.menu-bar > .menu-item').first();
+  const dropdown = file.locator(':scope > .menu-dropdown');
+  await file.click();
+  await expect(file).toHaveClass(/open/);
+  await expect(dropdown).toBeVisible();
+  await expect(dropdown).not.toHaveAttribute('popover');
+  await page.keyboard.press('Escape');
+  await expect(dropdown).toBeHidden();
+
+  await file.focus();
+  await page.evaluate(() => OS.showShortcuts());
+  const overlay = page.locator('.modal-overlay');
+  await expect(overlay).toBeVisible();
+  await expect(overlay).not.toHaveAttribute('popover');
+  expect(await overlay.evaluate((element) =>
+    OS._modalStack.some((entry) => entry.overlay === element))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(overlay).toHaveCount(0);
+  await expect(file).toBeFocused();
+});
+
 test('drives the whole menubar from the keyboard with clean accessible names @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -2213,7 +2346,33 @@ test('drives the whole menubar from the keyboard with clean accessible names @cr
     expanded: document.activeElement?.getAttribute('aria-expanded')
   }));
 
-  await page.locator('.menu-bar > .menu-item').first().focus();
+  // A stationary pointer must not keep File painted while the keyboard opens
+  // another root. Home and End must stay within that keyboard-owned popup.
+  const fileRoot = page.locator('.menu-bar > .menu-item').first();
+  const fileBox = await fileRoot.boundingBox();
+  await page.mouse.move(fileBox.x + fileBox.width / 2, fileBox.y + fileBox.height / 2);
+  await expect(fileRoot.locator(':scope > .menu-dropdown')).toBeVisible();
+  await fileRoot.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  expect(await page.evaluate(() => [...document.querySelectorAll('.menu-bar > .menu-item')]
+    .filter(root => root.querySelector(':scope > .menu-dropdown')?.getClientRects().length)
+    .map(root => root.getAttribute('aria-label')))).toEqual(['Edit']);
+  const editEnds = await page.evaluate(() => {
+    const menu = document.querySelectorAll('.menu-bar > .menu-item')[1]
+      .querySelector(':scope > .menu-dropdown');
+    const rows = OS._menuEntries(menu);
+    return [rows[0]?.getAttribute('aria-label'), rows.at(-1)?.getAttribute('aria-label')];
+  });
+  await page.keyboard.press('End');
+  expect((await focused()).label).toBe(editEnds[1]);
+  await page.keyboard.press('Home');
+  expect((await focused()).label).toBe(editEnds[0]);
+  await page.keyboard.press('Escape');
+
+  // Reset modality before the independent traversal scenario below.
+  await page.mouse.move(600, 500);
+  await fileRoot.focus();
   await page.keyboard.press('ArrowRight');
   expect(await focused()).toMatchObject({ label: 'Edit', role: 'menuitem' });
   await page.keyboard.press('ArrowLeft');
@@ -5161,10 +5320,10 @@ test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ p
 
   const measure = () => page.evaluate(() => {
     const root = document.querySelector('.menu-bar > .menu-item');
-    root.classList.add('open');
+    OS._openMenuPopup(root);
     const dropdown = root.querySelector(':scope > .menu-dropdown');
     const sub = dropdown.querySelector('.dd-sub');
-    sub.classList.add('open');
+    OS._openMenuPopup(sub);
     const submenu = sub.querySelector(':scope > .menu-dropdown');
 
     const rowWithShortcut = document.querySelector('.dd-item .dd-shortcut')?.parentElement;
@@ -5181,8 +5340,7 @@ test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ p
         ? shortcut.getBoundingClientRect().right > rowWithShortcut.getBoundingClientRect().right + 1
         : null
     };
-    sub.classList.remove('open');
-    root.classList.remove('open');
+    OS._closeMenuPopup(root);
     return out;
   });
 

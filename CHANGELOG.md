@@ -11,6 +11,7 @@ All notable changes to Openshop will be documented in this file.
 
 ### Changed
 - Upgrade the local AI runtime to Transformers.js 4.2, report each model's exact transfer and installed size before its first download, and retain the SHA-384-verified ONNX engine for hosted offline reuse. Segment Select now uses pinned Apache-2.0 SlimSAM point masks, Depth Map uses pinned Depth Anything V2, and Background Removal uses 4.x's dedicated MODNet pipeline; noncommercial and GPL model alternatives remain excluded
+- Progressively enhance menus, context menus, tool flyouts, and transient dialogs with native Popover API top-layer behavior and logical CSS anchor positioning, while retaining the positioned and managed-focus fallback for older Safari. Keyboard navigation now owns exactly one menu even when the pointer remains parked over another title
 
 ### Fixed
 - Decode EXIF-bearing JPEGs exactly once. Browsers already apply the orientation while decoding, so OpenShop now neutralizes the copied tag before baking its own pixel transform instead of rotating camera photos twice

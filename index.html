@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-Sf2BIfOWRc+42tc3xQh+/lacn50n3L+ydurXFRWrh/Y=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-/4tmbH76yqvmWtEDUJURVJ+WNZYv1CKVjKaYXsgXIkM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -205,6 +205,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 .menu-dropdown{display:none;position:absolute;top:calc(100% + 2px);inset-inline-start:0;min-width:220px;background:var(--bg-depth-2);border:1px solid var(--border);border-radius:8px;padding:4px;z-index:1000;box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset}
 .menu-bar{display:flex;align-items:center;gap:1px}
 .menu-item:hover>.menu-dropdown,.menu-item.open>.menu-dropdown{display:block}
+.menu-bar.keyboard-nav .menu-item:not(.open):hover>.menu-dropdown,
+.menu-bar.keyboard-nav .dd-sub:not(.open):hover>.menu-dropdown{display:none}
 .dd-item{padding:7px 12px;border-radius:5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;color:var(--text-secondary);transition:var(--transition-chrome);white-space:nowrap;font-size:12.5px}
 .dd-item:hover{background:var(--accent-dim);color:var(--text-primary)}
 .dd-shortcut{margin-inline-start:16px;color:var(--text-muted);font-size:10px;font-family:'JetBrains Mono',monospace;opacity:.7}
@@ -220,6 +222,52 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-depth-0);co
 .ctx-sub.flip-left>.ctx-submenu{inset-inline-start:auto;inset-inline-end:100%}
 .ctx-sub::after{content:'\25B8';margin-inline-start:12px;font-size:9px;color:var(--text-muted)}
 [dir="rtl"] .ctx-sub::after{content:'\25C2'}
+
+/* Popover + anchor positioning is an enhancement, never the compatibility
+   floor. Safari 25 and older keep the positioned/class-based rules above;
+   engines that implement both features get top-layer stacking, light dismiss,
+   Escape handling, and viewport-aware CSS fallback placement. */
+@supports (position-anchor: --os-anchor) and (position-area: block-end span-inline-end) {
+  html.os-native-popovers .menu-dropdown[popover],
+  html.os-native-popovers .ctx-submenu[popover],
+  html.os-native-popovers .tool-flyout[popover],
+  html.os-native-popovers #context-menu[popover]{
+    position:fixed;
+    inset:auto;
+    margin:0;
+    position-try-fallbacks:flip-inline,flip-block;
+  }
+  html.os-native-popovers .menu-dropdown[popover]:not(:popover-open),
+  html.os-native-popovers .ctx-submenu[popover]:not(:popover-open),
+  html.os-native-popovers .tool-flyout[popover]:not(:popover-open),
+  html.os-native-popovers #context-menu[popover]:not(:popover-open){display:none!important}
+  html.os-native-popovers .menu-dropdown[popover]:popover-open,
+  html.os-native-popovers .ctx-submenu[popover]:popover-open,
+  html.os-native-popovers #context-menu[popover]:popover-open{display:block}
+  html.os-native-popovers .tool-flyout[popover]:popover-open{display:flex;flex-direction:column;gap:2px}
+html.os-native-popovers .menu-bar>.menu-item>.menu-dropdown[popover]{
+position-area:block-end span-inline-end;
+margin-block-start:7px;
+}
+html.os-native-popovers .dd-sub>.menu-dropdown[popover],
+html.os-native-popovers .ctx-sub>.ctx-submenu[popover]{position-area:inline-end span-block-end}
+html.os-native-popovers .tool-flyout[popover]{position-area:inline-end span-block-end;margin-inline-start:4px}
+html.os-native-popovers #context-menu[popover]{position-area:block-end span-inline-end}
+  html.os-native-popovers .menu-item:hover>.menu-dropdown[popover]:not(:popover-open),
+  html.os-native-popovers .dd-sub:hover>.menu-dropdown[popover]:not(:popover-open),
+  html.os-native-popovers .ctx-sub:hover>.ctx-submenu[popover]:not(:popover-open){display:none!important}
+  html.os-native-popovers .modal-overlay[popover]{
+    inset:0;
+    width:100%;
+    max-width:none;
+    height:100%;
+    max-height:none;
+    margin:0;
+    border:0;
+    display:none;
+  }
+  html.os-native-popovers .modal-overlay[popover]:popover-open{display:flex}
+}
 
 /* === TOOLBAR === */
 #toolbar{position:absolute;left:0;top:var(--topbar-h);bottom:var(--statusbar-h);width:var(--toolbar-w);background:var(--bg-depth-1);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:2px;z-index:50;overflow-y:auto}
@@ -3780,6 +3828,7 @@ const OS = {
             btn.setAttribute('tabindex', '0');
             btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); } });
         });
+        this._initNativePopoverUI();
         this._initMenuAccessibility();
         this._initModalFocusManagement();
         this._initCanvasFocusContext();
@@ -6950,16 +6999,22 @@ self.onmessage = function(event) {
             flyoutHost.appendChild(flyout);
             flyout.style.pointerEvents = 'auto';
             flyout._parentGroup = grp;
+            this._anchorPopover(face, flyout, 'inline-end span-block-end', { ownerClass:null });
+            if (this._nativePopoverUI) {
+                flyout.addEventListener('toggle', event => flyout.classList.toggle('show', event.newState === 'open'));
+            }
             // Click toggles flyout
             face.addEventListener('click', e => {
                 e.preventDefault(); e.stopPropagation();
-                const wasOpen = flyout.classList.contains('show');
+                const wasOpen = this._isPopoverOpen(flyout) || flyout.classList.contains('show');
                 this._closeAllFlyouts();
                 if (!wasOpen) {
-                    const rect = face.getBoundingClientRect();
-                    flyout.style.position = 'fixed';
-                    flyout.style.left = (rect.right + 4) + 'px';
-                    flyout.style.top = rect.top + 'px';
+                    if (!this._showPopover(flyout)) {
+                        const rect = face.getBoundingClientRect();
+                        flyout.style.position = 'fixed';
+                        flyout.style.left = (rect.right + 4) + 'px';
+                        flyout.style.top = rect.top + 'px';
+                    }
                     flyout.classList.add('show');
                 } else {
                     const tool = face.dataset.tool;
@@ -6969,19 +7024,23 @@ self.onmessage = function(event) {
             face.addEventListener('contextmenu', e => {
                 e.preventDefault();
                 this._closeAllFlyouts();
-                const rect = face.getBoundingClientRect();
-                flyout.style.position = 'fixed';
-                flyout.style.left = (rect.right + 4) + 'px';
-                flyout.style.top = rect.top + 'px';
+                if (!this._showPopover(flyout)) {
+                    const rect = face.getBoundingClientRect();
+                    flyout.style.position = 'fixed';
+                    flyout.style.left = (rect.right + 4) + 'px';
+                    flyout.style.top = rect.top + 'px';
+                }
                 flyout.classList.add('show');
             });
             face.removeAttribute('onclick');
         });
-        document.addEventListener('mousedown', e => {
-            if (!e.target?.closest?.('.tool-flyout') && !e.target?.closest?.('.tool-group > .tool-btn')) {
-                this._closeAllFlyouts();
-            }
-        });
+        if (!this._nativePopoverUI) {
+            document.addEventListener('mousedown', e => {
+                if (!e.target?.closest?.('.tool-flyout') && !e.target?.closest?.('.tool-group > .tool-btn')) {
+                    this._closeAllFlyouts();
+                }
+            });
+        }
     },
     switchTab(tabBtn, groupId, contentId) {
         // Deactivate all tabs in this group
@@ -6992,7 +7051,10 @@ self.onmessage = function(event) {
         document.getElementById(contentId).classList.add('active');
     },
     _closeAllFlyouts() {
-        document.querySelectorAll('.tool-flyout.show').forEach(f => f.classList.remove('show'));
+        document.querySelectorAll('.tool-flyout').forEach(f => {
+            this._hidePopover(f);
+            f.classList.remove('show');
+        });
     },
     flyoutSelect(btn, groupName) {
         const grp = document.querySelector(`.tool-group[data-group="${groupName}"]`);
@@ -14251,12 +14313,92 @@ self.onmessage = async function(e) {
         }
     },
 
+    // ====================== NATIVE POPOVER SURFACES ======================
+    _nativePopoverUI: false,
+    _nativeAnchorSeq: 0,
+    _menuFocusEpoch: 0,
+    _menuKeyboardTarget: null,
+    _initNativePopoverUI() {
+        const popovers = typeof HTMLElement !== 'undefined'
+            && typeof HTMLElement.prototype.showPopover === 'function';
+        const anchors = typeof CSS !== 'undefined'
+            && CSS.supports?.('position-anchor: --os-anchor')
+            && CSS.supports?.('position-area: block-end span-inline-end');
+        this._nativePopoverUI = Boolean(popovers && anchors);
+        document.documentElement.classList.toggle('os-native-popovers', this._nativePopoverUI);
+        return this._nativePopoverUI;
+    },
+    _isPopoverOpen(surface) {
+        return Boolean(this._nativePopoverUI && surface?.matches?.(':popover-open'));
+    },
+    _showPopover(surface) {
+        if (!this._nativePopoverUI || !surface?.showPopover) return false;
+        if (!this._isPopoverOpen(surface)) surface.showPopover();
+        return true;
+    },
+    _hidePopover(surface) {
+        if (!this._nativePopoverUI || !surface?.hidePopover) return false;
+        if (this._isPopoverOpen(surface)) surface.hidePopover();
+        return true;
+    },
+    _anchorPopover(owner, surface, area, { ownerClass = 'open', mode = 'auto' } = {}) {
+        if (!this._nativePopoverUI || !owner || !surface) return false;
+        const anchor = `--os-anchor-${++this._nativeAnchorSeq}`;
+        owner.style.setProperty('anchor-name', anchor);
+        surface.style.setProperty('position-anchor', anchor);
+        surface.style.setProperty('position-area', area);
+        surface.setAttribute('popover', mode);
+        surface.addEventListener('toggle', event => {
+            const open = event.newState === 'open';
+            if (!open) surface._osHoverOpened = false;
+            if (ownerClass) owner.classList.toggle(ownerClass, open);
+            if (owner.hasAttribute('aria-expanded')) owner.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        return true;
+    },
+    _bindHoverPopover(owner, surface) {
+        if (!this._nativePopoverUI) return;
+        let closeTimer = null;
+        const cancelClose = () => {
+            if (closeTimer !== null) clearTimeout(closeTimer);
+            closeTimer = null;
+        };
+        const open = () => {
+            if (owner.closest('.menu-bar')?.classList.contains('keyboard-nav')) return;
+            cancelClose();
+            const wasOpen = this._isPopoverOpen(surface);
+            this._showPopover(surface);
+            if (!wasOpen) surface._osHoverOpened = true;
+        };
+        const scheduleClose = event => {
+            if (owner.closest('.menu-bar')?.classList.contains('keyboard-nav')) return;
+            if (owner.contains(event.relatedTarget)) return;
+            cancelClose();
+            closeTimer = setTimeout(() => this._hidePopover(surface), 600);
+        };
+        surface._osCancelHoverClose = cancelClose;
+        owner.addEventListener('pointerenter', open);
+        owner.addEventListener('pointerleave', scheduleClose);
+        surface.addEventListener('pointerenter', cancelClose);
+        surface.addEventListener('pointerleave', scheduleClose);
+    },
+
     // ====================== CONTEXT MENU ======================
     initContextMenu() {
         const ca = document.getElementById('canvas-area');
+        const menu = document.getElementById('context-menu');
+        let nativeAnchor = null;
+        if (this._nativePopoverUI) {
+            nativeAnchor = document.createElement('span');
+            nativeAnchor.id = 'context-menu-anchor';
+            nativeAnchor.setAttribute('aria-hidden', 'true');
+            nativeAnchor.style.cssText = 'position:fixed;width:1px;height:1px;pointer-events:none';
+            document.body.appendChild(nativeAnchor);
+            this._anchorPopover(nativeAnchor, menu, 'block-end span-inline-end', { ownerClass:null });
+            menu.addEventListener('toggle', event => menu.classList.toggle('visible', event.newState === 'open'));
+        }
         ca.addEventListener('contextmenu', e => {
             e.preventDefault();
-            const menu = document.getElementById('context-menu');
             const active = this.canvas.getActiveObject();
             const hasSelection = this._selectionMask || this._selectionBounds;
             let items = [];
@@ -14360,6 +14502,9 @@ self.onmessage = async function(e) {
                     submenu.className = 'ctx-submenu';
                     renderItems(it.children, submenu);
                     item.appendChild(submenu);
+                    if (this._anchorPopover(item, submenu, 'inline-end span-block-end')) {
+                        this._bindHoverPopover(item, submenu);
+                    }
                 } else {
                     item.dataset.ctx = String(this._ctxItems.indexOf(it));
                 }
@@ -14373,22 +14518,32 @@ self.onmessage = async function(e) {
                     ev.stopPropagation();
                     const idx = +el.dataset.ctx;
                     if (this._ctxItems[idx] && this._ctxItems[idx].fn) this._ctxItems[idx].fn();
+                    this._hidePopover(menu);
                     menu.classList.remove('visible');
                 });
             });
-            // Position with bounds check
-            const mw = 220, mh = items.length * 28;
-            let mx = e.clientX, my = e.clientY;
-            if (mx + mw > window.innerWidth) mx = window.innerWidth - mw - 4;
-            if (my + mh > window.innerHeight) my = window.innerHeight - mh - 4;
-            menu.style.left = mx + 'px';
-            menu.style.top = my + 'px';
+            if (nativeAnchor) {
+                nativeAnchor.style.left = e.clientX + 'px';
+                nativeAnchor.style.top = e.clientY + 'px';
+                this._showPopover(menu);
+            } else {
+                // Position with bounds check
+                const mw = 220, mh = items.length * 28;
+                let mx = e.clientX, my = e.clientY;
+                if (mx + mw > window.innerWidth) mx = window.innerWidth - mw - 4;
+                if (my + mh > window.innerHeight) my = window.innerHeight - mh - 4;
+                menu.style.left = mx + 'px';
+                menu.style.top = my + 'px';
+            }
             menu.classList.add('visible');
         });
-        document.addEventListener('click', () => document.getElementById('context-menu').classList.remove('visible'));
+        if (!this._nativePopoverUI) {
+            document.addEventListener('click', () => document.getElementById('context-menu').classList.remove('visible'));
+        }
 
         // Viewport-aware submenu positioning: flip left when submenu would overflow right edge, shift up if below viewport
         document.addEventListener('mouseenter', (e) => {
+            if (this._nativePopoverUI) return;
             const target = e.target?.closest ? e.target : null;
             if (!target) return;
             // Handle top-level menu dropdowns near right edge
@@ -14455,6 +14610,15 @@ self.onmessage = async function(e) {
     _menuPopup(item) {
         return item?.querySelector?.(':scope > .menu-dropdown') || null;
     },
+    _activateMenuEntry(entry, event) {
+        const action = entry?.getAttribute?.('data-os-click');
+        const handler = action && OS_EVENT_HANDLERS.click[action];
+        if (typeof handler === 'function') {
+            handler.call(entry, event);
+            return;
+        }
+        entry?.click();
+    },
     _openMenuPopup(item) {
         const popup = this._menuPopup(item);
         if (!popup) return null;
@@ -14464,19 +14628,25 @@ self.onmessage = async function(e) {
         });
         item.classList.add('open');
         if (item.hasAttribute('aria-expanded')) item.setAttribute('aria-expanded', 'true');
+        this._showPopover(popup);
         return popup;
     },
     _closeMenuPopup(item) {
-        if (!item?.classList?.contains?.('open')) return;
-        item.querySelectorAll('.open').forEach(child => {
-            child.classList.remove('open');
-            if (child.hasAttribute('aria-expanded')) child.setAttribute('aria-expanded', 'false');
-        });
+        if (!item?.classList) return;
+        [...item.querySelectorAll('.open')].reverse().forEach(child => this._closeMenuPopup(child));
+        this._hidePopover(this._menuPopup(item));
         item.classList.remove('open');
         if (item.hasAttribute('aria-expanded')) item.setAttribute('aria-expanded', 'false');
     },
     _closeAllMenus() {
         this._menuRoots().forEach(root => this._closeMenuPopup(root));
+    },
+    _toggleMenuPopupFromPointer(item) {
+        const popup = this._menuPopup(item);
+        const openedByHover = Boolean(popup?._osHoverOpened);
+        if (popup) popup._osHoverOpened = false;
+        if (item.classList.contains('open') && !openedByHover) this._closeMenuPopup(item);
+        else this._openMenuPopup(item);
     },
     _focusMenuRoot(root, { open = false, last = false } = {}) {
         if (!root) return;
@@ -14485,6 +14655,23 @@ self.onmessage = async function(e) {
         const entries = this._menuEntries(this._openMenuPopup(root));
         const entry = last ? entries.at(-1) : entries[0];
         (entry || root).focus();
+    },
+    _restoreMenuKeyboardTarget(target) {
+        const root = target?.closest?.('.menu-bar > .menu-item');
+        if (!root) return false;
+        if (target !== root) {
+            this._openMenuPopup(root);
+            const submenus = [];
+            // Restore only ancestor branches. If the focused row owns a closed
+            // submenu, reopening that row here would turn a focus correction
+            // into an unintended navigation action.
+            for (let owner = target.parentElement?.closest('.dd-sub'); owner && root.contains(owner); owner = owner.parentElement?.closest('.dd-sub')) {
+                submenus.push(owner);
+            }
+            submenus.reverse().forEach(owner => this._openMenuPopup(owner));
+        }
+        target.focus({ preventScroll:true });
+        return true;
     },
     _initMenuAccessibility() {
         const bar = document.querySelector('#topbar .menu-bar');
@@ -14496,6 +14683,13 @@ self.onmessage = async function(e) {
             menu.setAttribute('role', 'menu');
             const label = this._menuOwnText(menu.parentElement);
             if (label) menu.setAttribute('aria-label', label);
+            const owner = menu.parentElement;
+            const topLevel = owner.matches('.menu-bar > .menu-item');
+            if (this._anchorPopover(owner, menu,
+                topLevel ? 'block-end span-inline-end' : 'inline-end span-block-end',
+                { mode:'auto' })) {
+                this._bindHoverPopover(owner, menu);
+            }
         });
         bar.querySelectorAll('.dd-sep').forEach(sep => sep.setAttribute('role', 'separator'));
         // The AI note said role="note" and aria-hidden="true" at once, which hid
@@ -14531,12 +14725,66 @@ self.onmessage = async function(e) {
         // path into a dropdown wider than its title, and the offset between the
         // two. Latch it open on enter and close on a short grace period so the
         // pointer can take any route it likes.
-        bar.addEventListener('keydown', event => this._onMenuKeydown(event));
+        bar.addEventListener('keydown', event => {
+            const focusEpoch = ++this._menuFocusEpoch;
+            const tracked = bar.classList.contains('keyboard-nav')
+                && this._menuKeyboardTarget?.isConnected && bar.contains(this._menuKeyboardTarget)
+                ? this._menuKeyboardTarget
+                : null;
+            const navigationTarget = tracked || event.target;
+            bar.classList.add('keyboard-nav');
+            if (tracked) this._restoreMenuKeyboardTarget(tracked);
+            bar.querySelectorAll('.menu-dropdown').forEach(surface => surface._osCancelHoverClose?.());
+            const focusedRoot = navigationTarget?.closest?.('.menu-bar > .menu-item');
+            roots.forEach(root => { if (root !== focusedRoot) this._closeMenuPopup(root); });
+            this._onMenuKeydown(event, navigationTarget);
+            this._menuKeyboardTarget = bar.contains(document.activeElement) ? document.activeElement : null;
+            if (event.key === 'Tab') { this._menuKeyboardTarget = null; return; }
+            if (event.key === 'Enter' || event.key === ' ') return;
+            const intended = this._menuKeyboardTarget;
+            const stabilizeFocus = () => {
+                if (focusEpoch !== this._menuFocusEpoch) return;
+                if (!bar.classList.contains('keyboard-nav') || this._activeModal()) return;
+                if (intended?.isConnected && bar.contains(intended) && this._isVisibleElement(intended)) {
+                    intended.focus({ preventScroll:true });
+                }
+            };
+            // Popover close restores focus in a queued task. Keyboard menus
+            // already choose the next row explicitly, so reaffirm that choice
+            // after the native restoration rather than letting an old root win.
+            queueMicrotask(stabilizeFocus);
+            requestAnimationFrame(() => {
+                stabilizeFocus();
+                requestAnimationFrame(stabilizeFocus);
+            });
+        });
+        let lastPointer = null;
+        document.addEventListener('pointermove', event => {
+            const next = { x:event.clientX, y:event.clientY };
+            const moved = lastPointer && Math.hypot(next.x - lastPointer.x, next.y - lastPointer.y) > 2;
+            lastPointer = next;
+            if (moved) {
+                bar.classList.remove('keyboard-nav');
+                this._menuKeyboardTarget = null;
+            }
+        }, { passive:true });
+        bar.addEventListener('pointerdown', () => {
+            bar.classList.remove('keyboard-nav');
+            this._menuKeyboardTarget = null;
+        }, true);
+        bar.addEventListener('focusin', () => {
+            queueMicrotask(() => {
+                const intended = this._menuKeyboardTarget;
+                if (!bar.classList.contains('keyboard-nav') || !intended?.isConnected) return;
+                if (document.activeElement !== intended) this._restoreMenuKeyboardTarget(intended);
+            });
+        });
         bar.addEventListener('click', event => {
+            bar.classList.remove('keyboard-nav');
+            this._menuKeyboardTarget = null;
             const root = event.target?.closest?.('.menu-bar > .menu-item');
             if (root && event.target === root) {
-                if (root.classList.contains('open')) this._closeMenuPopup(root);
-                else this._openMenuPopup(root);
+                this._toggleMenuPopupFromPointer(root);
                 this._focusMenuRoot(root);
                 return;
             }
@@ -14546,26 +14794,27 @@ self.onmessage = async function(e) {
             const entry = event.target?.closest?.('.dd-item');
             if (!entry) return;
             if (entry.classList.contains('dd-sub')) {
-                if (entry.classList.contains('open')) this._closeMenuPopup(entry);
-                else this._openMenuPopup(entry);
+                this._toggleMenuPopupFromPointer(entry);
                 return;
             }
             // A real command ran, so the whole tree collapses.
             this._closeAllMenus();
         });
-        bar.addEventListener('focusout', event => {
-            if (!bar.contains(event.relatedTarget)) this._closeAllMenus();
-        });
-        document.addEventListener('pointerdown', event => {
-            if (!bar.contains(event.target)) this._closeAllMenus();
-        });
+        if (!this._nativePopoverUI) {
+            bar.addEventListener('focusout', event => {
+                if (!bar.contains(event.relatedTarget)) this._closeAllMenus();
+            });
+            document.addEventListener('pointerdown', event => {
+                if (!bar.contains(event.target)) this._closeAllMenus();
+            });
+        }
     },
-    _onMenuKeydown(event) {
+    _onMenuKeydown(event, navigationTarget = event.target) {
         if (event.altKey || event.ctrlKey || event.metaKey) return;
         const roots = this._menuRoots();
-        const root = event.target?.closest?.('.menu-bar > .menu-item');
+        const root = navigationTarget?.closest?.('.menu-bar > .menu-item');
         if (!root || !roots.includes(root)) return;
-        const entry = event.target.closest('.dd-item');
+        const entry = navigationTarget.closest('.dd-item');
         const key = event.key;
         const stop = () => { event.preventDefault(); event.stopPropagation(); };
         const moveRoot = delta => {
@@ -14618,7 +14867,7 @@ self.onmessage = async function(e) {
                     if (entry.classList.contains('dd-sub')) { openSubmenu(); return; }
                     this._closeAllMenus();
                     root.focus();
-                    entry.click();
+                    this._activateMenuEntry(entry, event);
                     return;
                 case 'Tab': this._closeAllMenus(); return;
                 default: break;
@@ -14653,8 +14902,26 @@ self.onmessage = async function(e) {
         const selector = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
         return [...root.querySelectorAll(selector)].filter(el => this._isVisibleElement(el));
     },
+    _configureNativeModal(overlay) {
+        if (!this._nativePopoverUI || !overlay?.classList.contains('modal-overlay')) return false;
+        const dismiss = overlay.querySelector('[data-modal-cancel],[data-modal-close]');
+        overlay.setAttribute('popover', dismiss ? 'auto' : 'manual');
+        overlay._osNativeModal = true;
+        let opened = false;
+        overlay.addEventListener('toggle', event => {
+            if (event.newState === 'open') { opened = true; return; }
+            // Native Escape and light-dismiss do not know that these transient
+            // overlays are normally destroyed by their Cancel buttons.
+            if (opened && dismiss && overlay.isConnected) overlay.remove();
+        });
+        // Adoption runs in the mutation microtask, before the legacy fade-in
+        // frame. Enter the top layer now; `.show` can add opacity next frame.
+        this._showPopover(overlay);
+        return true;
+    },
     _adoptModal(overlay) {
-        if (!overlay || this._modalStack.some(entry => entry.overlay === overlay)) return;
+        if (!overlay || overlay._osModalAdopted) return;
+        overlay._osModalAdopted = true;
         // A few dialogs already declare role="dialog" on the inner panel; naming
         // the overlay too would publish the same dialog twice to assistive tech.
         const dialog = overlay.matches('[role="dialog"],[role="alertdialog"]')
@@ -14669,7 +14936,10 @@ self.onmessage = async function(e) {
                 dialog.setAttribute('aria-labelledby', heading.id);
             }
         }
-        this._modalStack.push({ overlay, returnTo: document.activeElement });
+        const native = this._configureNativeModal(overlay);
+        // Popovers restore focus and manage their own top-layer order. Keep the
+        // legacy stack solely for permanent dialogs and the Safari fallback.
+        if (!native) this._modalStack.push({ overlay, returnTo: document.activeElement });
         if (overlay.contains(document.activeElement)) return;
         // Content is usually appended in the same frame the overlay is, but a
         // few dialogs fill themselves in later, so retry for a few frames
@@ -14686,6 +14956,9 @@ self.onmessage = async function(e) {
         requestAnimationFrame(claimFocus);
     },
     _releaseModal(overlay) {
+        if (!overlay) return;
+        overlay._osModalAdopted = false;
+        if (overlay._osNativeModal) return;
         const index = this._modalStack.findIndex(entry => entry.overlay === overlay);
         if (index < 0) return;
         const [entry] = this._modalStack.splice(index, 1);
@@ -14703,6 +14976,10 @@ self.onmessage = async function(e) {
     // without going through _releaseModal, so every reader has to prune before
     // trusting it — otherwise the app believes a modal is open forever.
     _activeModal() {
+        if (this._nativePopoverUI) {
+            const native = [...document.querySelectorAll('.modal-overlay:popover-open')].at(-1);
+            if (native) return native;
+        }
         while (this._modalStack.length && !this._modalStack.at(-1).overlay.isConnected) {
             this._modalStack.pop();
         }
@@ -17909,6 +18186,13 @@ document.addEventListener('keydown', e => {
     const overlay = overlays.at(-1);
     if (overlay) {
         const dismiss = overlay.querySelector('[data-modal-cancel],[data-modal-close]');
+        if (OS._nativePopoverUI && overlay._osNativeModal
+            && overlay.getAttribute('popover') === 'auto' && OS._isPopoverOpen(overlay)) {
+            // Let the platform close the topmost auto popover and restore focus;
+            // only stop the app's canvas shortcut handlers from seeing Escape.
+            e.stopImmediatePropagation();
+            return;
+        }
         // A dialog that demands a decision (crash recovery) has no cancel, but
         // Escape still has to stop here — letting it fall through dismissed the
         // welcome screen underneath and reached the canvas shortcut handler.
