@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-yZZUHJXMqFtNW9+mDxVdENQ+8P2u3rnqr2HZULb7hoc=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-xwQAf6oMm3ZW/ltLGvHk6dW2LWJkI54YXZ2fjgcjiG0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2623,7 +2623,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
     <span id="tool-display">Select</span><span style="flex:1"></span>
     <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" data-os-click="click-193"><i></i><span id="offline-state-label">Checking offline support</span></button><span class="sep"></span>
     <span id="object-count">0 objects</span><span class="sep"></span>
-    <span class="ready-state" id="persistence-state" data-state="clean" aria-live="polite"><i></i><span id="persistence-state-label">All changes saved</span></span>
+    <button type="button" id="diagnostics-badge" class="btn" style="display:none;font-size:10px;padding:3px 8px;min-height:24px" title="Errors this session — run Export Diagnostics from the command palette" data-os-click="click-diagnostics"></button><span class="ready-state" id="persistence-state" data-state="clean" aria-live="polite"><i></i><span id="persistence-state-label">All changes saved</span></span>
 </div>
 <div id="ai-progress" role="dialog" aria-modal="true" aria-label="Background processing" aria-live="polite">
     <div class="ai-box">
@@ -2848,6 +2848,7 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-120": function(event) { OS.setTheme('midnight') },
         "click-121": function(event) { OS.setTheme('oled') },
         "click-122": function(event) { OS.toggleFullscreen() },
+        "click-diagnostics": function(event) { OS.exportDiagnostics() },
         "click-123": function(event) { OS.showShortcuts() },
         "click-124": function(event) { document.getElementById('panels').classList.toggle('mobile-open') },
         "click-125": function(event) { OS.setTool('select') },
@@ -13972,6 +13973,8 @@ self.onmessage = async function(e) {
             {label:'Theme: Midnight',cat:'View',fn:()=>this.setTheme('midnight')},
             {label:'Theme: OLED',cat:'View',fn:()=>this.setTheme('oled')},
             {label:'Toggle Panels',cat:'View',fn:()=>this.togglePanels(),key:'Tab'},
+            {label:'Export Diagnostics',cat:'Help',fn:()=>this.exportDiagnostics()},
+            {label:'Clear Diagnostics',cat:'Help',fn:()=>this.clearDiagnostics()},
             {label:'Add Layer',cat:'Layer',fn:()=>this.addLayer()},
             {label:'Delete Layer',cat:'Layer',fn:()=>this.deleteLayer()},
             {label:'Duplicate Layer',cat:'Layer',fn:()=>this.duplicateLayer()},
@@ -17451,6 +17454,101 @@ self.onmessage = async function(e) {
         this._announceAccessibility(msg);
         return t;
     },
+    // ====================== DIAGNOSTICS ======================
+    // Failures reached the user as a toast and the developer as nothing. Every
+    // issue filed against this project so far is prose and a screenshot,
+    // because that is all the app made available. Nothing here is transmitted:
+    // the blob is for the reporter to download and attach.
+    _diagnostics: [],
+    _diagnosticsLimit: 200,
+    _diagnosticsErrors: 0,
+    recordDiagnostic(kind, message, detail = null) {
+        const entry = {
+            at:new Date().toISOString(),
+            kind:String(kind).slice(0, 24),
+            message:this._safeText(String(message ?? ''), 300)
+        };
+        if (detail && typeof detail === 'object') {
+            // Only scalars, and only a few: no pixel data, no file contents.
+            const safe = {};
+            Object.keys(detail).slice(0, 8).forEach(key => {
+                const value = detail[key];
+                if (value === null || ['string','number','boolean'].includes(typeof value)) {
+                    safe[key] = typeof value === 'string' ? this._safeText(value, 120) : value;
+                }
+            });
+            if (Object.keys(safe).length) entry.detail = safe;
+        }
+        this._diagnostics.push(entry);
+        if (this._diagnostics.length > this._diagnosticsLimit) this._diagnostics.shift();
+        if (kind === 'error') {
+            this._diagnosticsErrors += 1;
+            this._updateDiagnosticsBadge();
+        }
+        return entry;
+    },
+    _updateDiagnosticsBadge() {
+        const badge = document.getElementById('diagnostics-badge');
+        if (!badge) return;
+        badge.textContent = this._diagnosticsErrors ? `${this._diagnosticsErrors} error${this._diagnosticsErrors === 1 ? '' : 's'}` : '';
+        badge.style.display = this._diagnosticsErrors ? '' : 'none';
+    },
+    // Deliberately excludes document and file names: a bug report should not
+    // leak what the user was working on.
+    buildDiagnosticsReport() {
+        const canvasObjects = this.canvas ? this.canvas.getObjects().length : 0;
+        return {
+            kind:'openshop-diagnostics',
+            schemaVersion:1,
+            version:this.version,
+            generatedAt:new Date().toISOString(),
+            environment:{
+                userAgent:navigator.userAgent,
+                language:navigator.language,
+                devicePixelRatio:window.devicePixelRatio,
+                viewport:`${window.innerWidth}x${window.innerHeight}`,
+                locale:this._lang,
+                theme:document.documentElement.className || 'default'
+            },
+            capabilities:{
+                fileSystemAccess:Boolean(window.showOpenFilePicker),
+                originPrivateFileSystem:Boolean(navigator.storage?.getDirectory),
+                webLocks:Boolean(navigator.locks),
+                broadcastChannel:typeof BroadcastChannel !== 'undefined',
+                imageDecoder:typeof ImageDecoder !== 'undefined',
+                offscreenCanvas:typeof OffscreenCanvas !== 'undefined',
+                serviceWorker:Boolean(navigator.serviceWorker?.controller)
+            },
+            document:{
+                width:this.canvasW,
+                height:this.canvasH,
+                resolution:this._documentResolution,
+                layers:this.layers?.length || 0,
+                objects:canvasObjects,
+                historyEntries:this.history?.length || 0,
+                historyIndex:this.historyIdx,
+                persistenceState:this._persistenceState,
+                animationFrames:this._animFrames?.length || 0,
+                hasSelection:Boolean(this._selectionMask || this._selectionBounds)
+            },
+            errorCount:this._diagnosticsErrors,
+            events:this._diagnostics.slice()
+        };
+    },
+    exportDiagnostics() {
+        const report = this.buildDiagnosticsReport();
+        const blob = new Blob([JSON.stringify(report, null, 2)], { type:'application/json' });
+        this._downloadBlob(blob, 'openshop-diagnostics.json');
+        this.toast(`Diagnostics exported (${report.events.length} events)`, 'success');
+        return report;
+    },
+    clearDiagnostics() {
+        this._diagnostics = [];
+        this._diagnosticsErrors = 0;
+        this._updateDiagnosticsBadge();
+        this.toast('Diagnostics cleared', 'info');
+        return true;
+    },
     _maxToasts: 4,
     toast(msg, type='info') {
         const el=document.getElementById('toast-container');
@@ -17459,6 +17557,7 @@ self.onmessage = async function(e) {
         const t=document.createElement('div'); t.className=`toast ${type}`; t.textContent=msg;
         el.appendChild(t); requestAnimationFrame(()=>t.classList.add('show'));
         this._announceAccessibility(msg);
+        if (type === 'error' || type === 'warning') this.recordDiagnostic(type === 'error' ? 'error' : 'warning', msg);
         let dismissed = false;
         const dismiss = () => {
             if (dismissed) return;

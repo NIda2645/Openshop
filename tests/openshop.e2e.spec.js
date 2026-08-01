@@ -2866,6 +2866,54 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('collects diagnostics a bug report can attach @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Failures reached the user as a toast and the developer as nothing, so
+  // every issue filed so far is prose and a screenshot.
+  const result = await page.evaluate(() => {
+    OS.createNewDocument(120, 90, '#ffffff');
+    OS.clearDiagnostics();
+
+    OS.toast('something went wrong', 'error');
+    OS.toast('a warning', 'warning');
+    OS.toast('just information', 'info');
+    OS.recordDiagnostic('job', 'filter cancelled', { op: 'blur', pixels: 400, nested: { deep: true } });
+
+    const report = OS.buildDiagnosticsReport();
+    const badge = document.getElementById('diagnostics-badge');
+    const serialised = JSON.stringify(report);
+
+    return {
+      kinds: report.events.map(e => e.kind),
+      errorCount: report.errorCount,
+      badgeText: badge.textContent,
+      badgeShown: badge.style.display !== 'none',
+      hasVersion: report.version === OS.version,
+      docLayers: report.document.layers,
+      capabilityKeys: Object.keys(report.capabilities).length,
+      // Only scalars survive; nested objects are dropped.
+      jobDetail: report.events.find(e => e.kind === 'job')?.detail,
+      // A report must not carry what the user was working on.
+      leaksDocName: serialised.includes(OS._docName || ' nope'),
+      afterClear: (() => { OS.clearDiagnostics(); return OS.buildDiagnosticsReport().events.length; })()
+    };
+  });
+
+  // Errors and warnings are recorded; plain information is not.
+  expect(result.kinds).toEqual(['error', 'warning', 'job']);
+  expect(result.errorCount).toBe(1);
+  expect(result.badgeShown).toBe(true);
+  expect(result.badgeText).toBe('1 error');
+  expect(result.hasVersion).toBe(true);
+  expect(result.docLayers).toBeGreaterThan(0);
+  expect(result.capabilityKeys).toBeGreaterThan(4);
+  expect(result.jobDetail).toEqual({ op: 'blur', pixels: 400 });
+  expect(result.leaksDocName).toBe(false);
+  expect(result.afterClear).toBe(0);
+});
+
 test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
