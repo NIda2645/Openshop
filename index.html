@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-Jv8m21te+aHUH5EW4Z2UxqJj9Fe4LtxfN8lSO1lcXGM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-6SKK/dUyE7DavETOqJP4dt18fQUfkq5nIaH983sdq2A=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3659,6 +3659,7 @@ const OS = {
         });
         this._initMenuAccessibility();
         this._initModalFocusManagement();
+        this._initCanvasFocusContext();
         document.querySelectorAll('.panel-tab').forEach(tab => {
             tab.setAttribute('role', 'tab');
         });
@@ -9104,6 +9105,19 @@ self.onmessage = function(event) {
     dismissWelcome() {
         const el = document.getElementById('welcome-overlay');
         el.classList.add('hidden');
+        // The fade only drops opacity, so for 400ms — and forever, if the
+        // timeout is missed — the overlay kept its layout box, its focusable
+        // buttons and its slot on the modal stack. Tab then traversed an
+        // invisible dialog and every modal-aware check believed one was open.
+        el.inert = true;
+        el.setAttribute('aria-hidden', 'true');
+        this._releaseModal(el);
+        // Whatever was focused is now inside an inert subtree, which leaves the
+        // sequential-navigation starting point stranded there — the next Tab
+        // goes nowhere. Hand focus to the top of the editor instead.
+        if (!document.activeElement || el.contains(document.activeElement) || document.activeElement === document.body) {
+            (this._menuRoots?.()[0] || document.querySelector('.menu-bar > .menu-item'))?.focus();
+        }
         setTimeout(() => el.style.display = 'none', 400);
         this.toast('Ready to edit', 'success');
         // Capture initial state for before/after
@@ -9318,6 +9332,32 @@ self.onmessage = function(event) {
         this.resizeCanvas();
         this.toast(fs ? 'Fullscreen (click View > Fullscreen to exit)' : 'Normal view', 'info');
         if (!fs) { this.drawGrid(); this.drawRulers(); }
+    },
+
+    // True while the canvas is the surface the user is working on. Set by a
+    // canvas pointer press, cleared the moment focus lands on a real control,
+    // so the Tab panel toggle can coexist with focus traversal.
+    _canvasFocusContext: false,
+    togglePanels() {
+        const ids = ['panels', 'toolbar', 'tool-options'];
+        const nodes = ids.map(id => document.getElementById(id)).filter(Boolean);
+        if (!nodes.length) return false;
+        const hidden = nodes[0].style.display === 'none';
+        nodes.forEach(node => { node.style.display = hidden ? '' : 'none'; });
+        this._announceAccessibility(hidden ? 'Panels shown' : 'Panels hidden');
+        return true;
+    },
+    _initCanvasFocusContext() {
+        if (this._canvasFocusContextReady) return;
+        this._canvasFocusContextReady = true;
+        const area = document.getElementById('canvas-area');
+        area?.addEventListener('pointerdown', () => { this._canvasFocusContext = true; });
+        // Any control taking focus — by click or by Tab — hands the key back.
+        document.addEventListener('focusin', event => {
+            if (event.target !== document.body && !area?.contains(event.target)) {
+                this._canvasFocusContext = false;
+            }
+        });
     },
 
     // ====================== PWA ======================
@@ -13124,6 +13164,7 @@ self.onmessage = async function(e) {
             {label:'Theme: Dark',cat:'View',fn:()=>this.setTheme('default')},
             {label:'Theme: Midnight',cat:'View',fn:()=>this.setTheme('midnight')},
             {label:'Theme: OLED',cat:'View',fn:()=>this.setTheme('oled')},
+            {label:'Toggle Panels',cat:'View',fn:()=>this.togglePanels(),key:'Tab'},
             {label:'Add Layer',cat:'Layer',fn:()=>this.addLayer()},
             {label:'Delete Layer',cat:'Layer',fn:()=>this.deleteLayer()},
             {label:'Duplicate Layer',cat:'Layer',fn:()=>this.duplicateLayer()},
@@ -13664,13 +13705,23 @@ self.onmessage = async function(e) {
         if (this._isVisibleElement(el)) this._adoptModal(el);
         else this._releaseModal(el);
     },
-    _onModalTabKey(event) {
-        if (event.key !== 'Tab') return;
+    // The stack can retain entries whose overlay was removed from the DOM
+    // without going through _releaseModal, so every reader has to prune before
+    // trusting it — otherwise the app believes a modal is open forever.
+    _activeModal() {
         while (this._modalStack.length && !this._modalStack.at(-1).overlay.isConnected) {
             this._modalStack.pop();
         }
-        const top = this._modalStack.at(-1)?.overlay;
+        return this._modalStack.at(-1)?.overlay || null;
+    },
+    _onModalTabKey(event) {
+        if (event.key !== 'Tab') return;
+        const top = this._activeModal();
         if (!top) return;
+        // The global shortcut handler also listens for Tab. Without this the
+        // trap only worked at the two ends, because every middle press fell
+        // through to it and was cancelled there.
+        event.stopPropagation();
         const focusables = this._focusablesIn(top);
         if (!focusables.length) { event.preventDefault(); return; }
         const first = focusables[0];
@@ -14079,7 +14130,7 @@ self.onmessage = async function(e) {
             ['Ctrl+G','Toggle Grid'],['Ctrl+R','Toggle Rulers'],
             ['Ctrl+1','Zoom 100%'],['Ctrl+0','Zoom Fit'],
             ['Ctrl++','Zoom In'],['Ctrl+-','Zoom Out'],
-            ['Tab','Toggle UI Panels'],['F','Fullscreen'],['Scroll','Zoom'],
+            ['Tab','Toggle UI Panels (while working on the canvas)'],['F','Fullscreen'],['Scroll','Zoom'],
             // Tools
             ['Enter','Apply Crop / Finish Pen'],['Escape','Cancel / Deselect'],
             ['Space (hold)','Temporary Pan'],['[ / ]','Brush Size'],['X','Swap Colors'],['D','Default Colors'],
@@ -14198,15 +14249,16 @@ self.onmessage = async function(e) {
                     }
                     return;
                 case 'Tab':
+                    // Tab is the platform's focus-traversal key first and a
+                    // Photoshop panel toggle second. Swallowing it wholesale
+                    // meant focus never moved anywhere in the app. It now
+                    // toggles panels only while the canvas is the working
+                    // surface — i.e. the user last interacted with the canvas
+                    // rather than a control — so keyboard traversal, including
+                    // the very first Tab after load, still works.
+                    if (!this._canvasFocusContext || this._activeModal()) return;
                     e.preventDefault();
-                    // Toggle panels visibility like Photoshop
-                    const panels = document.getElementById('panels');
-                    const toolbar = document.getElementById('toolbar');
-                    const toolopts = document.getElementById('tool-options');
-                    const hidden = panels.style.display === 'none';
-                    panels.style.display = hidden ? '' : 'none';
-                    toolbar.style.display = hidden ? '' : 'none';
-                    toolopts.style.display = hidden ? '' : 'none';
+                    this.togglePanels();
                     return;
                 case 'F':
                 case 'f':

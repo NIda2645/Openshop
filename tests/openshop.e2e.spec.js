@@ -2223,6 +2223,42 @@ test('drives the whole menubar from the keyboard with clean accessible names @cr
   expect(shortcut).toBe('Ctrl+A');
 });
 
+test('Tab moves focus through the editor instead of toggling panels @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  // The welcome overlay fades for 400ms before it is removed from layout.
+  await expect(page.locator('#welcome-overlay')).toBeHidden();
+
+  // The panel toggle used to swallow every Tab, so focus never advanced and
+  // the chrome blinked instead. Traversal is the default; the toggle only
+  // applies while the canvas is the working surface.
+  const seen = [];
+  for (let i = 0; i < 10; i += 1) {
+    await page.keyboard.press('Tab');
+    seen.push(await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      return (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 40);
+    }));
+  }
+  const reached = seen.filter(Boolean);
+  expect(reached.length).toBeGreaterThan(5);
+  expect(new Set(reached).size).toBeGreaterThan(3);
+
+  // The chrome stayed put the whole way through.
+  const chrome = await page.evaluate(() => ['panels', 'toolbar', 'tool-options']
+    .map(id => document.getElementById(id).style.display));
+  expect(chrome.every(display => display !== 'none')).toBe(true);
+
+  // Pressing Tab after working on the canvas still hides the panels.
+  await page.locator('#canvas-area').click({ position: { x: 40, y: 40 } });
+  await page.keyboard.press('Tab');
+  const afterCanvas = await page.evaluate(() => document.getElementById('panels').style.display);
+  expect(afterCanvas).toBe('none');
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.getElementById('panels').style.display)).toBe('');
+});
+
 test('traps focus inside dialogs and returns it to whatever opened them @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -2262,6 +2298,21 @@ test('traps focus inside dialogs and returns it to whatever opened them @cross-b
       .filter(el => el.getClientRects().length).length;
   });
   expect(focusables).toBeGreaterThan(1);
+
+  // A press from the middle of the list is the case the global shortcut
+  // handler used to eat: it is neither end, so the trap did not intervene.
+  await page.evaluate(() => {
+    const o = document.querySelector('.modal-overlay');
+    const list = [...o.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.getClientRects().length);
+    list[0].focus();
+  });
+  const midStart = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 60));
+  await page.keyboard.press('Tab');
+  const midEnd = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 60));
+  expect(midEnd).not.toBe(midStart);
+  expect(await page.evaluate(() => document.querySelector('.modal-overlay').contains(document.activeElement))).toBe(true);
+  expect(await page.evaluate(() => document.getElementById('panels').style.display)).not.toBe('none');
 
   await page.evaluate(() => {
     const o = document.querySelector('.modal-overlay');

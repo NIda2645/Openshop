@@ -2,7 +2,13 @@
 
 All notable changes to Openshop will be documented in this file.
 
-## [v0.24.0] - 2026-07-30
+## [Unreleased]
+
+### Fixed
+- Give the Tab key back to focus navigation. The panel toggle ran `preventDefault()` on every Tab, so focus never advanced anywhere in the editor and the chrome blinked instead — the app was unusable by keyboard and failed WCAG 2.1.1 and 2.4.3. Tab now traverses; it toggles panels only while the canvas is the surface being worked on, which is the case the Photoshop binding was for, and the toggle is also in the command palette
+- Stop the modal focus trap leaking Tab to the global shortcut handler. `_onModalTabKey` only intervened at the first and last focusable, so every press from the middle of a dialog fell through and was cancelled — the trap passed its test because the test only ever pressed at the two ends
+- Release the welcome overlay when it is dismissed. It fades to `opacity:0` but keeps its layout box, so it stayed focusable and stayed on the modal stack forever: Tab traversed an invisible dialog, and every check of "is a modal open" answered yes for the rest of the session. It is now `inert`, released from the stack, and focus moves to the editor instead of being stranded in an inert subtree
+- Prune disconnected entries whenever the modal stack is read, not only inside the Tab handler
 
 ### Performance
 - Move the highlight during animation playback instead of rebuilding the whole thumbnail strip on every tick. A 20-frame timeline at 12 fps was creating a div, an 80px canvas, an image decode and two listeners per frame, 12 times a second — roughly 240 decodes a second purely to move a border
