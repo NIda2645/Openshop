@@ -2866,6 +2866,61 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('lasso and pen paths close by clicking their start point @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Issue #3: neither tool had "suction" on the start and end points, so an
+  // outline could not reliably be completed.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(200, 150, '#ffffff');
+    OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
+    // Lasso: three corners, then a click back near the first one.
+    OS.setTool('lasso');
+    OS._lassoPoints = [];
+    OS._lassoClick({ offsetX: 20, offsetY: 20 });
+    OS._lassoClick({ offsetX: 120, offsetY: 20 });
+    OS._lassoClick({ offsetX: 120, offsetY: 100 });
+    const handle = document.getElementById('lasso-close-handle');
+    const markerShown = handle.classList.contains('visible');
+    // Just outside the radius adds a point; just inside closes.
+    OS._lassoClick({ offsetX: 20 + 40, offsetY: 20 });
+    const afterFarClick = OS._lassoPoints.length;
+    OS._lassoClick({ offsetX: 20 + 4, offsetY: 20 + 4 });
+    const lassoSelected = OS._selectionMask ? [...OS._selectionMask.mask].filter(Boolean).length : 0;
+
+    // Pen: closing on the start point produces a closed, filled path.
+    OS.setTool('pen');
+    OS._penPoints = [];
+    OS._penClick({ x: 30, y: 30 });
+    OS._penClick({ x: 90, y: 30 });
+    OS._penClick({ x: 90, y: 80 });
+    const layersBefore = OS.layers.length;
+    OS._penClick({ x: 33, y: 33 });
+    const penPath = OS.canvas.getObjects().find(o => o.type === 'path');
+
+    return {
+      markerShown,
+      afterFarClick,
+      lassoSelected,
+      penPointsCleared: OS._penPoints.length,
+      penClosed: Boolean(penPath && /z/i.test(penPath.path.flat().join(' '))),
+      penAddedLayer: OS.layers.length > layersBefore
+    };
+  });
+
+  expect(result.markerShown).toBe(true);
+  // A click outside the radius is a normal point.
+  expect(result.afterFarClick).toBe(4);
+  // A click on the start point closed the lasso into a real selection.
+  expect(result.lassoSelected).toBeGreaterThan(1000);
+  // The pen committed and closed its path.
+  expect(result.penPointsCleared).toBe(0);
+  expect(result.penClosed).toBe(true);
+  expect(result.penAddedLayer).toBe(true);
+});
+
 test('the panel stack resizes by drag and by keyboard @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

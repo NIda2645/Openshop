@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-R3XQRyHBT0025571T9AIhSJHEglBNAu4lnqcF1h3nBM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-3TDHHI2ikuia2q7qpGhpjA2jBnMtwzXtnXsgwWuuUdo=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -551,6 +551,12 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 /* === PEN TOOL OVERLAY === */
 .pen-overlay{position:absolute;inset:0;pointer-events:none;z-index:96}
 .pen-overlay svg{width:100%;height:100%}
+/* Issue #3: neither tool showed where its path would close, so an outline
+   could not reliably be finished. The start point is marked once there is
+   something to close, and lights up when a click there would close it. */
+.close-handle{fill:transparent;stroke:var(--accent);stroke-width:2;pointer-events:none;opacity:0;transition:opacity var(--dur-fast) var(--ease-out)}
+.close-handle.visible{opacity:.85}
+.close-handle.armed{fill:var(--accent);opacity:1}
 .pen-point{fill:var(--accent);cursor:move;pointer-events:all}
 .pen-control{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:3 2}
 .pen-path-preview{fill:none;stroke:var(--accent);stroke-width:2}
@@ -2312,8 +2318,8 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
     <canvas id="editor-canvas" aria-label="Drawing surface"></canvas>
     <canvas class="canvas-grid" id="grid-overlay"></canvas>
     <div id="guides-container"></div>
-    <div id="lasso-overlay" class="lasso-overlay" style="display:none"><svg><polygon class="lasso-path" points=""/></svg></div>
-    <div id="pen-overlay" class="pen-overlay" style="display:none"><svg><path class="pen-path-preview" d=""/></svg></div>
+    <div id="lasso-overlay" class="lasso-overlay" style="display:none"><svg><polygon class="lasso-path" points=""/><circle class="close-handle" id="lasso-close-handle" r="6" cx="-99" cy="-99"/></svg></div>
+    <div id="pen-overlay" class="pen-overlay" style="display:none"><svg><path class="pen-path-preview" d=""/><circle class="close-handle" id="pen-close-handle" r="6" cx="-99" cy="-99"/></svg></div>
     <div id="measure-overlay" style="position:absolute;inset:0;pointer-events:none;z-index:98;display:none"></div>
     <div id="selection-overlay" class="selection-rect" style="display:none"></div>
     <div id="crop-container" class="crop-overlay" style="display:none"></div>
@@ -7011,6 +7017,14 @@ self.onmessage = function(event) {
     onMouseMove(opt) {
         const ptr=this.canvas.getPointer(opt.e);
         document.getElementById('cursor-pos').textContent=`X: ${Math.round(ptr.x)} Y: ${Math.round(ptr.y)}`;
+        // Light the close marker while the pointer is over it.
+        if (this.state.tool === 'lasso') {
+            this._updateCloseHandle('lasso-close-handle', this._lassoPoints, { x:opt.e.offsetX, y:opt.e.offsetY }, 3);
+        } else if (this.state.tool === 'pen') {
+            const vpt = this.canvas.viewportTransform;
+            this._updateCloseHandle('pen-close-handle', this._penPoints,
+                { x:ptr.x * vpt[0] + vpt[4], y:ptr.y * vpt[3] + vpt[5] }, 2);
+        }
         const ic=document.getElementById('info-cursor'); if(ic) ic.textContent=`${Math.round(ptr.x)}, ${Math.round(ptr.y)}`;
         if(this.state.isPanning&&this.state.panStart) {
             const dx=opt.e.clientX-this.state.panStart.x, dy=opt.e.clientY-this.state.panStart.y;
@@ -11296,12 +11310,54 @@ self.onmessage = async function(event) {
     },
 
     // ====================== LASSO SELECTION ======================
+    // How close a click has to be to the first point to close the path.
+    _closeSnapRadius: 12,
+    _pathStartPoint(points) {
+        if (!points?.length) return null;
+        const first = points[0];
+        if (typeof first === 'string') {
+            const [x, y] = first.split(',').map(Number);
+            return { x, y };
+        }
+        return { x:first.sx ?? first.x, y:first.sy ?? first.y };
+    },
+    _withinCloseRadius(points, x, y) {
+        const start = this._pathStartPoint(points);
+        if (!start) return false;
+        return Math.hypot(x - start.x, y - start.y) <= this._closeSnapRadius;
+    },
+    // Marks where the path would close, and lights up when a click there does
+    // it. Without this there was no way to tell a shape could be completed.
+    _updateCloseHandle(id, points, pointer, minimum) {
+        const handle = document.getElementById(id);
+        if (!handle) return false;
+        const start = this._pathStartPoint(points);
+        const ready = Boolean(start) && points.length >= minimum;
+        if (!ready) {
+            handle.classList.remove('visible', 'armed');
+            handle.setAttribute('cx', '-99');
+            handle.setAttribute('cy', '-99');
+            return false;
+        }
+        handle.setAttribute('cx', String(start.x));
+        handle.setAttribute('cy', String(start.y));
+        handle.classList.add('visible');
+        const armed = Boolean(pointer) && this._withinCloseRadius(points, pointer.x, pointer.y);
+        handle.classList.toggle('armed', armed);
+        return armed;
+    },
     _lassoClick(evt) {
-        const area = document.getElementById('canvas-area');
         const x = evt.offsetX, y = evt.offsetY;
+        // Clicking the start point closes the outline, which is what issue #3
+        // means by the start and end points having no "suction".
+        if (this._lassoPoints.length >= 3 && this._withinCloseRadius(this._lassoPoints, x, y)) {
+            this._lassoDoubleClick();
+            return;
+        }
         this._lassoPoints.push(`${x},${y}`);
         const svg = document.querySelector('#lasso-overlay svg polygon');
         svg.setAttribute('points', this._lassoPoints.join(' '));
+        this._updateCloseHandle('lasso-close-handle', this._lassoPoints, null, 3);
     },
     // Fill the polygon into a document-sized buffer: the drawn shape is the
     // selection. It used to keep only the bounding box, so a lasso around a
@@ -11335,6 +11391,7 @@ self.onmessage = async function(event) {
         });
         const raster = this._rasterizePolygonMask(points);
         const count = this._setPixelSelectionMask(raster.mask, raster.w, raster.h, { coverage:true });
+        this._updateCloseHandle('lasso-close-handle', [], null, 3);
         if (!count) { this.toast('Lasso selection is outside the document', 'info'); return; }
         this._placeSelectionBox({ borderRadius:'0' });
         this.toast('Lasso selection: ' + count.toLocaleString() + ' px', 'info');
@@ -12017,8 +12074,15 @@ self.onmessage = async function(event) {
     _penClick(ptr, evt) {
         const vpt = this.canvas.viewportTransform;
         const sx = ptr.x * vpt[0] + vpt[4], sy = ptr.y * vpt[3] + vpt[5];
+        // Clicking back on the first point closes and commits the path.
+        if (this._penPoints.length >= 2 && this._withinCloseRadius(this._penPoints, sx, sy)) {
+            this._penClosedByStart = true;
+            this._penFinish();
+            return;
+        }
         this._penPoints.push({ x: ptr.x, y: ptr.y, sx, sy });
         this._penUpdatePreview();
+        this._updateCloseHandle('pen-close-handle', this._penPoints, null, 2);
     },
     _penUpdatePreview() {
         const svg = document.querySelector('#pen-overlay svg path');
@@ -12035,20 +12099,23 @@ self.onmessage = async function(event) {
             if (preview) preview.setAttribute('d', '');
             return;
         }
-        const pts = this._penPoints.map(p => `${p.x} ${p.y}`).join(', ');
         const pathStr = 'M ' + this._penPoints.map(p => `${p.x} ${p.y}`).join(' L ');
-        const closed = this.state.penFilled ? pathStr + ' Z' : pathStr;
+        // Closing on the start point is itself a request for a closed shape,
+        // whatever the Filled toggle says.
+        const closeIt = this.state.penFilled || this._penClosedByStart;
+        const closed = closeIt ? pathStr + ' Z' : pathStr;
         const path = new fabric.Path(closed, {
-            fill: this.state.penFilled ? this.state.shapeFill : 'transparent',
+            fill: closeIt ? this.state.shapeFill : 'transparent',
             stroke: this.state.penStroke,
             strokeWidth: this.state.penWidth,
             selectable: true,
         });
-        this.canvas.add(path);
-        this.layers[this.activeLayerIdx].objects.push(path);
+        this._addObjectAsLayer(path, this._shapeLayerName('pen'));
         this.saveHistory('Pen Path'); this.updateLayersPanel();
         const segCount = this._penPoints.length;
         this._penPoints = [];
+        this._penClosedByStart = false;
+        this._updateCloseHandle('pen-close-handle', [], null, 2);
         const svg = document.querySelector('#pen-overlay svg path');
         if (svg) svg.setAttribute('d', '');
         this.toast('Path created ('+segCount+' segments)', 'success');
