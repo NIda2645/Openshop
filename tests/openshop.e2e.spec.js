@@ -2866,6 +2866,61 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('object tools create their own layer instead of stacking @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Issue #3: "the corresponding text layer will pop up on the layer page ...
+  // instead of stacking all elements under one layer". Everything landed in
+  // whichever layer was active, so the panel described a one-layer document
+  // however much was on the canvas.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(300, 200, '#ffffff');
+    const before = OS.layers.length;
+
+    OS.setTool('text');
+    OS.onMouseDown({ e: {}, absolutePointer: { x: 30, y: 30 }, pointer: { x: 30, y: 30 } });
+    const afterText = OS.layers.map(l => ({ name: l.name, count: l.objects.length }));
+    const textLayer = OS.layers[OS.activeLayerIdx];
+
+    // Deleting the layer takes its object with it.
+    const objectsBeforeDelete = OS.canvas.getObjects().length;
+    OS.deleteLayer();
+    const objectsAfterDelete = OS.canvas.getObjects().length;
+
+    // The opt-out restores the previous behaviour.
+    OS._prefs.stackNewObjects = true;
+    const layersBeforeOptOut = OS.layers.length;
+    OS.setTool('text');
+    OS.onMouseDown({ e: {}, absolutePointer: { x: 60, y: 60 }, pointer: { x: 60, y: 60 } });
+    const layersAfterOptOut = OS.layers.length;
+    OS._prefs.stackNewObjects = false;
+
+    return {
+      before,
+      afterText,
+      textLayerNamed: textLayer.name,
+      textLayerCount: textLayer.objects.length,
+      objectsBeforeDelete,
+      objectsAfterDelete,
+      layersBeforeOptOut,
+      layersAfterOptOut
+    };
+  });
+
+  // A layer was added for the text, named after it, holding only it.
+  expect(result.afterText.length).toBe(result.before + 1);
+  expect(result.textLayerNamed).toBe('Type here');
+  expect(result.textLayerCount).toBe(1);
+  // The original layers are untouched.
+  expect(result.afterText[0].name).toBe('Background');
+  expect(result.afterText[1].count).toBe(0);
+  // Deleting that layer removes its object from the canvas too.
+  expect(result.objectsAfterDelete).toBeLessThan(result.objectsBeforeDelete);
+  // With the preference on, objects stack in the active layer as before.
+  expect(result.layersAfterOptOut).toBe(result.layersBeforeOptOut);
+});
+
 test('warns before a document rebuild discards guides, frames or PSD metadata @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-Af0B3WHt+F3BZJyi5j69nmvHUDO7AO3qp/7+wISRdqk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-IHEfmUh0ACKaD4DYnwpG+ogAnXMkttt2ONj48wJ+c7Q=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3541,7 +3541,7 @@ const OS = {
     _macroRecording: false, _macroPlaying: false, _macroSteps: [],
     _liquifyData: null,
     _symmetryMode: 'off',
-    _prefs: { gridSize: 20, historyStates: 60, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5 },
+    _prefs: { gridSize: 20, historyStates: 60, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false },
     _importLimits: {
         maxJsonBytes: 10 * 1024 * 1024,
         maxImageBytes: 100 * 1024 * 1024,
@@ -6289,6 +6289,47 @@ self.onmessage = function(event) {
         this.saveHistory(labels[destination]);
         return true;
     },
+    // Issue #3: creating text or a shape left every object stacked in whichever
+    // layer happened to be active, so the layers panel described the document
+    // as one layer no matter how much was on the canvas — Illustrator's model
+    // under a Photoshop-shaped panel. Object-creating tools mint a layer for
+    // what they create, above the active one, and select it.
+    //
+    // Only new creation goes through here; existing projects keep the layer
+    // structure they were saved with.
+    _addObjectAsLayer(object, name) {
+        if (!this.canvas.getObjects().includes(object)) this.canvas.add(object);
+        if (this._prefs?.stackNewObjects) {
+            this.layers[this.activeLayerIdx].objects.push(object);
+            return this.layers[this.activeLayerIdx];
+        }
+        const layer = {
+            id:this._newDocumentId('layer'),
+            name:this._safeText(name || 'Layer', 120),
+            visible:true,
+            locked:false,
+            opacity:100,
+            blend:'source-over',
+            objects:[object]
+        };
+        this.layers.splice(this.activeLayerIdx + 1, 0, layer);
+        this.activeLayerIdx = this.layers.indexOf(layer);
+        return layer;
+    },
+    // A readable layer name for the thing that was just made.
+    _shapeLayerName(tool) {
+        const names = { rect:'Rectangle', circle:'Ellipse', triangle:'Triangle', line:'Line',
+            polygon:'Polygon', star:'Star', arrow:'Arrow', pen:'Path' };
+        return names[tool] || 'Shape';
+    },
+    _objectLayerName(object, fallback) {
+        if (object?.type === 'i-text' || object?.type === 'text' || object?.type === 'textbox') {
+            const text = String(object.text || '').trim().replace(/\s+/g, ' ');
+            if (text) return text.slice(0, 40);
+            return 'Text';
+        }
+        return fallback || 'Layer';
+    },
     addLayer({ id = null, name = null } = {}) {
         const idx = this.layers.length;
         const layerId = this._coerceDocumentId(id, 'layer');
@@ -6824,7 +6865,7 @@ self.onmessage = function(event) {
         if (tool==='clone'&&this._cloneSource) { this._cloneStart(ptr, opt.e); return; }
         if (tool==='text') {
             const text = this._applyDirectionToObject(new fabric.IText('Type here', { left:ptr.x, top:ptr.y, fontFamily:this.state.textFont, fontSize:this.state.textSize, fill:this.state.textColor, editable:true, fontWeight:this.state.textBold?'bold':'normal', fontStyle:this.state.textItalic?'italic':'normal' }));
-            this.canvas.add(text); this.layers[this.activeLayerIdx].objects.push(text);
+            this._addObjectAsLayer(text, this._objectLayerName(text, 'Text'));
             this.canvas.setActiveObject(text); text.enterEditing(); this.saveHistory('Add Text'); this.updateLayersPanel(); return;
         }
         if (tool==='fill') {
@@ -6969,8 +7010,7 @@ self.onmessage = function(event) {
                 ],{fill:l.stroke,stroke:l.stroke,strokeWidth:1,selectable:false});
                 const grp = new fabric.Group([l, head],{selectable:true});
                 this.canvas.remove(this._tempShape);
-                this.canvas.add(grp);
-                this.layers[this.activeLayerIdx].objects.push(grp);
+                this._addObjectAsLayer(grp, 'Arrow');
             } else if (this._tempShape._polyPlaceholder) {
                 const cx=this._tempShape.left, cy=this._tempShape.top, r=this._tempShape.radius||50;
                 const sides=this._tempShape._polySides||5;
@@ -6978,8 +7018,7 @@ self.onmessage = function(event) {
                 const pts=[]; for(let i=0;i<sides;i++){const a=2*Math.PI*i/sides-Math.PI/2;pts.push({x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)});}
                 this.canvas.remove(this._tempShape);
                 const poly=new fabric.Polygon(pts,{fill,stroke:sk,strokeWidth:sw,selectable:true});
-                this.canvas.add(poly);
-                this.layers[this.activeLayerIdx].objects.push(poly);
+                this._addObjectAsLayer(poly, 'Polygon');
             } else if (this._tempShape._starPlaceholder) {
                 const cx=this._tempShape.left, cy=this._tempShape.top, r=this._tempShape.radius||50;
                 const pts_count=this.state.starPoints||5, innerR=r*(this.state.starInner||40)/100;
@@ -6987,11 +7026,11 @@ self.onmessage = function(event) {
                 const pts=[]; for(let i=0;i<pts_count*2;i++){const a=Math.PI*i/pts_count-Math.PI/2;const rad=i%2===0?r:innerR;pts.push({x:cx+rad*Math.cos(a),y:cy+rad*Math.sin(a)});}
                 this.canvas.remove(this._tempShape);
                 const star=new fabric.Polygon(pts,{fill,stroke:sk,strokeWidth:sw,selectable:true});
-                this.canvas.add(star);
-                this.layers[this.activeLayerIdx].objects.push(star);
+                this._addObjectAsLayer(star, 'Star');
             } else {
                 this._tempShape.setCoords(); this._tempShape.selectable=true;
-                this.layers[this.activeLayerIdx].objects.push(this._tempShape);
+                // Already on the canvas as the live preview.
+                this._addObjectAsLayer(this._tempShape, this._shapeLayerName(this.state.tool));
             }
             this.saveHistory('Draw '+this.state.tool); this.updateLayersPanel();
             this._tempShape=null; this._shapeStart=null; this.state.isDrawing=false;
@@ -12057,6 +12096,10 @@ self.onmessage = async function(event) {
                 <div class="pref-row"><label>Snap Tolerance</label><input id="pref-snap" type="number" value="${this._prefs.snapTolerance}" min="1" max="50"></div>
             </div>
             <div class="pref-section">
+                <h4>Layers</h4>
+                <div class="pref-row"><label>Stack new objects in the active layer</label><input id="pref-stack" type="checkbox" ${this._prefs.stackNewObjects ? 'checked' : ''}></div>
+            </div>
+            <div class="pref-section">
                 <h4>Performance</h4>
                 <div class="pref-row"><label>History States</label><input id="pref-hist" type="number" value="${this.maxHistory}" min="10" max="200"></div>
             </div>
@@ -12093,6 +12136,7 @@ self.onmessage = async function(event) {
         this._prefs.defaultH = dh.value;
         this.gridSize = grid.value;
         this._prefs.snapTolerance = snap.value;
+        this._prefs.stackNewObjects = Boolean(overlay.querySelector('#pref-stack')?.checked);
         this.maxHistory = history.value;
         const accent = overlay.querySelector('#pref-accent').value;
         document.documentElement.style.setProperty('--accent', accent);
