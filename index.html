@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-ekp3FggjWEQ7vuR4JDQRxkT+AXHfqJDmyT6hslg3oYA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-HRHZ8gKI+uUIgudULrqiU0hFoxBft6lTRBxoi5+BeCs=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -6371,6 +6371,40 @@ self.onmessage = function(event) {
         });
         return true;
     },
+    // Composited document pixels at 1:1, document space, retina-independent.
+    //
+    // Reading the Fabric context directly does not give you this: that surface
+    // carries the viewport transform, so at any zoom or pan its pixels are not
+    // the document's, and with enableRetinaScaling its backing store is
+    // devicePixelRatio times larger than its logical size — so a getImageData
+    // sized in document units silently returns the top-left corner of a
+    // zoomed-in render. Callers that build selection masks need the document.
+    _readDocumentImageData() {
+        const width = Math.max(1, Math.round(this.canvasW));
+        const height = Math.max(1, Math.round(this.canvasH));
+        const vpt = this.canvas.viewportTransform.slice();
+        const boundary = this.canvas.getObjects().find(o => o.name === '__boundary__');
+        const boundaryOpacity = boundary?.opacity;
+        const restoreOverlays = this._hideNonExportableObjects();
+        try {
+            this.canvas.viewportTransform = [1, 0, 0, 1, 0, 0];
+            if (boundary) boundary.set('opacity', 0);
+            this.canvas.renderAll();
+            const source = this.canvas.lowerCanvasEl || this.canvas.getElement();
+            const scale = this.canvas.getRetinaScaling?.() || 1;
+            const flat = document.createElement('canvas');
+            flat.width = width;
+            flat.height = height;
+            const ctx = flat.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(source, 0, 0, width * scale, height * scale, 0, 0, width, height);
+            return ctx.getImageData(0, 0, width, height);
+        } finally {
+            if (boundary) boundary.set('opacity', boundaryOpacity);
+            restoreOverlays();
+            this.canvas.viewportTransform = vpt;
+            this.canvas.renderAll();
+        }
+    },
     _captureCanvasRaster({ left = 0, top = 0, width = this.canvasW, height = this.canvasH, format = 'png', hideBoundary = true } = {}) {
         const vpt = this.canvas.viewportTransform.slice();
         const boundary = this.canvas.getObjects().find(o => o.name === '__boundary__');
@@ -6727,8 +6761,13 @@ self.onmessage = function(event) {
                     this.setFgColor(r.sRGBHex); this.toast(`Picked: ${r.sRGBHex}`,'info');
                 }).catch(() => {});
             } else {
+                // The pointer is already in document space, and the Fabric
+                // surface is both viewport-transformed and retina-scaled, so
+                // sampling it at these coordinates picked the wrong pixel at
+                // any zoom and on every HiDPI display.
                 const ctx=this.canvas.getContext('2d'), vpt=this.canvas.viewportTransform;
-                const sx=ptr.x*vpt[0]+vpt[4], sy=ptr.y*vpt[3]+vpt[5];
+                const retina=this.canvas.getRetinaScaling?.()||1;
+                const sx=Math.round((ptr.x*vpt[0]+vpt[4])*retina), sy=Math.round((ptr.y*vpt[3]+vpt[5])*retina);
                 const px=ctx.getImageData(sx,sy,1,1).data;
                 const hex='#'+[px[0],px[1],px[2]].map(c=>c.toString(16).padStart(2,'0')).join('');
                 this.setFgColor(hex); this.toast(`Picked: ${hex}`,'info');
@@ -6985,10 +7024,15 @@ self.onmessage = function(event) {
     // ====================== MAGIC WAND ======================
     _selectionMask: null, _selectionBounds: null,
     _doMagicWand(ptr) {
-        const vpt=this.canvas.viewportTransform, ctx=this.canvas.getContext('2d');
-        const sx=Math.round(ptr.x*vpt[0]+vpt[4]), sy=Math.round(ptr.y*vpt[3]+vpt[5]);
-        const cw=this.canvas.width, ch=this.canvas.height;
-        const snap=ctx.getImageData(0,0,cw,ch); const data=snap.data;
+        // Sample the document, not the viewport: the old screen-space pass
+        // built the mask at whatever resolution the current zoom happened to
+        // render, then resampled it up to the document, so a wand used at 25%
+        // zoom produced a quarter-resolution selection with stepped edges —
+        // and on a HiDPI display it read only the top-left corner of a backing
+        // store devicePixelRatio times larger than the size it asked for.
+        const snap=this._readDocumentImageData(); const data=snap.data;
+        const cw=snap.width, ch=snap.height;
+        const sx=Math.round(ptr.x), sy=Math.round(ptr.y);
         const idx=(sy*cw+sx)*4;
         if(idx<0||idx+3>=data.length) return;
         const tr=data[idx],tg=data[idx+1],tb=data[idx+2],tol=this.state.wandTolerance;
@@ -7012,9 +7056,8 @@ self.onmessage = function(event) {
                 }
             }
         }
-        // The wand samples the composited canvas, so its mask is screen-space
-        // until the shared setter converts it.
-        const selected = this._setPixelSelectionMask(mask, cw, ch, { space:'screen' });
+        // Sampled in document space, so the mask is stored without conversion.
+        const selected = this._setPixelSelectionMask(mask, cw, ch);
         this._placeSelectionBox({ borderRadius:'0' });
         this.toast('Selected '+selected.toLocaleString()+' px','info');
     },
@@ -7111,8 +7154,9 @@ self.onmessage = function(event) {
     growSelection() {
         if (!this._selectionMask) { this.toast('No pixel selection to grow', 'info'); return; }
         const m = this._selectionMask;
-        const ctx = this.canvas.getContext('2d');
-        const snap = ctx.getImageData(0, 0, m.w, m.h);
+        // The mask is document space; the Fabric surface is not.
+        const snap = this._readDocumentImageData();
+        if (snap.width !== m.w || snap.height !== m.h) { this.toast('Selection does not match the document', 'info'); return; }
         const data = snap.data;
         const tol = this.state.wandTolerance || 32;
         const newMask = new Uint8Array(m.mask);
@@ -7143,8 +7187,8 @@ self.onmessage = function(event) {
     similarSelection() {
         if (!this._selectionMask) { this.toast('No pixel selection', 'info'); return; }
         const m = this._selectionMask;
-        const ctx = this.canvas.getContext('2d');
-        const snap = ctx.getImageData(0, 0, m.w, m.h);
+        const snap = this._readDocumentImageData();
+        if (snap.width !== m.w || snap.height !== m.h) { this.toast('Selection does not match the document', 'info'); return; }
         const data = snap.data;
         const tol = this.state.wandTolerance || 32;
         // Collect average color of selected pixels
@@ -7335,9 +7379,11 @@ self.onmessage = function(event) {
 
     // ====================== COLOR RANGE ======================
     showColorRange() {
-        const ctx = this.canvas.getContext('2d');
-        const cw = this.canvas.width, ch = this.canvas.height;
-        const snap = ctx.getImageData(0, 0, cw, ch);
+        // Sampling the document rather than the viewport means the preview and
+        // the committed mask no longer depend on the zoom the dialog happened
+        // to open at, and the mask needs no lossy screen-to-document resample.
+        const snap = this._readDocumentImageData();
+        const cw = snap.width, ch = snap.height;
         this._crSnap = snap;
         this._crSamples = []; // Array of {r,g,b}
         this._crMode = 'add'; // add, sub
@@ -7534,8 +7580,8 @@ self.onmessage = function(event) {
         if (!this._crMask) { document.getElementById('cr-overlay').remove(); return; }
         const mask = this._crMask;
         const cw = this._crSnap.width, ch = this._crSnap.height;
-        // Color Range also samples the composite, so it is screen-space too.
-        const count = this._setPixelSelectionMask(mask, cw, ch, { space:'screen' });
+        // The snapshot is document space now, so the mask is stored as-is.
+        const count = this._setPixelSelectionMask(mask, cw, ch);
         this.toast('Color Range: ' + count.toLocaleString() + ' px selected', 'success');
 
         document.getElementById('cr-overlay').remove();

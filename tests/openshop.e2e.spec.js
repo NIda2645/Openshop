@@ -2863,6 +2863,53 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('the magic wand selects the same pixels at any zoom or pan @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // Sampling used to come off the viewport surface, so the selection depended
+  // on the zoom it was made at — and below 100% it was built at that reduced
+  // resolution and upsampled back, leaving a stepped edge.
+  const runs = await page.evaluate(async () => {
+    OS.createNewDocument(200, 150, '#ffffff');
+    const block = new fabric.Rect({ left: 40, top: 30, width: 80, height: 60, fill: '#ff0000', selectable: false });
+    OS.canvas.add(block);
+    OS.layers[OS.activeLayerIdx].objects.push(block);
+    OS.canvas.renderAll();
+    OS.setTool('wand');
+    OS.state.wandTolerance = 20;
+    OS.state.wandContiguous = true;
+
+    const sample = (transform) => {
+      OS.canvas.setViewportTransform(transform);
+      OS.canvas.renderAll();
+      OS._doMagicWand({ x: 80, y: 60 });
+      const m = OS._selectionMask;
+      let count = 0;
+      for (let i = 0; i < m.mask.length; i++) if (m.mask[i]) count++;
+      return { w: m.w, h: m.h, count, bounds: { ...OS._selectionBounds } };
+    };
+
+    return {
+      identity: sample([1, 0, 0, 1, 0, 0]),
+      zoomedOut: sample([0.5, 0, 0, 0.5, 0, 0]),
+      zoomedInPanned: sample([3, 0, 0, 3, -120, -90]),
+      doc: [Math.round(OS.canvasW), Math.round(OS.canvasH)]
+    };
+  });
+
+  // The mask is always the document's size, never the viewport's.
+  for (const run of [runs.identity, runs.zoomedOut, runs.zoomedInPanned]) {
+    expect([run.w, run.h]).toEqual(runs.doc);
+  }
+  // The red block is 80x60 = 4800px. Allow a small edge tolerance.
+  expect(runs.identity.count).toBeGreaterThan(4000);
+  expect(runs.zoomedOut.count).toBe(runs.identity.count);
+  expect(runs.zoomedInPanned.count).toBe(runs.identity.count);
+  expect(runs.zoomedOut.bounds).toEqual(runs.identity.bounds);
+  expect(runs.zoomedInPanned.bounds).toEqual(runs.identity.bounds);
+});
+
 test('selects the shape a lasso encloses rather than its bounding box', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
