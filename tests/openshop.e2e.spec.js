@@ -2866,6 +2866,41 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('says what best-effort storage actually costs @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // The panel reported the persisted flag but never said what it meant, and
+  // WebKit clears script-writable storage after seven days without a visit.
+  const notes = await page.evaluate(() => ({
+    persisted: OS._storageDurabilityNote(true),
+    bestEffort: OS._storageDurabilityNote(false),
+    unknown: OS._storageDurabilityNote(null),
+    hasRequest: typeof OS._requestStoragePersistence === 'function'
+  }));
+
+  expect(notes.persisted).toMatch(/will not evict/i);
+  expect(notes.bestEffort).toMatch(/delete/i);
+  expect(notes.unknown).toMatch(/does not report/i);
+  expect(notes.hasRequest).toBe(true);
+
+  // The recovery panel surfaces the note and, when eviction is possible, the
+  // way to ask the browser not to.
+  await page.evaluate(() => OS.showRecoveryManager());
+  await expect(page.locator('.recovery-manager')).toBeVisible();
+  const panel = await page.evaluate(() => {
+    const modal = document.querySelector('.recovery-manager');
+    return {
+      text: modal.textContent,
+      hasKeep: [...modal.querySelectorAll('button')].some(b => b.textContent === 'Keep recovery data')
+    };
+  });
+  expect(panel.text).toMatch(/Durability/);
+  // Chromium reports either state; whichever it is, the note explains it.
+  expect(panel.text).toMatch(/evict|delete|does not report/i);
+  if (/may delete|deletes this data/i.test(panel.text)) expect(panel.hasKeep).toBe(true);
+});
+
 test('toasts dismiss themselves, cap their stack, and stop repeating @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

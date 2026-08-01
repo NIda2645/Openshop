@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-OeaMkR5rc1FiswgIeXXNeDr+Q54cikP1ZV0lrR+WsYo=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-z+iVN31u5FpsT4KKM+LhUQDloVPM75QrARVxINQZU1M=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.25.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -10429,6 +10429,33 @@ self.onmessage = function(event) {
         records.sort((a, b) => b.createdMs - a.createdMs || String(b.filename).localeCompare(String(a.filename)));
         return records;
     },
+    // What "best effort" actually costs differs per engine, and the recovery
+    // panel reported the flag without ever saying so. WebKit is the one that
+    // bites: it clears script-writable storage after seven days without a
+    // visit unless the origin is persisted or installed.
+    _storageDurabilityNote(persisted) {
+        const ua = navigator.userAgent || '';
+        const webkit = /^((?!chrome|android).)*safari/i.test(ua);
+        if (persisted === true) return 'This origin is persisted, so the browser will not evict recovery data to reclaim space.';
+        if (persisted === null) return 'This browser does not report whether recovery data is protected from eviction.';
+        if (webkit) return 'Safari deletes this data after seven days without a visit. Keep recovery data, or install OpenShop to your Home Screen or Dock, to stop that.';
+        return 'The browser may delete recovery data when it needs space. Keep recovery data to ask it not to.';
+    },
+    async _requestStoragePersistence() {
+        if (!navigator.storage?.persist) { this.toast('This browser cannot protect stored data from eviction', 'info'); return false; }
+        try {
+            const granted = await navigator.storage.persist();
+            // Firefox prompts the user, Chrome decides silently on engagement,
+            // so a refusal here is normal and not an error.
+            this.toast(granted
+                ? 'Recovery data is now protected from eviction'
+                : 'The browser declined to protect recovery data', granted ? 'success' : 'info');
+            return granted;
+        } catch (error) {
+            this.toast('Could not request storage persistence: ' + error.message, 'error');
+            return false;
+        }
+    },
     async _getRecoveryInfo() {
         const estimate = navigator.storage?.estimate ? await navigator.storage.estimate().catch(() => ({})) : {};
         const persisted = navigator.storage?.persisted ? await navigator.storage.persisted().catch(() => false) : null;
@@ -10442,6 +10469,7 @@ self.onmessage = function(event) {
             supported,
             persisted,
             durability:persisted === true ? 'Durable' : persisted === false ? 'Best effort' : 'Unknown',
+            durabilityNote:this._storageDurabilityNote(persisted),
             exists:generations.length > 0,
             generations,
             validGenerations:valid,
@@ -10669,6 +10697,24 @@ self.onmessage = function(event) {
             summary.append(dt, dd);
         });
         modal.append(title, summary);
+        if (info.supported && info.durabilityNote) {
+            const note = document.createElement('p');
+            note.style.cssText = 'font-size:11.5px;color:var(--text-secondary);margin:4px 0 10px';
+            note.textContent = info.durabilityNote;
+            modal.appendChild(note);
+            if (info.persisted === false && navigator.storage?.persist) {
+                const keep = document.createElement('button');
+                keep.className = 'btn';
+                keep.textContent = 'Keep recovery data';
+                keep.addEventListener('click', async () => {
+                    keep.disabled = true;
+                    await this._requestStoragePersistence();
+                    o.remove();
+                    this.showRecoveryManager();
+                });
+                modal.appendChild(keep);
+            }
+        }
         if (info.fallbackUsed) {
             const fallback = document.createElement('p');
             fallback.className = 'recovery-warning';
