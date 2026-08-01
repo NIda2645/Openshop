@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.OPENSHOP_TEST_PORT || 4173);
-const productionRevision = '0.26.0-r2';
+const productionRevision = '0.26.0-r3';
 let workerRevision = productionRevision;
 let badShell = false;
 let networkDown = false;
@@ -28,6 +28,19 @@ function send(response, status, body, headers = {}) {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
+  if (url.pathname === '/__test/cacheable.js') {
+    send(response, 200, 'globalThis.__openshopCacheProbe = true;', {
+      'content-type': 'text/javascript; charset=utf-8',
+      'cache-control': 'public, max-age=60'
+    });
+    return;
+  }
+  if (url.pathname === '/__test/untrusted.html') {
+    send(response, 200, '<!doctype html><meta charset="utf-8"><title>Untrusted harness page</title>', {
+      'content-type': 'text/html; charset=utf-8'
+    });
+    return;
+  }
   if (url.pathname === '/__test/control' && request.method === 'POST') {
     let body = '';
     for await (const chunk of request) body += chunk;
@@ -74,6 +87,13 @@ const server = createServer(async (request, response) => {
     }
     send(response, 200, body, {
       'content-type': contentTypes[extname(file).toLowerCase()] || 'application/octet-stream',
+      ...(url.searchParams.get('runtimePolicy') === 'public'
+        ? { 'cache-control': 'public, max-age=60' }
+        : url.searchParams.get('runtimePolicy') === 'private'
+          ? { 'cache-control': 'private, max-age=60' }
+          : url.searchParams.get('runtimePolicy') === 'vary-cookie'
+            ? { 'cache-control': 'public, max-age=60', vary: 'Cookie' }
+            : {}),
       ...(url.pathname === '/sw.js' ? { 'service-worker-allowed': './' } : {})
     });
   } catch {

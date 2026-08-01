@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const origin = 'http://127.0.0.1:4173';
-const productionRevision = '0.26.0-r2';
+const productionRevision = '0.26.0-r3';
 
 async function setServerState(request, state = {}) {
   const response = await request.post(`${origin}/__test/control`, {
@@ -71,7 +71,7 @@ test.describe('hosted offline contract', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('versions the runtime cache, prunes stale ones, and refuses opaque error responses', async ({ page }) => {
+  test('versions and scopes the runtime cache, and refuses private or opaque responses', async ({ page }) => {
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
     // Libraries are verified and executed asynchronously, so there is no OS
     // object to talk to until the boot promise settles.
@@ -94,6 +94,14 @@ test.describe('hosted offline contract', () => {
       const missing = 'https://cdn.jsdelivr.net/npm/openshop-does-not-exist@0.0.0/missing.js';
       await fetch(missing, { mode: 'no-cors' }).catch(() => {});
 
+      const probes = {
+        allowed: `${location.origin}/manifest.webmanifest?runtimePolicy=public`,
+        private: `${location.origin}/manifest.webmanifest?runtimePolicy=private`,
+        varying: `${location.origin}/manifest.webmanifest?runtimePolicy=vary-cookie`,
+        unrelated: `${location.origin}/__test/cacheable.js`
+      };
+      for (const url of Object.values(probes)) await fetch(url, { cache: 'reload' });
+
       await OS._requestOfflineWorker('OPENSHOP_CONFIRM_BOOT', { revision: status.activeRevision });
 
       const names = await caches.keys();
@@ -104,13 +112,80 @@ test.describe('hosted offline contract', () => {
         runtimeNames: names.filter(name => name.startsWith('openshop-runtime-')),
         unversioned: names.includes('openshop-runtime-v1'),
         poisonedCached: Boolean(poisoned),
-        poisonedStatus: poisoned ? poisoned.status : null
+        poisonedStatus: poisoned ? poisoned.status : null,
+        allowedCached: Boolean(await runtime.match(probes.allowed)),
+        privateCached: Boolean(await runtime.match(probes.private)),
+        varyingCached: Boolean(await runtime.match(probes.varying)),
+        unrelatedCached: Boolean(await runtime.match(probes.unrelated))
       };
     });
 
     expect(result.runtimeNames).toEqual([`openshop-runtime-${result.activeRevision}`]);
     expect(result.unversioned).toBe(false);
     expect(result.poisonedCached).toBe(false);
+    expect(result.allowedCached).toBe(true);
+    expect(result.privateCached).toBe(false);
+    expect(result.varyingCached).toBe(false);
+    expect(result.unrelatedCached).toBe(false);
+  });
+
+  test('ignores a page-written shell revision and requires an exact boot revision', async ({ page }) => {
+    await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
+    await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+
+    const missingRevisionError = await page.evaluate(async () => {
+      try {
+        await OS._requestOfflineWorker('OPENSHOP_CONFIRM_BOOT');
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    });
+    expect(missingRevisionError).toContain('revision is required');
+
+    await page.evaluate(async () => {
+      const stateUrl = new URL('./__openshop_offline_state__', location.href).href;
+      const meta = await caches.open('openshop-offline-meta-v1');
+      const current = await (await meta.match(stateUrl)).json();
+      await meta.put(stateUrl, new Response(JSON.stringify({
+        ...current,
+        activeRevision: 'attacker-selected',
+        confirmed: true
+      }), { headers: { 'content-type': 'application/json' } }));
+      const poisoned = await caches.open('openshop-shell-attacker-selected');
+      await poisoned.put(new URL('./index.html', location.href).href, new Response(
+        '<!doctype html><main id="cache-poison">Wrong shell</main>',
+        { headers: { 'content-type': 'text/html' } }
+      ));
+    });
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
+    await expect(page.locator('#cache-poison')).toHaveCount(0);
+    await expect(page.locator('#editor-canvas')).toBeVisible();
+    const status = await page.evaluate(() => OS._requestOfflineWorker('OPENSHOP_GET_STATUS'));
+    expect(status.activeRevision).toBe(productionRevision);
+  });
+
+  test('rejects shell-control messages from another page in the worker scope', async ({ page }) => {
+    test.setTimeout(90000);
+    await page.goto(`${origin}/__test/untrusted.html`, { waitUntil: 'domcontentloaded' });
+    const reply = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      return new Promise((resolve, reject) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = event => resolve(event.data);
+        setTimeout(() => reject(new Error('worker reply timed out')), 10000);
+        registration.active.postMessage({ type: 'OPENSHOP_APPLY_UPDATE' }, [channel.port2]);
+      });
+    });
+    expect(reply).toEqual({
+      ok: false,
+      error: 'Only the OpenShop document can control its offline shell'
+    });
   });
 
   test('declares supported file handlers and consumes a queued project launch', async ({ page, request }) => {

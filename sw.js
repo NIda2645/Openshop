@@ -1,6 +1,17 @@
 'use strict';
 
-const SHELL_REVISION = '0.26.0-r2';
+const SHELL_REVISION = '0.26.0-r3';
+// State is origin-readable, so a cache name from it is never trusted merely
+// because it looks like a revision. Keep the bounded set of revisions this
+// worker knows were actually shipped; releases carry the newest predecessors
+// forward for rollback across skipped updates.
+const TRUSTED_SHELL_REVISIONS = new Set([
+    SHELL_REVISION,
+    '0.26.0-r3',
+    '0.26.0-r2',
+    '0.26.0-r1',
+    '0.25.0-r1'
+]);
 const STATE_SCHEMA = 1;
 const SHELL_CACHE_PREFIX = 'openshop-shell-';
 const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SHELL_REVISION}`;
@@ -25,7 +36,7 @@ const REQUIRED_ASSETS = [
     './icon-192.png',
     './icon-512.png',
     'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js',
-    'https://cdn.jsdelivr.net/npm/ag-psd@22.0.2/dist/bundle.js',
+    'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
     'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js'
 ];
 
@@ -42,6 +53,17 @@ const RUNTIME_ORIGINS = new Set([
     'https://fonts.googleapis.com',
     'https://fonts.gstatic.com'
 ]);
+
+// Cache only the executable/font resources the shipped app names. A blanket
+// same-origin cache would also capture authenticated responses from unrelated
+// applications when OpenShop is installed at a shared web root.
+const CACHEABLE_RUNTIME_URLS = new Set([
+    ...REQUIRED_ASSETS,
+    ...OPTIONAL_ASSETS,
+    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.asyncify.wasm',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.25.0-dev.20260327-722743c0e2/dist/ort-wasm-simd-threaded.wasm'
+].map(resolveAsset));
 
 function shellCacheName(revision) {
     return `${SHELL_CACHE_PREFIX}${revision}`;
@@ -67,6 +89,25 @@ function defaultState() {
     };
 }
 
+function trustedRevision(value) {
+    return typeof value === 'string' && TRUSTED_SHELL_REVISIONS.has(value) ? value : null;
+}
+
+function sanitizeState(state) {
+    const activeRevision = trustedRevision(state.activeRevision);
+    const previousRevision = trustedRevision(state.previousRevision);
+    const reports = Object.fromEntries(
+        Object.entries(state.reports || {}).filter(([revision]) => TRUSTED_SHELL_REVISIONS.has(revision))
+    );
+    return {
+        ...state,
+        activeRevision,
+        previousRevision: previousRevision === activeRevision ? null : previousRevision,
+        stagedRevision: state.stagedRevision === SHELL_REVISION ? SHELL_REVISION : null,
+        reports
+    };
+}
+
 async function readState() {
     try {
         const cache = await caches.open(META_CACHE);
@@ -74,7 +115,7 @@ async function readState() {
         if (!response) return defaultState();
         const parsed = await response.json();
         if (parsed?.schemaVersion !== STATE_SCHEMA) return defaultState();
-        return { ...defaultState(), ...parsed, reports: parsed.reports || {} };
+        return sanitizeState({ ...defaultState(), ...parsed, reports: parsed.reports || {} });
     } catch {
         return defaultState();
     }
@@ -226,6 +267,27 @@ async function fetchRuntimeAsset(request) {
     return fetch(request);
 }
 
+function isCacheableRuntimeRequest(request) {
+    const url = new URL(request.url);
+    if (url.origin === self.location.origin) {
+        // Query parameters do not turn a known static path into a new cache
+        // namespace, but an unrelated path never becomes eligible by extension.
+        const withoutQuery = new URL(url.pathname, url.origin).href;
+        return CACHEABLE_RUNTIME_URLS.has(withoutQuery);
+    }
+    if (CACHEABLE_RUNTIME_URLS.has(url.href)) return true;
+    return url.origin === 'https://fonts.gstatic.com'
+        && /\.(?:woff2?|ttf)$/i.test(url.pathname);
+}
+
+function responseAllowsRuntimeCaching(response) {
+    const cacheControl = response.headers.get('cache-control') || '';
+    if (/(?:^|,)\s*(?:no-store|private)(?:\s|=|,|$)/i.test(cacheControl)) return false;
+    const vary = response.headers.get('vary') || '';
+    if (vary.trim() === '*' || /(?:^|,)\s*(?:cookie|authorization)\s*(?:,|$)/i.test(vary)) return false;
+    return true;
+}
+
 async function activateShell() {
     let state = await readState();
     if (state.stagedRevision === SHELL_REVISION && state.activeRevision !== SHELL_REVISION) {
@@ -321,11 +383,12 @@ async function handleAsset(request) {
     const shellResponse = await cachedShellResponse(request, revision, false);
     if (shellResponse) return shellResponse;
 
+    if (!isCacheableRuntimeRequest(request)) return fetchRuntimeAsset(request);
     const runtime = await caches.open(RUNTIME_CACHE);
     const cached = await runtime.match(request);
     if (cached) return cached;
     const response = await fetchRuntimeAsset(request);
-    if (response && response.ok && response.type !== 'opaque') {
+    if (response && response.ok && response.type !== 'opaque' && responseAllowsRuntimeCaching(response)) {
         await runtime.put(request, response.clone());
         await trimRuntimeCache(runtime);
     }
@@ -364,11 +427,14 @@ async function statusPayload() {
 
 async function confirmBoot(expectedRevision) {
     const state = await readState();
-    if (expectedRevision && expectedRevision !== state.activeRevision) {
+    if (!expectedRevision) throw new Error('The shell revision is required to confirm boot');
+    const currentRevision = state.activeRevision || SHELL_REVISION;
+    if (expectedRevision !== currentRevision) {
         throw new Error('The running shell is no longer the active cached revision');
     }
     const confirmed = await writeState({
         ...state,
+        activeRevision: currentRevision,
         confirmed: true,
         trialStarted: false,
         trialAttempts: 0,
@@ -437,9 +503,35 @@ self.addEventListener('fetch', event => {
     }
 });
 
+function messageComesFromApp(event) {
+    const sourceUrl = event.source?.url;
+    if (!sourceUrl) return false;
+    try {
+        const url = new URL(sourceUrl);
+        const scope = new URL(SCOPE_URL);
+        if (url.origin !== scope.origin) return false;
+        const indexPath = new URL('./index.html', scope).pathname;
+        return url.pathname === scope.pathname || url.pathname === indexPath;
+    } catch {
+        return false;
+    }
+}
+
 self.addEventListener('message', event => {
     const type = event.data?.type;
     const reply = payload => event.ports?.[0]?.postMessage(payload);
+    const knownTypes = new Set([
+        'OPENSHOP_APPLY_UPDATE',
+        'OPENSHOP_GET_STATUS',
+        'OPENSHOP_CONFIRM_BOOT',
+        'OPENSHOP_ROLLBACK',
+        'OPENSHOP_RESTAGE'
+    ]);
+    if (!knownTypes.has(type)) return;
+    if (!messageComesFromApp(event)) {
+        reply({ ok: false, error: 'Only the OpenShop document can control its offline shell' });
+        return;
+    }
     if (type === 'OPENSHOP_APPLY_UPDATE') {
         event.waitUntil((async () => {
             await self.skipWaiting();

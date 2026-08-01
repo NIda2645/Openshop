@@ -20,7 +20,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 2. Or download the single HTML file and open it in any modern browser (network is required for a cold standalone launch)
 3. Start editing
 
-**Self-host it** — deploy the static files to GitHub Pages, Netlify, S3, or Nginx. There is no build step, bundler, or runtime `node_modules`; include the PWA companions described below if you want verified offline reloads and installation.
+**Self-host it** — deploy the static files to a dedicated subdirectory on GitHub Pages, Netlify, S3, or Nginx. There is no build step, bundler, or runtime `node_modules`; include the PWA companions described below if you want verified offline reloads and installation. The service worker controls its containing directory, so do not put `sw.js` at the root of an origin shared with other applications.
 
 ## Features
 
@@ -186,8 +186,9 @@ Installed-app file launch is progressively enhanced through `launchQueue`. Suppo
 # Portable, network-first standalone
 cp index.html /var/www/html/index.html
 
-# Hosted offline/install lane
-cp index.html sw.js manifest.webmanifest icon-192.png icon-512.png /var/www/html/
+# Hosted offline/install lane, scoped to one application directory
+mkdir -p /var/www/html/openshop
+cp index.html sw.js manifest.webmanifest icon-192.png icon-512.png /var/www/html/openshop/
 
 # Or with GitHub Pages
 git init && git add . && git commit -m "init"
@@ -195,6 +196,8 @@ git init && git add . && git commit -m "init"
 ```
 
 No build step. No bundler. No runtime `node_modules`. `index.html` remains usable by itself; the four static companions enable the hosted PWA contract.
+
+Keep those five hosted files together in their own directory. A service worker's default scope is the directory containing `sw.js`; placing it at `/sw.js` grants it navigation control over every path on that origin. GitHub project Pages sites such as `/Openshop/` already provide the desired directory scope. A user/organization Pages site served at the origin root should publish OpenShop below a subdirectory instead.
 
 ## Testing
 
