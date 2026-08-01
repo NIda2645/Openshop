@@ -1795,6 +1795,21 @@ describe('release metadata', () => {
     expect(html, 'engine banner comment').toContain(`//  OpenShop v${version} `);
     expect(html, 'live document.title template').toContain(`— OpenShop v${version}\``);
     expect(html, 'topbar logo badge').toContain(`<span class="logo-version">${short}</span>`);
+    // The first screen a new user sees. It said v0.21 on a v0.24 build because
+    // this list was the drift gate and did not include it.
+    expect(html, 'welcome screen badge').toContain(`<span>OpenShop</span><small>${short}</small>`);
+    // Stamped into every saved project, recovery generation and exported
+    // action, so a stale value misdates files long after the release.
+    expect(html, 'OS.version constant').toContain(`\n    version: '${version}',`);
+
+    // Nothing may reintroduce a hardcoded stamp beside the constant.
+    const literalStamps = [...html.matchAll(/appVersion\s*:\s*'([^']+)'/g)].map(match => match[1]);
+    expect(literalStamps, 'hardcoded appVersion literals').toEqual([]);
+    // And no other version-shaped literal may disagree with package.json.
+    const stale = [...html.matchAll(/OpenShop v(\d+\.\d+\.\d+)/g)]
+      .map(match => match[1])
+      .filter(found => found !== version);
+    expect(stale, 'stale "OpenShop vX.Y.Z" strings').toEqual([]);
 
     // The offline shell keys its cache on the revision, so a stale one serves
     // the previous build forever.
