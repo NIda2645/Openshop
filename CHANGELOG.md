@@ -2,6 +2,11 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Security
+- Make the release gate audit the whole script-policy contract instead of one permissive happy path. Script directive overrides, wildcard or scheme sources, nonces and alternate hashes, unquoted event handlers, whitespace around `src`, foreign or duplicate verified-asset URLs, missing boundary directives, added inline blocks, and replacement-pattern corruption now all fail with regression coverage
+
 ## [v0.26.0] - 2026-08-01
 
 ### Fixed
