@@ -48,7 +48,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **SVG** | — | Yes |
 | **PDF** | — | Yes |
 | **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text) | Yes (same supported semantics; explicit raster fallbacks) |
-| **GIF** | — | Yes (animated, frame-based) |
+| **GIF** | Yes (animated, frame-based) | Yes (animated, frame-based) |
 | **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
 
 Batch export to multiple formats in one click. Export Settings previews real PNG/WebP alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.

@@ -12,12 +12,14 @@ All notable changes to Openshop will be documented in this file.
 ### Fixed
 - Decode EXIF-bearing JPEGs exactly once. Browsers already apply the orientation while decoding, so OpenShop now neutralizes the copied tag before baking its own pixel transform instead of rotating camera photos twice
 - Carry the current verified offline shell into the next worker's trusted predecessor set so a failed update can still roll back after the shell revision advances
+- Replace the abandoned gif.js encoder with pinned modern-gif 2.1.0 for worker-based encode and decode. Animated GIF import now preserves all frames in WebKit and other engines without `ImageDecoder`; the deterministic export gate is 34% smaller with lower pixel error than the previous `quality: 10` output
 
 ### Performance
 - Keep adjustment and filter sliders responsive on 4K images by reusing a capped Canvas2D preview pipe; Apply still runs Fabric's normal filter path over the original full-resolution pixels
 
 ### Testing
 - Run the full Chromium browser suite over both `file://` and localhost, add real Photoshop PSD, animated GIF, and EXIF JPEG fixtures plus clipboard and drag-and-drop coverage, and enforce coverage floors in the release gate
+- Assert every frame, delay, dimension, and pixel hash in the real 11-frame GIF fixture across browser engines, and keep legacy size and quality ceilings as an export regression gate
 
 ## [v0.26.0] - 2026-08-01
 

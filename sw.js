@@ -45,8 +45,8 @@ const OPTIONAL_ASSETS = [
     'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap',
     'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',
     'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm',
-    'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js',
-    'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+    'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/index.js',
+    'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/worker.js'
 ];
 
 const RUNTIME_ORIGINS = new Set([

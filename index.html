@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-hZEc7kRJDBA5FflKDJ9oX+i9iWFxWJk0zxn2+M6pNhY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-tjb8dMPIesPUW+wVI8vzv53dIVYqDmt9jLCjcafHuUg=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3072,14 +3072,14 @@ const OS = {
             integrity:'sha384-XTalmX4dqxgWAOn0b1wPMbNs/bZhF/kkmL4ttacTyF6/8aeRN3JWlFPF9rLT8ST4',
             type:'application/wasm'
         }),
-        gifEncoder: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js',
-            integrity:'sha384-4RMW82CWFobXY+HRHXe5go/V5acBhiIVGCT+2k7TEoxi7AiWKw8WoWb9qMU+FAFu',
+        gifCodec: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/index.js',
+            integrity:'sha384-yCVLlNDdLotEs4WM1HtMcWyV942aZDf0ylFBfb3DWJ2kPNBIpDA5SJa3CJgMUzUv',
             type:'application/javascript'
         }),
         gifWorker: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js',
-            integrity:'sha384-uL0SwIQSos1DfQU2KzlDbPuSz7Jwo+hmNPIhe86VJ+MWwyj0DvjngnAgWrkNi9eQ',
+            url:'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/worker.js',
+            integrity:'sha384-/AE2XoJ6rgtq/wlcIHqFn5/zSGrXTfrwuH5NQ2BjgflUjtjIJAz9/C0JSldf8Hr+',
             type:'application/javascript'
         }),
         transformers: Object.freeze({
@@ -4895,8 +4895,8 @@ const OS = {
         try { this._validateImageFile(file); } catch(e) { this.toast(e.message, 'error'); return; }
         // _docName is set by _addDecodedImageToCanvas once the decode succeeds;
         // setting it here renamed the open document even when the file failed.
-        if (file.type === 'image/gif' && typeof ImageDecoder !== 'undefined') {
-            this._importGifFrames(file);
+        if (file.type === 'image/gif') {
+            void this._importGifFrames(file);
             return;
         }
         void this._loadRasterFile(file);
@@ -4936,49 +4936,52 @@ const OS = {
         }
     },
     async _importGifFrames(file) {
-        const loadStatic = () => {
-            const r = new FileReader(); r.onload = ev => {
-                fabric.Image.fromURL(ev.target.result, img => {
-                    void Promise.resolve(this._addDecodedImageToCanvas(img, { name: file.name, mode: 'open' })).catch(err => this.toast(err.message, 'error'));
-                });
-            }; r.readAsDataURL(file);
+        const loadStatic = async () => {
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = event => resolve(event.target.result);
+                reader.onerror = () => reject(new Error('Could not read the GIF'));
+                reader.readAsDataURL(file);
+            });
+            const image = await fabric.Image.fromURL(dataUrl);
+            return this._addDecodedImageToCanvas(image, { name:file.name, mode:'open' });
         };
-        let decoder = null;
         try {
             const generation = this._documentGeneration;
-            decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
-            await decoder.completed;
-            const count = decoder.tracks.selectedTrack.frameCount;
-            if (count < 2) { loadStatic(); return; }
+            const buffer = await file.arrayBuffer();
+            const [codec, workerUrl] = await Promise.all([
+                this._loadGifCodec(),
+                this._verifiedRuntimeBlobUrl('gifWorker')
+            ]);
+            const gif = codec.decode(buffer);
+            const count = gif.frames.length;
+            if (count < 2) { await loadStatic(); return; }
             // A small GIF can declare hundreds of large frames; every frame is
             // decoded into a canvas and a PNG data URL, so bound it up front.
             if (count > this._importLimits.maxGifFrames) {
                 throw new Error(`GIF has ${count} frames, over the ${this._importLimits.maxGifFrames} frame import limit`);
             }
-            const track = decoder.tracks.selectedTrack;
-            const probe = await decoder.decode({ frameIndex: 0 });
-            const frameW = probe.image.displayWidth, frameH = probe.image.displayHeight;
-            probe.image.close();
+            const frameW = gif.width, frameH = gif.height;
             if (frameW * frameH > this._importLimits.maxImagePixels) {
                 throw new Error('GIF frame dimensions exceed import limits');
             }
             if (frameW * frameH * 4 * count > this._importLimits.maxDecodedGifBytes) {
                 throw new Error('GIF exceeds the decoded size budget for animation import');
             }
-            void track;
             this.toast(`Importing ${count} GIF frames...`, 'info');
-            const decodedFrames = [];
-            for (let i = 0; i < count; i++) {
-                const result = await decoder.decode({ frameIndex: i });
-                const frame = result.image;
+            const frames = await codec.decodeFrames(buffer, { workerUrl });
+            if (frames.length !== count) throw new Error('GIF decoder returned an incomplete frame set');
+            const decodedFrames = frames.map(frame => {
+                if (frame.width !== frameW || frame.height !== frameH || frame.data.length !== frameW * frameH * 4) {
+                    throw new Error('GIF decoder returned invalid frame dimensions');
+                }
                 const cv = document.createElement('canvas');
-                cv.width = frame.displayWidth;
-                cv.height = frame.displayHeight;
+                cv.width = frameW;
+                cv.height = frameH;
                 const ctx = cv.getContext('2d');
-                ctx.drawImage(frame, 0, 0);
-                frame.close();
-                decodedFrames.push(cv.toDataURL('image/png'));
-            }
+                ctx.putImageData(new ImageData(frame.data, frameW, frameH), 0, 0);
+                return cv.toDataURL('image/png');
+            });
             // A slow decode must not replace a document the user opened since.
             if (this._documentGeneration !== generation) {
                 this.toast('GIF import discarded because the document changed', 'info');
@@ -5000,9 +5003,7 @@ const OS = {
         } catch (e) {
             console.warn('GIF frame import failed, loading as static:', e.message);
             this.toast(`Animated import unavailable — ${e.message}. Loading the first frame instead.`, 'info');
-            loadStatic();
-        } finally {
-            try { decoder?.close(); } catch { /* already closed */ }
+            try { await loadStatic(); } catch (staticError) { this.toast(staticError.message, 'error'); }
         }
     },
     handleFileOpen(e) {
@@ -16182,23 +16183,49 @@ self.onmessage = async function(e) {
             this._highlightActiveFrame();
         }, 1000 / fps);
     },
-    async _loadGifJs() {
-        if (window.GIF) return window.GIF;
-        const sourceUrl = await this._verifiedRuntimeBlobUrl('gifEncoder');
+    async _loadGifCodec() {
+        if (window.modernGif?.encode && window.modernGif?.decodeFrames) return window.modernGif;
+        const sourceUrl = await this._verifiedRuntimeBlobUrl('gifCodec');
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.src = sourceUrl;
             s.addEventListener('load', () => {
                 s.remove();
-                if (window.GIF) resolve(window.GIF);
-                else reject(new Error('Verified gif.js did not expose GIF'));
+                if (window.modernGif?.encode && window.modernGif?.decodeFrames) resolve(window.modernGif);
+                else reject(new Error('Verified modern-gif did not expose its codec'));
             }, {once:true});
             s.addEventListener('error', () => {
                 s.remove();
-                reject(new Error('Failed to execute verified gif.js'));
+                reject(new Error('Failed to execute verified modern-gif'));
             }, {once:true});
             document.head.appendChild(s);
         });
+    },
+    async _encodeGifFrames(frameSources, delay, onProgress) {
+        const [codec, workerUrl] = await Promise.all([
+            this._loadGifCodec(),
+            this._verifiedRuntimeBlobUrl('gifWorker')
+        ]);
+        const first = await this._loadImage(frameSources[0]);
+        const width = first.naturalWidth || first.width;
+        const height = first.naturalHeight || first.height;
+        if (!width || !height) throw new Error('GIF frames have invalid dimensions');
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently:true });
+        const encoder = new codec.Encoder({ workerUrl, width, height, maxColors:255 });
+        for (let index = 0; index < frameSources.length; index++) {
+            const image = index === 0 ? first : await this._loadImage(frameSources[index]);
+            context.clearRect(0, 0, width, height);
+            context.drawImage(image, 0, 0, width, height);
+            // Encoder.encode transfers the RGBA buffer to the verified worker,
+            // avoiding a second full animation copy on the main thread.
+            await encoder.encode({ data:context.getImageData(0, 0, width, height).data, delay });
+            onProgress?.(index + 1, frameSources.length);
+        }
+        const output = await encoder.flush();
+        return new Blob([output], { type:'image/gif' });
     },
     async exportGIF() {
         if (this._animFrames.length < 2) { this.toast('Add at least 2 frames', 'info'); return; }
@@ -16207,51 +16234,24 @@ self.onmessage = async function(e) {
         const fps = this._readNumberInput(document.getElementById('tl-fps'), { min:1, max:60, fallback:12 }).value;
         const delay = Math.round(1000 / fps);
         this.toast('Loading GIF encoder...', 'info');
-        let GIFConstructor, workerScript;
+        let blob;
         try {
-            [GIFConstructor, workerScript] = await Promise.all([
-                this._loadGifJs(),
-                this._verifiedRuntimeBlobUrl('gifWorker')
-            ]);
+            this.toast(`Encoding ${this._animFrames.length} frames...`, 'info');
+            blob = await this._encodeGifFrames(this._animFrames, delay, (added, total) => {
+                if (added % 5 === 0) this.toast(`Preparing frame ${added}/${total}...`, 'info');
+            });
         } catch (e) {
-            console.warn('gif.js load failed, falling back to spritesheet:', e.message);
+            console.warn('GIF encoding failed, falling back to spritesheet:', e.message);
             this._exportSpritesheet(fps);
             return;
         }
-        this.toast(`Encoding ${this._animFrames.length} frames...`, 'info');
-        const gif = new GIFConstructor({
-            workers: 2,
-            quality: 10,
-            workerScript
-        });
-        let added = 0;
-        for (const data of this._animFrames) {
-            const img = await this._loadImage(data);
-            gif.addFrame(img, { delay, copy: true });
-            added++;
-            if (added % 5 === 0) this.toast(`Encoding frame ${added}/${this._animFrames.length}...`, 'info');
-        }
-        gif.on('finished', blob => {
-            const a = document.createElement('a');
-            a.download = `${(this._docName || 'openshop-animation').replace(/[^a-zA-Z0-9_-]/g, '_')}.gif`;
-            const url = URL.createObjectURL(blob);
-            a.href = url;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
-            this.toast(`GIF exported (${this._animFrames.length} frames @ ${fps}fps)`, 'success');
-        });
-        // Without this a worker failure left the user on the last progress
-        // toast forever with no explanation.
-        gif.on('abort', () => this.toast('GIF export cancelled', 'info'));
-        if (typeof gif.on === 'function') {
-            try {
-                gif.on('error', error => {
-                    console.error('GIF encoding failed:', error);
-                    this.toast('GIF export failed — see console', 'error');
-                });
-            } catch (error) { console.debug('gif.js error channel unavailable:', error.message); }
-        }
-        gif.render();
+        const a = document.createElement('a');
+        a.download = `${(this._docName || 'openshop-animation').replace(/[^a-zA-Z0-9_-]/g, '_')}.gif`;
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        this.toast(`GIF exported (${this._animFrames.length} frames @ ${fps}fps)`, 'success');
     },
     _loadImage(src) {
         return new Promise((resolve, reject) => {

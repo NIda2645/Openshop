@@ -3091,13 +3091,18 @@ test('imports an EXIF-bearing JPEG fixture upright', async ({ page }) => {
   });
 });
 
-test('imports every frame from a real animated GIF fixture', async ({ page }) => {
+test('imports every frame from a real animated GIF fixture without ImageDecoder @cross-browser', async ({ page }) => {
   const payload = (await readFile(fixturePath('animated-multiframe.gif'))).toString('base64');
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
   const result = await page.evaluate(async base64 => {
     const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    const originalDecoder = window.ImageDecoder;
+    Object.defineProperty(window, 'ImageDecoder', { configurable: true, value: undefined });
+    const decodedWithoutImageDecoder = typeof window.ImageDecoder === 'undefined';
+    const codec = await OS._loadGifCodec();
+    const metadata = codec.decode(bytes.buffer);
     await OS._importGifFrames(new File([bytes], 'animated-multiframe.gif', { type: 'image/gif' }));
     const frames = [];
     for (let index = 0; index < OS._animFrames.length; index += 1) {
@@ -3108,26 +3113,114 @@ test('imports every frame from a real animated GIF fixture', async ({ page }) =>
         candidate.onerror = reject;
         candidate.src = dataUrl;
       });
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let hash = 2166136261;
+      for (const value of pixels) {
+        hash ^= value;
+        hash = Math.imul(hash, 16777619);
+      }
       frames.push({
         index,
         width: image.naturalWidth,
         height: image.naturalHeight,
-        bytes: Math.floor((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4)
+        bytes: Math.floor((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4),
+        hash: hash >>> 0,
+        delay: metadata.frames[index].delay
       });
     }
+    if (originalDecoder) Object.defineProperty(window, 'ImageDecoder', { configurable: true, value: originalDecoder });
     return {
       frames,
       uniqueFrames: new Set(OS._animFrames).size,
       activeIndex: OS._animIdx,
-      timelineItems: document.getElementById('timeline-frames').children.length
+      timelineItems: document.getElementById('timeline-frames').children.length,
+      decodedWithoutImageDecoder
     };
   }, payload);
 
   expect(result.frames.map(frame => frame.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  expect(result.frames.every(frame => frame.width > 0 && frame.height > 0 && frame.bytes > 100)).toBe(true);
+  expect(result.frames.map(frame => [frame.width, frame.height])).toEqual(Array(11).fill([640, 300]));
+  expect(result.frames.map(frame => frame.delay)).toEqual([90, 90, 90, 90, 90, 100, 90, 90, 90, 90, 90]);
+  expect(result.frames.map(frame => frame.hash)).toEqual([
+    910180162, 711788703, 180253782, 4018033855, 185040418, 3941068463,
+    262979675, 679044684, 1372786581, 3153160446, 3153160446
+  ]);
+  expect(result.frames.every(frame => frame.bytes > 100)).toBe(true);
   expect(result.uniqueFrames).toBeGreaterThan(1);
   expect(result.activeIndex).toBe(0);
   expect(result.timelineItems).toBe(11);
+  expect(result.decodedWithoutImageDecoder).toBe(true);
+});
+
+test('exports a smaller, more accurate animated GIF than the legacy encoder', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const width = 96;
+    const height = 64;
+    const delay = 83;
+    const sources = [];
+    const sourcePixels = [];
+    for (let frameIndex = 0; frameIndex < 6; frameIndex += 1) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      const image = context.createImageData(width, height);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const offset = (y * width + x) * 4;
+          image.data[offset] = (x * 3 + y + frameIndex * 31) % 256;
+          image.data[offset + 1] = (x + y * 4 + frameIndex * 47) % 256;
+          image.data[offset + 2] = ((x ^ y) * 5 + frameIndex * 59) % 256;
+          image.data[offset + 3] = 255;
+        }
+      }
+      context.putImageData(image, 0, 0);
+      sources.push(canvas.toDataURL('image/png'));
+      sourcePixels.push(image.data.slice());
+    }
+
+    const encoded = await OS._encodeGifFrames(sources, delay);
+    const buffer = await encoded.arrayBuffer();
+    const codec = await OS._loadGifCodec();
+    const metadata = codec.decode(buffer);
+    const frames = await codec.decodeFrames(buffer);
+    let squaredError = 0;
+    let samples = 0;
+    frames.forEach((frame, frameIndex) => {
+      for (let offset = 0; offset < frame.data.length; offset += 4) {
+        for (let channel = 0; channel < 3; channel += 1) {
+          const difference = frame.data[offset + channel] - sourcePixels[frameIndex][offset + channel];
+          squaredError += difference * difference;
+          samples += 1;
+        }
+      }
+    });
+    return {
+      bytes: encoded.size,
+      type: encoded.type,
+      signature: String.fromCharCode(...new Uint8Array(buffer, 0, 6)),
+      width: metadata.width,
+      height: metadata.height,
+      frameCount: frames.length,
+      mse: squaredError / samples
+    };
+  });
+
+  expect(result.type).toBe('image/gif');
+  expect(result.signature).toBe('GIF89a');
+  expect([result.width, result.height, result.frameCount]).toEqual([96, 64, 6]);
+  // Measured before removal: gif.js@0.2.0 quality=10 emitted 32,372 bytes
+  // with RGB MSE 317.9249 for this exact deterministic sequence.
+  expect(result.bytes).toBeLessThanOrEqual(32372);
+  expect(result.mse).toBeLessThanOrEqual(317.925);
 });
 
 test('accepts image files from clipboard paste and drag-and-drop', async ({ page }) => {
@@ -5472,7 +5565,8 @@ test('falls back cleanly when an optional platform capability is missing @cross-
     if (picker) window.showOpenFilePicker = picker;
     out.fileInputFallback = inputClicked;
 
-    // 2. No ImageDecoder: an animated GIF still opens as a static image.
+    // 2. No ImageDecoder: the GIF codec still identifies a one-frame image
+    // and sends it through the normal static-image path.
     // Built by hand: connect-src does not allow data: URLs, by design.
     const gifBytes = Uint8Array.from(atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'), c => c.charCodeAt(0));
     const file = new File([gifBytes], 'still.gif', { type: 'image/gif' });
@@ -5480,7 +5574,10 @@ test('falls back cleanly when an optional platform capability is missing @cross-
     if (decoder) delete window.ImageDecoder;
     OS._docName = 'before-gif';
     OS._handleFileLoad(file);
-    await new Promise(resolve => setTimeout(resolve, 800));
+    const started = performance.now();
+    while (OS._docName !== 'still.gif' && performance.now() - started < 5000) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
     if (decoder) window.ImageDecoder = decoder;
     // _addDecodedImageToCanvas names the document only once the decode lands.
     out.gifStaticFallback = OS._docName;
