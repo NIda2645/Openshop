@@ -4,6 +4,8 @@ const SHELL_REVISION = '0.24.0-r1';
 const STATE_SCHEMA = 1;
 const SHELL_CACHE_PREFIX = 'openshop-shell-';
 const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SHELL_REVISION}`;
+// Scratch space so a failed stage cannot destroy a working offline install.
+const STAGING_CACHE = `${SHELL_CACHE}-staging`;
 // Versioned with the shell: an unversioned runtime cache meant a fix to any
 // non-enumerated asset never reached a client that had already cached it.
 const RUNTIME_CACHE_PREFIX = 'openshop-runtime-';
@@ -110,9 +112,33 @@ async function fetchAndCache(cache, asset) {
     await cache.put(href, response.clone());
 }
 
-async function stageShell() {
+// Staging used to fetch straight into the live shell cache, after deleting it.
+// Since restageShell() runs against the *active* revision, a re-stage on a bad
+// connection wiped the working offline install and then failed — and after a
+// rollback, re-staging is the only recovery path, so the app was left serving
+// "not ready offline" until the network came back. Fetch into a scratch cache
+// and swap only once every required asset is in hand.
+async function promoteStagedShell() {
+    const staging = await caches.open(STAGING_CACHE);
+    const staged = await staging.keys();
+    if (!staged.length) throw new Error('OpenShop shell staging produced no entries');
+    const pairs = [];
+    for (const request of staged) {
+        const response = await staging.match(request);
+        if (!response) throw new Error(`OpenShop shell staging lost ${request.url}`);
+        pairs.push([request, response]);
+    }
+    // Everything is in memory before the live cache is touched, so the only
+    // window where it is incomplete is a local copy that cannot fail on I/O.
     await caches.delete(SHELL_CACHE);
-    const cache = await caches.open(SHELL_CACHE);
+    const live = await caches.open(SHELL_CACHE);
+    for (const [request, response] of pairs) await live.put(request, response);
+    await caches.delete(STAGING_CACHE);
+}
+
+async function stageShell() {
+    await caches.delete(STAGING_CACHE);
+    const cache = await caches.open(STAGING_CACHE);
     const requiredMissing = [];
     for (const asset of REQUIRED_ASSETS) {
         try {
@@ -122,7 +148,9 @@ async function stageShell() {
         }
     }
     if (requiredMissing.length) {
-        await caches.delete(SHELL_CACHE);
+        // The live shell was never touched, so an offline-ready client stays
+        // offline-ready.
+        await caches.delete(STAGING_CACHE);
         throw new Error(`OpenShop shell staging failed: ${requiredMissing.map(item => item.asset).join(', ')}`);
     }
 
@@ -134,6 +162,8 @@ async function stageShell() {
             optionalMissing.push({ asset, error: error.message });
         }
     }
+
+    await promoteStagedShell();
 
     const state = await readState();
     const reports = {
@@ -162,6 +192,8 @@ async function stageShell() {
 async function trimShellCaches(keepRevisions) {
     const revisions = [...keepRevisions].filter(Boolean);
     const keep = new Set(revisions.map(shellCacheName));
+    // A trim landing mid-stage must not delete the scratch cache under it.
+    keep.add(STAGING_CACHE);
     const keepRuntime = new Set(revisions.map(revision => `${RUNTIME_CACHE_PREFIX}${revision}`));
     keepRuntime.add(RUNTIME_CACHE);
     const names = await caches.keys();

@@ -227,4 +227,39 @@ test.describe('hosted offline contract', () => {
     expect(status.rolledBackFrom).toBe('test-v2-bad');
     expect(status.shellReady).toBe(true);
   });
+
+  test('a failed re-stage leaves the working offline shell intact', async ({ page, context, request }) => {
+    test.setTimeout(90000);
+    await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
+    await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+
+    const before = await page.evaluate(() => OS._requestOfflineWorker('OPENSHOP_GET_STATUS'));
+    expect(before.shellReady).toBe(true);
+
+    // Rebuild Offline Shell on a dead connection. Staging used to delete the
+    // live cache before refetching, so this wiped a working install and left
+    // the user on the "not ready offline" page until the network came back.
+    await setServerState(request, { networkDown: true });
+    const failed = await page.evaluate(async () => {
+      try {
+        await OS._requestOfflineWorker('OPENSHOP_RESTAGE');
+        return null;
+      } catch (error) {
+        return String(error.message || error);
+      }
+    });
+    expect(failed).toBeTruthy();
+
+    // The shell survived, and the app still loads with the origin unreachable.
+    const after = await page.evaluate(() => OS._requestOfflineWorker('OPENSHOP_GET_STATUS'));
+    expect(after.shellReady).toBe(true);
+    expect(after.activeRevision).toBe(productionRevision);
+
+    await context.setOffline(true);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#editor-canvas')).toBeVisible();
+    await context.setOffline(false);
+  });
 });
