@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-vDDp7ps7ZxpAEpcjGaFmo005KfxsJi7T78P6uhdAm5Q=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-60BfpEvmswVLaS/yYFghp9xbMI5ASX9Cg3XmMk66Wgg=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -6288,17 +6288,29 @@ self.onmessage = function(event) {
             this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('Duplicate Layer');
             return;
         }
-        let done = 0;
-        toClone.forEach(o => {
-            o.clone(c => {
-                c.set({left:o.left+10,top:o.top+10}); this.canvas.add(c); nl.objects.push(c);
-                done++;
-                if (done === toClone.length) {
-                    this._enforceLayerInvariants(); this.updateLayersPanel(); this.saveHistory('Duplicate Layer');
-                }
+        // Settling every clone before touching the layer table: the counter
+        // form only finished on the success path, and the compat shim swallows
+        // a clone rejection into a console warning, so one failure left the
+        // new layer spliced in with a partial object set, a stale panel and no
+        // history entry at all — invisible to undo.
+        Promise.allSettled(toClone.map(o => new Promise((resolve, reject) => {
+            try { o.clone(c => (c ? resolve({ source:o, clone:c }) : reject(new Error('clone returned nothing')))); }
+            catch (error) { reject(error); }
+        }))).then(results => {
+            const cloned = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+            if (!cloned.length) { this.toast('Could not duplicate this layer', 'error'); return; }
+            cloned.forEach(({ source, clone }) => {
+                clone.set({ left:source.left + 10, top:source.top + 10 });
+                this.canvas.add(clone);
+                nl.objects.push(clone);
             });
+            this.layers.splice(this.activeLayerIdx + 1, 0, nl); this.activeLayerIdx++;
+            this._enforceLayerInvariants();
+            this.updateLayersPanel();
+            this.saveHistory('Duplicate Layer');
+            const failed = results.length - cloned.length;
+            if (failed) this.toast(`Duplicated the layer without ${failed} object${failed === 1 ? '' : 's'} that could not be copied`, 'warning');
         });
-        this.layers.splice(this.activeLayerIdx+1, 0, nl); this.activeLayerIdx++;
     },
     mergeDown() {
         if (this.activeLayerIdx === 0) { this.toast(this._t('Already at the bottom layer'),'info'); return; }
@@ -12079,14 +12091,18 @@ self.onmessage = async function(event) {
             active.set({ scaleX:width / baseW, scaleY:height / baseH });
             active.setCoords();
             this.canvas.requestRenderAll();
-            this.saveHistory('Resize Object');
+            // Key auto-repeat fires ~30 times a second and every snapshot is
+            // a full document serialisation with base64 rasters, so an
+            // uncoalesced nudge filled the 60-entry history in two seconds and
+            // evicted everything the user had done before it.
+            this.saveHistory('Resize Object', { coalesceKey:`nudge-resize:${this._ensureObjectId(active)}` });
             this.updateStatus();
             return true;
         }
         active.set({ left:(active.left || 0) + dx, top:(active.top || 0) + dy });
         active.setCoords();
         this.canvas.requestRenderAll();
-        this.saveHistory('Move Object');
+        this.saveHistory('Move Object', { coalesceKey:`nudge-move:${this._ensureObjectId(active)}` });
         this.updateStatus();
         return true;
     },

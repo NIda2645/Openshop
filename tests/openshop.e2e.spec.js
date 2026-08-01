@@ -864,6 +864,9 @@ test('stores atomic recovery generations, falls back from corruption, and forks 
     body: hostedHtml
   }));
   await secondPage.goto('http://localhost/index.html', { waitUntil: 'domcontentloaded' });
+  // Boot is asynchronous: the libraries are fetched, verified and executed
+  // from blob URLs, so there is no OS.canvas to drive until it settles.
+  await secondPage.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
   await secondPage.evaluate(() => {
     OS.dismissWelcome();
     document.querySelectorAll('.modal-overlay').forEach((overlay) => overlay.remove());
