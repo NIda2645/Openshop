@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-QELTohLEOq6mPvFplO4ZXB6z+5xDW+GPzTDR0SQcoa0=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; script-src 'self' 'sha256-aRErPWa1IFIR9UivNZc2TxdWpV1vfFhC4h4FZG8oEkg=' 'sha256-p1X0nuvKLSHrpnEEjDPhOyHlyIy1kspxqSC4kRJFA0M=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.24.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -14488,8 +14488,13 @@ self.onmessage = async function(e) {
     _deleteSelectionPixels() {
         // Find the target image — active object or first image under selection
         let target = this.canvas.getActiveObject();
-        if (!target || target.type !== 'image') {
-            const imgs = this.canvas.getObjects().filter(o => o.type === 'image');
+        if (!target || target.type !== 'image' || target._wandOverlay) {
+            // The selection tint is an image and is always the last object
+            // added, so an unqualified "topmost image" picked it every time a
+            // mask selection was active — and it belongs to no layer, so the
+            // edit guard then refused the write while the caller still toasted
+            // success and threw the selection away.
+            const imgs = this.canvas.getObjects().filter(o => o.type === 'image' && !o._wandOverlay && o.name !== '__boundary__');
             target = imgs.length ? imgs[imgs.length - 1] : null;
         }
         if (!target || target.type !== 'image') {
@@ -14541,9 +14546,15 @@ self.onmessage = async function(e) {
             const lw = Math.round(br.x - tl.x), lh = Math.round(br.y - tl.y);
             ctx.clearRect(lx, ly, lw, lh);
         }
-        this._replaceActiveImage(target, oc.toDataURL('image/png'), 'Delete Pixels');
-        this.clearSelection();
-        this.toast('Deleted selected pixels', 'success');
+        // Report what actually happened. This used to clear the selection and
+        // claim success even when the guard refused the write, so the user got
+        // an error and a success toast together and lost the selection they
+        // would have needed to retry.
+        this._replaceActiveImage(target, oc.toDataURL('image/png'), 'Delete Pixels').then(committed => {
+            if (!committed) return;
+            this.clearSelection();
+            this.toast('Deleted selected pixels', 'success');
+        });
     },
     setZoom(level) {
         const center = { x: this.canvas.width / 2, y: this.canvas.height / 2 };

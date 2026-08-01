@@ -2863,6 +2863,46 @@ test('rescales a pre-document-space selection mask from an older project', async
   expect(result.nullSafe).toBe(null);
 });
 
+test('deleting a mask selection edits the image, not the selection tint @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // The tint overlay is an image and is always added last, so "topmost image"
+  // resolved to it whenever a mask was active. It belongs to no layer, so the
+  // edit guard refused the write — and the caller toasted success anyway.
+  const result = await page.evaluate(async () => {
+    OS.createNewDocument(80, 60, '#ffffff');
+    const block = new fabric.Rect({ left: 0, top: 0, width: 80, height: 60, fill: '#00aa00', selectable: false });
+    OS.canvas.add(block);
+    OS.layers[OS.activeLayerIdx].objects.push(block);
+    OS.flattenImage();
+    await new Promise(r => setTimeout(r, 300));
+
+    const w = Math.round(OS.canvasW), h = Math.round(OS.canvasH);
+    const mask = new Uint8Array(w * h);
+    for (let y = 10; y < 30; y++) for (let x = 10; x < 30; x++) mask[y * w + x] = 255;
+    OS._setPixelSelectionMask(mask, w, h);
+    OS.canvas.discardActiveObject();
+    // The tint overlay is added from an async image decode.
+    for (let i = 0; i < 40 && !OS.canvas.getObjects().some(o => o._wandOverlay); i++) {
+      await new Promise(r => setTimeout(r, 25));
+    }
+
+    const overlayPresent = OS.canvas.getObjects().some(o => o._wandOverlay);
+    OS._deleteSelectionPixels();
+    await new Promise(r => setTimeout(r, 400));
+
+    const data = OS._readDocumentImageData().data;
+    const at = (x, y) => data[(y * w + x) * 4 + 3];
+    return { overlayPresent, insideAlpha: at(20, 20), outsideAlpha: at(60, 50) };
+  });
+
+  expect(result.overlayPresent).toBe(true);
+  // Inside the mask is now transparent; outside is untouched.
+  expect(result.insideAlpha).toBe(0);
+  expect(result.outsideAlpha).toBe(255);
+});
+
 test('Grow and Similar write full coverage, not a token 1 @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
