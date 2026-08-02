@@ -12,9 +12,6 @@ testing gates.
 
 ### Format & I/O
 ### Editor Core
-- Adjustment layers (non-destructive Levels / Curves / HSL) stackable above pixel layers
-  Research note (2026-07-29): Store typed operation ID, schema version, parameters, cache key, and an explicit Apply/Merge path so old projects remain reproducible.
-  Research note (2026-07-31): Prefer darktable's **fixed, versioned op order** (`iop_order`, versioned so old edits still render) over an arbitrary node graph, plus GIMP 3.2's trick of hanging non-destructive filters off a **pass-through layer group** rather than inventing an adjustment-layer type. Add darktable's second idea too — a **separate low-resolution preview pipe** — or every slider drag re-composites at full size. Canvas 2D `globalCompositeOperation` already implements all 16 W3C blend modes correctly, so no blend maths is needed until a WebGL path exists. This is the #1 credibility gap versus every competitor.
 - Layer masks with feather + density sliders, separate from alpha
 - Smart objects: re-editable embedded source so edits don't resample
 - Vector shapes stored as paths (Bezier handles on the canvas), not rasterized until export

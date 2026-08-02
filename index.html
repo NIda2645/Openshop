@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-9P9RtbrZQvquWSIVjuyGIZNxgp3A/7XP9dM3g0dvUbY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-ByvbpROVEQ5uegxPe29FxBVo4wcYMCmNPAybEh8b8Us=' 'sha256-iVS0EYePtg9fjKywwuz5YLZxqa29i458RIVDAlPxSL8=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -20,7 +20,7 @@ const applyFabricCompat = () => {
 
     api.FabricObject.ownDefaults.originX = 'left';
     api.FabricObject.ownDefaults.originY = 'top';
-    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow'];
+    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers'];
     api.Image.filters = api.filters;
 
     const reportAsyncError = error => {
@@ -2739,11 +2739,18 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
                 <div class="adj-row"><label>Saturation</label><input type="range" id="adj-sat" min="-100" max="100" value="0" data-os-input="input-019"><span class="adj-val" id="adj-sat-val">0</span></div>
                 <div class="adj-row"><label>Hue</label><input type="range" id="adj-hue" min="-180" max="180" value="0" data-os-input="input-019"><span class="adj-val" id="adj-hue-val">0</span></div>
                 <div class="adj-row"><label>Blur</label><input type="range" id="adj-blur" min="0" max="100" value="0" data-os-input="input-019"><span class="adj-val" id="adj-blur-val">0</span></div>
-                <div class="adj-btns">
-                    <button class="btn btn-primary" data-os-click="click-162">Apply</button>
-                    <button class="btn" data-os-click="click-163">Reset</button>
-                </div>
-                <div style="height:1px;background:var(--border);margin:10px 0"></div>
+                 <div class="adj-btns">
+                     <button class="btn btn-primary" data-os-click="click-162">Apply</button>
+                     <button class="btn" data-os-click="click-163">Reset</button>
+                 </div>
+                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
+                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Non-destructive layers</div>
+                 <div class="adj-row"><label for="adjustment-layer-kind">Type</label><select id="adjustment-layer-kind" style="flex:1"><option value="levels">Levels</option><option value="curves">Curves</option><option value="hsl">HSL</option></select></div>
+                 <div class="adj-btns">
+                     <button class="btn btn-primary" id="add-adjustment-layer" type="button">Add Layer</button>
+                     <button class="btn" id="apply-adjustment-layers" type="button">Apply Stack</button>
+                 </div>
+                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Text Effects</div>
                 <div class="text-fx-row"><label>Shadow X</label><input type="range" id="tfx-sx" min="-20" max="20" value="2" data-os-input="input-020"></div>
                 <div class="text-fx-row"><label>Shadow Y</label><input type="range" id="tfx-sy" min="-20" max="20" value="2" data-os-input="input-020"></div>
@@ -4217,7 +4224,7 @@ const OS = {
         return Boolean(id) && (id === this._documentId || this._documentIdAliases.includes(id));
     },
     _idSequence: 0,
-    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow'],
+    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers'],
     _isDirty: false,
     _persistenceState: 'clean',
     _documentRevision: 0,
@@ -4667,6 +4674,11 @@ const OS = {
         this.setTool('select');
         this._restoreToolOptionState();
         this.updateLayersPanel(); this.updateStatus();
+        document.getElementById('add-adjustment-layer')?.addEventListener('click', () => {
+            const type = document.getElementById('adjustment-layer-kind')?.value || 'levels';
+            void this.addAdjustmentLayer(type).then(success => { if (success) this.showAdjustmentLayerDialog(); });
+        });
+        document.getElementById('apply-adjustment-layers')?.addEventListener('click', () => { void this.applyAdjustmentLayers(); });
         const ca = document.getElementById('canvas-area');
         ca.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
         ca.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); this.handleDrop(e); });
@@ -4941,8 +4953,8 @@ const OS = {
             backgroundObjects.push(fill);
         }
         this.layers.push(
-            { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', objects:backgroundObjects },
-            { id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }
+            { id:this._newDocumentId('layer'), name:'Background', visible:true, locked:true, opacity:100, blend:'source-over', kind:'pixel', objects:backgroundObjects },
+            { id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', kind:'pixel', objects:[] }
         );
         this.activeLayerIdx = 1;
         this._restoreGuidesState([]);
@@ -5331,6 +5343,224 @@ const OS = {
         this._aiMasks = [...this._normalizeAIMasks(this._aiMasks), entry].slice(-this._importLimits.maxAIMasks);
         return true;
     },
+    _normalizeAdjustment(value) {
+        const source = value && typeof value === 'object' ? value : {};
+        const type = ['levels', 'curves', 'hsl'].includes(source.type) ? source.type : 'levels';
+        const number = (candidate, fallback, min, max) => {
+            const n = Number(candidate);
+            return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+        };
+        const withCacheKey = params => ({ type, version:1, params, cacheKey:`${type}:v1:${JSON.stringify(params)}` });
+        if (type === 'levels') {
+            const black = number(source.params?.black, 0, 0, 254);
+            return withCacheKey({
+                black,
+                white: number(source.params?.white, 255, black + 1, 255),
+                gamma: number(source.params?.gamma, 1, 0.1, 4)
+            });
+        }
+        if (type === 'hsl') {
+            return withCacheKey({
+                hue: number(source.params?.hue, 0, -180, 180),
+                saturation: number(source.params?.saturation, 0, -100, 100),
+                lightness: number(source.params?.lightness, 0, -100, 100)
+            });
+        }
+        const rawPoints = Array.isArray(source.params?.points) ? source.params.points : [[0, 0], [255, 255]];
+        const points = rawPoints.map(point => [number(point?.[0], 0, 0, 255), number(point?.[1], 0, 0, 255)])
+            .sort((a, b) => a[0] - b[0])
+            .filter((point, index, all) => index === 0 || point[0] !== all[index - 1][0])
+            .slice(0, 16);
+        if (!points.length) points.push([0, 0], [255, 255]);
+        else {
+            if (points[0][0] > 0) points.unshift([0, points[0][1]]);
+            if (points[points.length - 1][0] < 255) points.push([255, points[points.length - 1][1]]);
+        }
+        return withCacheKey({ points });
+    },
+    _adjustmentLUT(points) {
+        const normalized = this._normalizeAdjustment({ type:'curves', params:{ points } }).params.points;
+        const lut = new Uint8Array(256);
+        let segment = 0;
+        for (let x = 0; x < 256; x++) {
+            while (segment < normalized.length - 2 && x > normalized[segment + 1][0]) segment++;
+            const [x0, y0] = normalized[segment], [x1, y1] = normalized[segment + 1];
+            const ratio = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
+            lut[x] = Math.round(Math.max(0, Math.min(255, y0 + (y1 - y0) * ratio)));
+        }
+        return lut;
+    },
+    _applyAdjustmentPixels(imageData, adjustment, opacity = 1) {
+        const normalized = this._normalizeAdjustment(adjustment);
+        const data = imageData.data;
+        const before = opacity < 1 ? new Uint8ClampedArray(data) : null;
+        if (normalized.type === 'levels') {
+            const { black, white, gamma } = normalized.params;
+            const range = Math.max(1, white - black);
+            for (let i = 0; i < data.length; i += 4) for (let channel = 0; channel < 3; channel++) {
+                const value = Math.max(0, Math.min(1, (data[i + channel] - black) / range));
+                data[i + channel] = Math.round(Math.pow(value, 1 / gamma) * 255);
+            }
+        } else if (normalized.type === 'curves') {
+            const lut = this._adjustmentLUT(normalized.params.points);
+            for (let i = 0; i < data.length; i += 4) for (let channel = 0; channel < 3; channel++) data[i + channel] = lut[data[i + channel]];
+        } else {
+            const { hue, saturation, lightness } = normalized.params;
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+                const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                let h = 0, s = 0, l = (max + min) / 2;
+                if (max !== min) {
+                    const delta = max - min;
+                    s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+                    h = max === r ? (g - b) / delta + (g < b ? 6 : 0) : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+                    h /= 6;
+                }
+                h = (h + hue / 360 + 1) % 1;
+                s = Math.max(0, Math.min(1, s * (1 + saturation / 100)));
+                l = Math.max(0, Math.min(1, l + lightness / 200));
+                const hueToRgb = (p, q, t) => {
+                    if (t < 0) t += 1; if (t > 1) t -= 1;
+                    if (t < 1 / 6) return p + (q - p) * 6 * t;
+                    if (t < 1 / 2) return q;
+                    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+                    return p;
+                };
+                if (!s) data[i] = data[i + 1] = data[i + 2] = Math.round(l * 255);
+                else {
+                    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+                    data[i] = Math.round(hueToRgb(p, q, h + 1 / 3) * 255);
+                    data[i + 1] = Math.round(hueToRgb(p, q, h) * 255);
+                    data[i + 2] = Math.round(hueToRgb(p, q, h - 1 / 3) * 255);
+                }
+            }
+        }
+        if (before) for (let i = 0; i < data.length; i += 4) for (let channel = 0; channel < 3; channel++) {
+            data[i + channel] = Math.round(before[i + channel] * (1 - opacity) + data[i + channel] * opacity);
+        }
+        return imageData;
+    },
+    async _rebuildAdjustmentLayers() {
+        if (!this.canvas || !Array.isArray(this.layers)) return false;
+        const adjustmentLayers = this.layers.map((layer, index) => ({ layer, index }))
+            .filter(({ layer }) => layer.kind === 'adjustment');
+        const owner = new Map();
+        this.layers.forEach((layer, index) => (layer.objects || []).forEach(object => owner.set(object, index)));
+        for (const [object, layerIndex] of owner) {
+            if (object.type !== 'image' || this.layers[layerIndex]?.kind === 'adjustment') continue;
+            const stack = adjustmentLayers.filter(({ index }) => index > layerIndex);
+            const visible = stack.filter(({ layer }) => layer.visible !== false);
+            if (!visible.length) {
+                if (!object._openShopAdjustmentBaseSrc) continue;
+                const restored = await fabric.Image.fromURL(object._openShopAdjustmentBaseSrc);
+                const width = object.width, height = object.height;
+                object.setElement?.(restored.getElement());
+                if (!object.setElement) object._element = restored.getElement();
+                object.width = width; object.height = height; object.filters = [];
+                delete object._openShopAdjustmentBaseSrc;
+                delete object._openShopAdjustmentLayers;
+                object.dirty = true; object.setCoords?.();
+                continue;
+            }
+            if (!object._openShopAdjustmentBaseSrc) object._openShopAdjustmentBaseSrc = this._imageToDataURL(object);
+            const base = await fabric.Image.fromURL(object._openShopAdjustmentBaseSrc);
+            const source = base.getElement();
+            const surface = document.createElement('canvas');
+            surface.width = source.naturalWidth || source.width;
+            surface.height = source.naturalHeight || source.height;
+            const context = surface.getContext('2d');
+            if (!context) continue;
+            context.drawImage(source, 0, 0, surface.width, surface.height);
+            let pixels = context.getImageData(0, 0, surface.width, surface.height);
+            visible.forEach(({ layer }) => {
+                pixels = this._applyAdjustmentPixels(pixels, layer.adjustment, Math.max(0, Math.min(1, Number(layer.opacity ?? 100) / 100)));
+            });
+            context.putImageData(pixels, 0, 0);
+            const width = object.width, height = object.height;
+            object.setElement?.(surface);
+            if (!object.setElement) object._element = surface;
+            object.width = width; object.height = height; object.filters = [];
+            object._openShopAdjustmentLayers = stack.map(({ layer }) => this._ensureLayerId(layer));
+            object.dirty = true; object.setCoords?.();
+        }
+        this.canvas.renderAll?.();
+        return true;
+    },
+    _adjustmentLayerName(type) {
+        return ({ levels:'Levels', curves:'Curves', hsl:'HSL' })[type] || 'Adjustment';
+    },
+    showAdjustmentLayerDialog(index = this.activeLayerIdx) {
+        const layer = this.layers[index];
+        if (!layer || layer.kind !== 'adjustment') return false;
+        document.querySelector('.adjustment-layer-dialog')?.remove();
+        const adjustment = this._normalizeAdjustment(layer.adjustment);
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay adjustment-layer-dialog show';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', `${this._adjustmentLayerName(adjustment.type)} adjustment`);
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        const title = document.createElement('h3');
+        title.textContent = `${this._adjustmentLayerName(adjustment.type)} Adjustment Layer`;
+        modal.appendChild(title);
+        const fields = new Map();
+        const addRange = (label, key, { min, max, step = 1, value, format = v => v } = {}) => {
+            const row = document.createElement('div');
+            row.className = 'modal-row';
+            const caption = document.createElement('label');
+            caption.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = value;
+            const output = document.createElement('span');
+            output.className = 'adj-val'; output.textContent = format(input.value);
+            input.addEventListener('input', () => { output.textContent = format(input.value); });
+            row.append(caption, input, output); modal.appendChild(row); fields.set(key, input); return input;
+        };
+        if (adjustment.type === 'levels') {
+            const black = addRange('Black', 'black', { min:0, max:254, value:adjustment.params.black });
+            const white = addRange('White', 'white', { min:1, max:255, value:adjustment.params.white });
+            addRange('Gamma', 'gamma', { min:0.1, max:4, step:0.1, value:adjustment.params.gamma, format:v => Number(v).toFixed(1) });
+            black.addEventListener('input', () => {
+                white.min = String(Math.min(254, Number(black.value) + 1));
+                if (Number(white.value) <= Number(black.value)) white.value = white.min;
+                white.dispatchEvent(new Event('input'));
+            });
+        } else if (adjustment.type === 'hsl') {
+            addRange('Hue', 'hue', { min:-180, max:180, value:adjustment.params.hue });
+            addRange('Saturation', 'saturation', { min:-100, max:100, value:adjustment.params.saturation });
+            addRange('Lightness', 'lightness', { min:-100, max:100, value:adjustment.params.lightness });
+        } else {
+            const middle = adjustment.params.points.find(point => point[0] === 128)?.[1] ?? 128;
+            addRange('Midpoint', 'curve', { min:-100, max:100, value:middle - 128 });
+            const hint = document.createElement('p');
+            hint.textContent = 'Raises or lowers the curve midpoint while preserving the endpoints.';
+            hint.style.cssText = 'font-size:11px;color:var(--text-muted);margin:0 0 8px 100px';
+            modal.appendChild(hint);
+        }
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-btns';
+        const cancel = document.createElement('button');
+        cancel.type = 'button'; cancel.className = 'btn'; cancel.textContent = 'Cancel';
+        const apply = document.createElement('button');
+        apply.type = 'button'; apply.className = 'btn btn-primary'; apply.textContent = 'Update Layer';
+        buttons.append(cancel, apply); modal.appendChild(buttons); overlay.appendChild(modal); document.body.appendChild(overlay);
+        const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+        const onKey = event => { if (event.key === 'Escape') close(); };
+        cancel.addEventListener('click', close);
+        overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+        document.addEventListener('keydown', onKey);
+        apply.addEventListener('click', () => {
+            const read = key => Number(fields.get(key)?.value ?? 0);
+            const params = adjustment.type === 'levels'
+                ? { black:read('black'), white:read('white'), gamma:read('gamma') }
+                : adjustment.type === 'hsl'
+                    ? { hue:read('hue'), saturation:read('saturation'), lightness:read('lightness') }
+                    : { points:[[0, 0], [64, Math.max(0, Math.min(255, 64 + read('curve')))], [128, Math.max(0, Math.min(255, 128 + read('curve')))], [192, Math.max(0, Math.min(255, 192 + read('curve')))], [255, 255]] };
+            void this.updateAdjustmentLayer(index, params).then(success => { if (success) close(); });
+        });
+        return overlay;
+    },
     _captureDocumentState() {
         if (!this._hasDocumentStateForEditing()) throw new Error('No active document');
         if (!this.canvas?.getObjects || !this.canvas?.toJSON) throw new Error('Document renderer is unavailable');
@@ -5364,12 +5594,14 @@ const OS = {
                 locked: Boolean(layer.locked),
                 opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
                 blend: this._safeText(layer.blend || 'source-over', 40),
+                kind: layer.kind === 'adjustment' ? 'adjustment' : 'pixel',
+                adjustment: layer.kind === 'adjustment' ? this._normalizeAdjustment(layer.adjustment) : null,
                 psd: this._normalizePSDLayerMetadata(layer.psd),
                 objectIds
             };
         });
         if (!layers.length) {
-            const layer = { name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] };
+            const layer = { name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', kind:'pixel', objects:[] };
             this.layers.push(layer);
             layers.push({ id:this._ensureLayerId(layer, usedLayerIds), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objectIds:[] });
             this.activeLayerIdx = 0;
@@ -5608,6 +5840,8 @@ const OS = {
                 locked: Boolean(layer.locked),
                 opacity: Math.max(0, Math.min(100, Number(layer.opacity ?? 100))),
                 blend: this._safeText(layer.blend || 'source-over', 40),
+                kind: layer.kind === 'adjustment' ? 'adjustment' : 'pixel',
+                adjustment: layer.kind === 'adjustment' ? this._normalizeAdjustment(layer.adjustment) : null,
                 psd: this._normalizePSDLayerMetadata(layer.psd),
                 objects: []
             };
@@ -5626,7 +5860,7 @@ const OS = {
             });
             return restored;
         });
-        if (!this.layers.length) this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
+        if (!this.layers.length) this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', kind:'pixel', objects:[] }];
         this._psdInterchange = this._normalizePSDInterchange(state.interchange?.psd);
         const activeLayerId = state.active?.layerId;
         this.activeLayerIdx = Math.max(0, this.layers.findIndex(layer => layer.id === activeLayerId));
@@ -5649,6 +5883,7 @@ const OS = {
         this._restoreSelectionState(state.selection);
         this._colorProfile = this._normalizeColorProfile(state.metadata?.colorProfile);
         this._aiMasks = this._normalizeAIMasks(state.metadata?.aiMasks, { validate:true });
+        await this._rebuildAdjustmentLayers();
         this._stopAnimationPlayback();
         this._animFrames = Array.isArray(state.animation?.frames)
             ? state.animation.frames.filter(frame => typeof frame === 'string' && frame.startsWith('data:image/'))
@@ -5796,7 +6031,8 @@ const OS = {
         }
         if (width > this.canvasW) img.scaleToWidth(this.canvasW * 0.8);
         img.set({ left:50, top:50, selectable:true, name:this._safeText(name, 120) });
-        this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img);
+        if (this.layers[this.activeLayerIdx]?.kind === 'adjustment') this._addObjectAsLayer(img, name);
+        else { this.canvas.add(img); this.layers[this.activeLayerIdx].objects.push(img); }
         this.canvas.setActiveObject(img); this.saveHistory(mode === 'paste' ? 'Paste Image' : 'Drop Image'); this.updateLayersPanel();
         this.toast(mode === 'paste' ? 'Image pasted from clipboard' : `Added: ${this._safeText(name, 80)}`, 'success');
         return true;
@@ -7735,7 +7971,7 @@ self.onmessage = function(event) {
             report.flattenWholeDocument = true;
         }
         if (layers.length === 1) {
-            layers.push({ id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
+            layers.push({ id:this._newDocumentId('layer'), name:'Layer 1', visible:true, locked:false, opacity:100, blend:'source-over', kind:'pixel', objects:[] });
         }
         return {
             boundary,
@@ -7918,7 +8154,7 @@ self.onmessage = function(event) {
                 this._layerOwnership = new WeakMap();
                 return this._layerOwnership;
             }
-            this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
+            this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', kind:'pixel', objects:[] }];
         }
         this.activeLayerIdx = Math.max(0, Math.min(Number(this.activeLayerIdx) || 0, this.layers.length - 1));
         const canvasObjects = this.canvas?.getObjects?.() || [];
@@ -7954,7 +8190,7 @@ self.onmessage = function(event) {
     _isLayerEditable(layerOrIndex = this.activeLayerIdx) {
         const layer = typeof layerOrIndex === 'number' ? this.layers[layerOrIndex] : layerOrIndex;
         const groupState = this._getPSDGroupState(layer);
-        return Boolean(layer && layer.visible !== false && groupState.visible && !layer.locked);
+        return Boolean(layer && layer.kind !== 'adjustment' && layer.visible !== false && groupState.visible && !layer.locked);
     },
     _isObjectEditable(object) {
         if (object?.type === 'activeSelection' && object.forEachObject) {
@@ -8060,6 +8296,7 @@ self.onmessage = function(event) {
         this.layers.splice(to, 0, moved);
         this.activeLayerIdx = Math.max(0, this.layers.indexOf(activeLayer));
         this._enforceLayerInvariants();
+        if (moved.kind === 'adjustment') void this._rebuildAdjustmentLayers();
         this.updateLayersPanel();
         if (recordHistory) this.saveHistory('Reorder Layers', {
             command:this._makeCommand('layer.move', { layerId:this._ensureLayerId(moved), toIndex:to })
@@ -8096,7 +8333,7 @@ self.onmessage = function(event) {
     // structure they were saved with.
     _addObjectAsLayer(object, name) {
         if (!this.canvas.getObjects().includes(object)) this.canvas.add(object);
-        if (this._prefs?.stackNewObjects) {
+        if (this._prefs?.stackNewObjects && this.layers[this.activeLayerIdx]?.kind !== 'adjustment') {
             this.layers[this.activeLayerIdx].objects.push(object);
             return this.layers[this.activeLayerIdx];
         }
@@ -8107,6 +8344,7 @@ self.onmessage = function(event) {
             locked:false,
             opacity:100,
             blend:'source-over',
+            kind:'pixel',
             objects:[object]
         };
         this.layers.splice(this.activeLayerIdx + 1, 0, layer);
@@ -8138,6 +8376,7 @@ self.onmessage = function(event) {
             locked:false,
             opacity:100,
             blend:'source-over',
+            kind:'pixel',
             objects:[]
         };
         this.layers.push(layer);
@@ -8149,6 +8388,78 @@ self.onmessage = function(event) {
         });
         return true;
     },
+    async addAdjustmentLayer(type = 'levels', params = null) {
+        if (!this.layers.length || this.activeLayerIdx < 0) return false;
+        const adjustment = this._normalizeAdjustment({ type, params: params || {} });
+        const layer = {
+            id:this._newDocumentId('layer'),
+            name:this._adjustmentLayerName(adjustment.type),
+            visible:true,
+            locked:false,
+            opacity:100,
+            blend:'source-over',
+            kind:'adjustment',
+            adjustment,
+            objects:[]
+        };
+        const afterLayerId = this._ensureLayerId(this.layers[this.activeLayerIdx]);
+        this.layers.splice(this.activeLayerIdx + 1, 0, layer);
+        this.activeLayerIdx++;
+        try {
+            await this._rebuildAdjustmentLayers();
+            this._enforceLayerInvariants();
+            this.updateLayersPanel();
+            this.saveHistory(`Add ${this._adjustmentLayerName(adjustment.type)} Adjustment Layer`, {
+                command:this._makeCommand('layer.adjustment.add', { layerId:layer.id, afterLayerId, adjustment })
+            });
+            this.toast(`${this._adjustmentLayerName(adjustment.type)} adjustment layer added`, 'success');
+            return true;
+        } catch (error) {
+            this.layers.splice(this.activeLayerIdx, 1);
+            this.activeLayerIdx = Math.max(0, Math.min(this.activeLayerIdx, this.layers.length - 1));
+            this.updateLayersPanel();
+            this.toast(`Adjustment layer failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
+    async updateAdjustmentLayer(index = this.activeLayerIdx, params = {}) {
+        const layer = this.layers[index];
+        if (!layer || layer.kind !== 'adjustment' || layer.locked) return false;
+        const previous = layer.adjustment;
+        layer.adjustment = this._normalizeAdjustment({ type:layer.adjustment?.type, params });
+        try {
+            await this._rebuildAdjustmentLayers();
+            this.updateLayersPanel();
+            this.saveHistory(`Update ${this._adjustmentLayerName(layer.adjustment.type)} Adjustment`, {
+                command:this._makeCommand('layer.adjustment.update', { layerId:this._ensureLayerId(layer), adjustment:layer.adjustment })
+            });
+            return true;
+        } catch (error) {
+            layer.adjustment = previous;
+            await this._rebuildAdjustmentLayers();
+            this.updateLayersPanel();
+            this.toast(`Adjustment update failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
+    async applyAdjustmentLayers() {
+        const adjustmentLayers = this.layers.filter(layer => layer.kind === 'adjustment');
+        if (!adjustmentLayers.length) return false;
+        await this._rebuildAdjustmentLayers();
+        this.layers.forEach(layer => (layer.objects || []).forEach(object => {
+            if (object._openShopAdjustmentBaseSrc) {
+                delete object._openShopAdjustmentBaseSrc;
+                delete object._openShopAdjustmentLayers;
+            }
+        }));
+        this.layers = this.layers.filter(layer => layer.kind !== 'adjustment');
+        this.activeLayerIdx = Math.max(0, Math.min(this.activeLayerIdx, this.layers.length - 1));
+        this._enforceLayerInvariants();
+        this.updateLayersPanel();
+        this.saveHistory('Apply Adjustment Stack', { command:this._makeCommand('layer.adjustment.apply') });
+        this.toast('Adjustment stack applied to pixel layers', 'success');
+        return true;
+    },
     deleteLayer() {
         if (this.layers.length === 0) return;
         const layer = this.layers[this.activeLayerIdx];
@@ -8156,8 +8467,9 @@ self.onmessage = function(event) {
         const deletedLayerId = this._ensureLayerId(layer);
         layer.objects.forEach(o => this.canvas.remove(o));
         this.layers.splice(this.activeLayerIdx, 1);
+        if (layer.kind === 'adjustment') void this._rebuildAdjustmentLayers();
         if (this.layers.length === 0) {
-            this.layers.push({ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] });
+            this.layers.push({ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', kind:'pixel', objects:[] });
             this.activeLayerIdx = 0;
         } else {
             this.activeLayerIdx = Math.min(this.activeLayerIdx, this.layers.length-1);
@@ -8171,7 +8483,25 @@ self.onmessage = function(event) {
     },
     duplicateLayer() {
         const src = this.layers[this.activeLayerIdx];
-        const nl = { id:this._newDocumentId('layer'), name:src.name+' Copy', visible:src.visible !== false, locked:Boolean(src.locked), opacity:src.opacity, blend:src.blend, objects:[] };
+        const nl = {
+            id:this._newDocumentId('layer'),
+            name:src.name+' Copy',
+            visible:src.visible !== false,
+            locked:Boolean(src.locked),
+            opacity:src.opacity,
+            blend:src.blend,
+            kind:src.kind === 'adjustment' ? 'adjustment' : 'pixel',
+            adjustment:src.kind === 'adjustment' ? this._normalizeAdjustment(src.adjustment) : null,
+            objects:[]
+        };
+        if (src.kind === 'adjustment') {
+            this.layers.splice(this.activeLayerIdx + 1, 0, nl);
+            this.activeLayerIdx++;
+            this._enforceLayerInvariants();
+            this.updateLayersPanel();
+            this.saveHistory('Duplicate Adjustment Layer');
+            return;
+        }
         const toClone = src.objects.filter(o => o.name !== '__boundary__');
         if (toClone.length === 0) {
             this.layers.splice(this.activeLayerIdx+1, 0, nl); this.activeLayerIdx++;
@@ -8205,6 +8535,10 @@ self.onmessage = function(event) {
     mergeDown() {
         if (this.activeLayerIdx === 0) { this.toast(this._t('Already at the bottom layer'),'info'); return; }
         const upper = this.layers[this.activeLayerIdx], lower = this.layers[this.activeLayerIdx-1];
+        if (upper.kind === 'adjustment') {
+            void this.applyAdjustmentLayers();
+            return;
+        }
         if (!this._isLayerEditable(upper) || !this._isLayerEditable(lower)) {
             this.toast('Show and unlock both layers before merging', 'error');
             return;
@@ -8226,6 +8560,7 @@ self.onmessage = function(event) {
         if (!l) return;
         l.visible = !l.visible;
         this._enforceLayerInvariants();
+        if (l.kind === 'adjustment') void this._rebuildAdjustmentLayers();
         this.updateLayersPanel();
         this.saveHistory(l.visible ? 'Show Layer' : 'Hide Layer', {
             command:this._makeCommand('layer.visibility.set', { layerId:this._ensureLayerId(l), visible:l.visible })
@@ -8240,6 +8575,7 @@ self.onmessage = function(event) {
         l.opacity = opacity;
         const groupOpacity = this._getPSDGroupState(l).opacity;
         l.objects.forEach(o => { if (o.name !== '__boundary__') o.opacity = (opacity/100) * groupOpacity; });
+        if (l.kind === 'adjustment') void this._rebuildAdjustmentLayers();
         document.getElementById('layer-opacity-val').textContent = opacity;
         this.canvas.renderAll();
         const command = this._makeCommand('layer.opacity.set', { layerId:this._ensureLayerId(l), opacity });
@@ -8371,14 +8707,20 @@ self.onmessage = function(event) {
             const hasMask = l.objects.some(o => o._hasMask);
             const isBg = l.objects.some(o => o.name === '__boundary__');
             const thumbStyle = isBg ? 'layer-thumb-checker' : '';
+            const layerType = l.kind === 'adjustment'
+                ? `${this._adjustmentLayerName(l.adjustment?.type)} adjustment`
+                : `${l.objects.filter(o=>o.name!=='__boundary__').length} obj${hasMask?' &middot; M':''}`;
             d.innerHTML = `<div class="layer-drag-handle" title="Drag to reorder">&#9776;</div>
                 <button class="layer-vis ${l.visible?'':'hidden'}" title="${l.visible?'Hide layer':'Show layer'}" aria-label="${l.visible?'Hide layer':'Show layer'}" aria-pressed="${l.visible?'false':'true'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${eyeSvg}</svg></button>
                 <button class="layer-lock ${l.locked?'locked':''}" title="${l.locked?'Unlock layer':'Lock layer'}" aria-label="${l.locked?'Unlock layer':'Lock layer'}">${lockSvg}</button>
                 <div class="layer-thumb"><div class="${thumbStyle}" style="width:32px;height:32px;${isBg?'':'background:var(--bg-depth-4);'}border-radius:2px"></div></div>
-                <div class="layer-info"><div class="layer-name">${this._esc(l.name)}</div><div class="layer-type">${l.locked?'Locked &middot; ':''}${l.blend!=='source-over'?this._esc(l.blend)+' &middot; ':''}${l.objects.filter(o=>o.name!=='__boundary__').length} obj${hasMask?' &middot; M':''}</div></div>`;
+                <div class="layer-info"><div class="layer-name">${this._esc(l.name)}</div><div class="layer-type">${l.locked?'Locked &middot; ':''}${l.blend!=='source-over'?this._esc(l.blend)+' &middot; ':''}${layerType}</div></div>`;
             d.querySelector('.layer-vis').addEventListener('click', e => { e.stopPropagation(); this.toggleLayerVisibility(i); });
             d.querySelector('.layer-lock').addEventListener('click', e => { e.stopPropagation(); this.toggleLayerLock(i); });
-            d.querySelector('.layer-name').addEventListener('dblclick', function() { OS.startRenameLayer(this, i); });
+            d.querySelector('.layer-name').addEventListener('dblclick', function() {
+                if (l.kind === 'adjustment') OS.showAdjustmentLayerDialog(i);
+                else OS.startRenameLayer(this, i);
+            });
             // The container claims role="listbox" but had no options in it, so
             // neither list was navigable as a list by assistive technology.
             d.setAttribute('role', 'option');
@@ -10650,6 +10992,31 @@ self.onmessage = function(event) {
                     name:this._safeText(args?.name || 'Layer', 120)
                 }),
                 execute:args => this.addLayer({ id:args.layerId, name:args.name })
+            }],
+            ['layer.adjustment.add', {
+                label:'Add Adjustment Layer',
+                validate:args => ({
+                    layerId:requiredId(args?.layerId, 'Layer ID'),
+                    afterLayerId:args?.afterLayerId ? requiredId(args.afterLayerId, 'Layer ID') : null,
+                    adjustment:this._normalizeAdjustment(args?.adjustment)
+                }),
+                execute:args => {
+                    if (args.afterLayerId) this.selectLayer(layerIndexById(args.afterLayerId));
+                    return this.addAdjustmentLayer(args.adjustment.type, args.adjustment.params);
+                }
+            }],
+            ['layer.adjustment.update', {
+                label:'Update Adjustment Layer',
+                validate:args => ({
+                    ...layerTarget(args),
+                    adjustment:this._normalizeAdjustment(args?.adjustment)
+                }),
+                execute:args => this.updateAdjustmentLayer(layerIndexById(args.layerId), args.adjustment.params)
+            }],
+            ['layer.adjustment.apply', {
+                label:'Apply Adjustment Stack',
+                validate:noArgs,
+                execute:() => this.applyAdjustmentLayers()
             }],
             ['layer.delete', {
                 label:'Delete Layer',

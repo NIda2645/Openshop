@@ -1308,6 +1308,30 @@ describe('OpenShop core object', () => {
     }
   });
 
+  it('normalizes adjustment operations and applies their pixel math', () => {
+    const OS = loadOpenShop();
+    const levels = OS._normalizeAdjustment({
+      type: 'levels',
+      params: { black: -10, white: 128, gamma: 1 }
+    });
+    expect(levels).toEqual({
+      type: 'levels', version: 1,
+      params: { black: 0, white: 128, gamma: 1 },
+      cacheKey: 'levels:v1:{"black":0,"white":128,"gamma":1}'
+    });
+
+    const pixels = { data: new Uint8ClampedArray([64, 32, 16, 255]) };
+    OS._applyAdjustmentPixels(pixels, levels);
+    expect([...pixels.data]).toEqual([128, 64, 32, 255]);
+
+    const curveCommand = OS._makeCommand('layer.adjustment.update', {
+      layerId: 'layer-1',
+      adjustment: { type: 'curves', params: { points: [[0, 0], [128, 220], [255, 255]] } }
+    });
+    expect(curveCommand).toEqual(expect.objectContaining({ id: 'layer.adjustment.update', schemaVersion: 1 }));
+    expect(curveCommand.args.adjustment.params.points).toEqual([[0, 0], [128, 220], [255, 255]]);
+  });
+
   it('registers one installed-app launch consumer and routes supported files', async () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);

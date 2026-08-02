@@ -28,7 +28,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 
 | Feature | Description |
 |---------|-------------|
-| **Layer System** | Multi-layer canvas with canonical render/export stacking, protected hidden or locked content, and undoable visibility, lock, opacity, blend, rename, and drag-reorder changes |
+| **Layer System** | Multi-layer canvas with canonical render/export stacking, non-destructive Levels, Curves, and HSL adjustment layers, protected hidden or locked content, and undoable visibility, lock, opacity, blend, rename, and drag-reorder changes |
 | **34 Tools** | Move, Brush, Pencil, Eraser, Spray, Clone Stamp, Healing Brush, Dodge, Burn, Sponge, Smudge, Shapes (rect, ellipse, triangle, polygon, star, arrow, line), Pen, Text, Gradient, Pattern Fill, Flood Fill, Eyedropper, Crop, Measure, Sticky Notes, AI Segment Select, Pan, Zoom |
 | **Brush Engine** | Round, Soft, Flat, Scatter, Pixel presets with adjustable size, opacity, and flow |
 | **Selection Tools** | Rectangular/Elliptical Marquee, Magic Wand (contiguous + global), Lasso, Color Range dialog with fuzziness, presets, and live preview |
@@ -75,7 +75,7 @@ All AI models download once and run entirely in-browser. Before the first downlo
 
 ### Adjustments & Filters
 
-Enlarge 2x/4x (stepped high-quality resampling with a sharpening pass; the Image menu lists it beside the model-backed AI enlarger and labels which is which), Levels, Curves (per-channel), Brightness/Contrast, Hue/Saturation, Color Balance, Auto Levels, Auto Enhance, Grayscale, Sepia, Invert, Black & White, Sharpen, Blur, Noise, Vignette, Posterize, Threshold, Emboss, Edge Detect, Pixelate, Oil Paint, Halftone, Duotone, Tilt Shift, Chromatic Aberration, Gradient Map, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Selective Color, Replace Color, Lens Correction, and 8 built-in photo presets with custom preset import/export.
+Enlarge 2x/4x (stepped high-quality resampling with a sharpening pass; the Image menu lists it beside the model-backed AI enlarger and labels which is which), non-destructive Levels, Curves, and HSL adjustment layers with editable parameters, stack preview, and Apply Stack, plus Brightness/Contrast, Hue/Saturation, Color Balance, Auto Levels, Auto Enhance, Grayscale, Sepia, Invert, Black & White, Sharpen, Blur, Noise, Vignette, Posterize, Threshold, Emboss, Edge Detect, Pixelate, Oil Paint, Halftone, Duotone, Tilt Shift, Chromatic Aberration, Gradient Map, Vibrance, Exposure, Shadows/Highlights, Photo Filter, Selective Color, Replace Color, Lens Correction, and 8 built-in photo presets with custom preset import/export.
 
 Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignette, Edge Detect, Duotone, Chromatic Aberration) run in a Web Worker so the UI stays responsive on large images. Photon WASM is loaded on demand as an optional accelerator for supported pixel filters, with automatic fallback to the JavaScript worker. Cancel terminates the active filter worker, rejects its pending job, and leaves the source layer and history unchanged.
 
