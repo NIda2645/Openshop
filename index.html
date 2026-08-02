@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-ZqRXfUmr4aZqPoDGEuDSVoeWyEl49O+vvt+sCSo5Aro=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-dMEBMCcViWwCmxKHjbDsMhbsl+whJ8SoVtJ4YPztRuI=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4256,6 +4256,14 @@ const OS = {
     // the PSD and PDF exporters declare that rather than assuming 96.
     _documentResolution: 96,
     _documentSchemaVersion: 1,
+    // Migrations are keyed by the schema they accept and must return the next
+    // schema shape. Keeping the registry explicit makes a future schema bump
+    // auditable instead of silently accepting an incompatible payload.
+    _documentMigrationRegistry: Object.freeze({
+        1: project => project
+    }),
+    _lastDocumentMigrationReport: null,
+    _lastDocumentExportReport: null,
     _documentId: null,
     // Ids this document has already used and surrendered this session. Kept so
     // a snapshot cannot re-install a contested id, and so Save Project clears
@@ -4633,6 +4641,8 @@ const OS = {
         this._docName = null;
         this._projectFileHandle = null;
         this._psdInterchange = null;
+        this._lastDocumentMigrationReport = null;
+        this._lastDocumentExportReport = null;
         this._lastPSDImportReport = null;
         this._lastImportRaw = null;
         this._colorProfile = { name:'sRGB', source:'assumed', iccData:null };
@@ -5018,6 +5028,8 @@ const OS = {
         }
         if (!this._documentId) this._adoptDocumentId(this._newDocumentId('document'));
         this._psdInterchange = null;
+        this._lastDocumentMigrationReport = null;
+        this._lastDocumentExportReport = null;
         this._lastPSDImportReport = null;
         this._lastPSDExportReport = null;
         this._colorProfile = { name:'sRGB', source:'assumed', iccData:null };
@@ -5276,7 +5288,10 @@ const OS = {
         if (obj?.kind === 'openshop-document') {
             const schemaVersion = Math.round(Number(obj.schemaVersion || 0));
             if (schemaVersion < 1 || schemaVersion > this._documentSchemaVersion) {
-                throw new Error(`Unsupported OpenShop document schema ${schemaVersion || 'unknown'}`);
+                throw this._makeDocumentCompatibilityError(
+                    `Unsupported OpenShop document schema ${schemaVersion || 'unknown'}`,
+                    { code:'openshop.unsupported-schema', path:'schemaVersion', feature:`schema ${schemaVersion || 'unknown'}` }
+                );
             }
             const w = Math.round(Number(obj.canvas?.width || 0));
             const h = Math.round(Number(obj.canvas?.height || 0));
@@ -5661,6 +5676,8 @@ const OS = {
         if (!this._hasDocumentStateForEditing()) throw new Error('No active document');
         if (!this.canvas?.getObjects || !this.canvas?.toJSON) throw new Error('Document renderer is unavailable');
         this._enforceLayerInvariants({ render:false });
+        const compatibility = this._documentExportCompatibilityReport();
+        this._lastDocumentExportReport = compatibility;
         const canvasObjects = this.canvas.getObjects().filter(object => !object.excludeFromExport);
         const usedObjectIds = new Set();
         canvasObjects.forEach(object => this._ensureObjectId(object, usedObjectIds));
@@ -5758,6 +5775,7 @@ const OS = {
             interchange: {
                 psd: this._normalizePSDInterchange(this._psdInterchange)
             },
+            compatibility,
         };
     },
     _migrateLegacyProject(project) {
@@ -5851,11 +5869,130 @@ const OS = {
             workspace: meta.workspace || { tool:this.state.tool, zoom:this.zoom, viewportTransform:this.canvas.viewportTransform?.slice(0, 6) }
         };
     },
+    _documentCompatibilityReport({ direction = 'import', accepted = true, sourceVersion = this._documentSchemaVersion, targetVersion = this._documentSchemaVersion, steps = [], warnings = [], losses = [] } = {}) {
+        return {
+            format:'openshop',
+            direction,
+            accepted:Boolean(accepted),
+            sourceVersion,
+            targetVersion,
+            steps:[...steps].slice(0, 20),
+            warnings:[...new Set(warnings.filter(Boolean))].slice(0, 100),
+            losses:losses.filter(Boolean).slice(0, 100)
+        };
+    },
+    _makeDocumentCompatibilityError(message, { code = 'openshop.invalid-document', path = 'document', feature = 'document data', sourceVersion = null } = {}) {
+        const error = new Error(message);
+        error.code = code;
+        error.lossReport = this._documentCompatibilityReport({
+            direction:'import',
+            accepted:false,
+            sourceVersion,
+            warnings:[message],
+            losses:[{
+                code,
+                path,
+                feature,
+                fallback:'The active document remains unchanged.',
+                message
+            }]
+        });
+        return error;
+    },
+    _cloneProjectForImport(project) {
+        try {
+            return JSON.parse(JSON.stringify(project));
+        } catch (error) {
+            throw this._makeDocumentCompatibilityError(
+                `Project data could not be copied safely: ${error.message}`,
+                { code:'openshop.malformed-document', path:'document', feature:'JSON project payload' }
+            );
+        }
+    },
+    _migrateDocumentSchema(project) {
+        const sourceVersion = Number(project?.schemaVersion);
+        if (!Number.isInteger(sourceVersion) || sourceVersion < 1 || sourceVersion > this._documentSchemaVersion) {
+            throw this._makeDocumentCompatibilityError(
+                `Unsupported OpenShop document schema ${Number.isFinite(sourceVersion) ? sourceVersion : 'unknown'}`,
+                { code:'openshop.unsupported-schema', path:'schemaVersion', feature:`schema ${Number.isFinite(sourceVersion) ? sourceVersion : 'unknown'}`, sourceVersion:Number.isFinite(sourceVersion) ? sourceVersion : null }
+            );
+        }
+        if (typeof this._documentMigrationRegistry[sourceVersion] !== 'function') {
+            throw this._makeDocumentCompatibilityError(
+                `OpenShop document schema ${sourceVersion} has no registered migration`,
+                { code:'openshop.missing-migration', path:'schemaVersion', feature:`schema ${sourceVersion}`, sourceVersion }
+            );
+        }
+        let state = project;
+        const steps = [];
+        for (let version = sourceVersion; version < this._documentSchemaVersion; version += 1) {
+            const migrate = this._documentMigrationRegistry[version];
+            if (typeof migrate !== 'function') {
+                throw this._makeDocumentCompatibilityError(
+                    `OpenShop document schema ${version} has no registered migration`,
+                    { code:'openshop.missing-migration', path:'schemaVersion', feature:`schema ${version}`, sourceVersion }
+                );
+            }
+            state = migrate(state);
+            if (!state || typeof state !== 'object') {
+                throw this._makeDocumentCompatibilityError(
+                    `OpenShop document migration ${version} returned invalid data`,
+                    { code:'openshop.invalid-migration', path:'schemaVersion', feature:`schema ${version} migration`, sourceVersion }
+                );
+            }
+            state.schemaVersion = version + 1;
+            steps.push(`schema-${version}-to-${version + 1}`);
+        }
+        return {
+            state,
+            report:this._documentCompatibilityReport({ direction:'import', sourceVersion, steps })
+        };
+    },
+    _documentExportCompatibilityReport() {
+        return this._documentCompatibilityReport({ direction:'export' });
+    },
     _normalizeDocumentState(project, { trusted = false } = {}) {
         if (!project || typeof project !== 'object') throw new Error('Project data is invalid');
-        this._sanitizeProjectJSON(project, { trusted });
-        const state = project.kind === 'openshop-document' ? project : this._migrateLegacyProject(project);
-        if (state !== project) this._sanitizeProjectJSON(state, { trusted });
+        const candidate = this._cloneProjectForImport(project);
+        let state;
+        let report;
+        if (candidate.kind === 'openshop-document') {
+            ({ state, report } = this._migrateDocumentSchema(candidate));
+        } else {
+            state = this._migrateLegacyProject(candidate);
+            report = this._documentCompatibilityReport({
+                direction:'import',
+                sourceVersion:'legacy',
+                steps:['legacy-envelope-to-schema-1'],
+                losses:[{
+                    code:'openshop.legacy-envelope',
+                    path:'root',
+                    feature:'legacy Fabric/OpenShop project envelope',
+                    fallback:'Normalized into the versioned openshop-document schema; transient unsupported fields are not restored.'
+                }]
+            });
+        }
+        try {
+            this._sanitizeProjectJSON(state, { trusted });
+        } catch (error) {
+            if (!error.lossReport) {
+                error.lossReport = this._documentCompatibilityReport({
+                    direction:'import',
+                    accepted:false,
+                    sourceVersion:report?.sourceVersion ?? null,
+                    warnings:[error.message],
+                    losses:[{
+                        code:'openshop.invalid-document',
+                        path:'document',
+                        feature:'document validation',
+                        fallback:'The active document remains unchanged.',
+                        message:error.message
+                    }]
+                });
+            }
+            throw error;
+        }
+        this._lastDocumentMigrationReport = report;
         return state;
     },
     _restoreSelectionState(selection) {
@@ -7882,16 +8019,37 @@ const OS = {
             colorMode: view.getUint16(24, false)
         };
     },
+    _psdColorModeName(mode) {
+        return ({ 0:'Bitmap', 1:'Grayscale', 2:'Indexed', 3:'RGB', 4:'CMYK', 7:'Multichannel', 8:'Duotone', 9:'Lab' })[Number(mode)] || `mode ${Number(mode)}`;
+    },
     _validatePSDHeader(header, fileSize) {
         const limits = this._psdLimits;
         if (!header || header.signature !== '8BPS' || header.version !== 1) throw new Error('Not a supported PSD file');
         if (fileSize > limits.maxFileBytes) throw new Error('PSD exceeds 256 MB import limit');
         if (header.channels < 1 || header.channels > 8) throw new Error('PSD channel count is unsupported');
-        if (!limits.supportedDepths.includes(header.depth)) throw new Error(`PSD bit depth ${header.depth} is unsupported`);
-        if (!limits.supportedColorModes.includes(header.colorMode)) throw new Error('Only RGB PSD files are currently supported');
+        if (!limits.supportedDepths.includes(header.depth)) throw this._makePSDCompatibilityError(
+            `PSD bit depth ${header.depth} is unsupported`,
+            { code:'psd.unsupported-bit-depth', path:'document.colorDepth', feature:`${header.depth}-bit color depth`, fallback:'Import requires an 8-bit RGB document.' }
+        );
+        if (!limits.supportedColorModes.includes(header.colorMode)) throw this._makePSDCompatibilityError(
+            `Only RGB PSD files are currently supported (received ${this._psdColorModeName(header.colorMode)})`,
+            { code:'psd.unsupported-color-mode', path:'document.colorMode', feature:this._psdColorModeName(header.colorMode), fallback:'Import requires an 8-bit RGB document.' }
+        );
         if (header.width < 1 || header.height < 1) throw new Error('PSD dimensions are invalid');
         if (header.width > limits.maxDimension || header.height > limits.maxDimension) throw new Error('PSD dimensions exceed import limits');
         if (header.width * header.height > limits.maxPixels) throw new Error('PSD pixel count exceeds import limits');
+    },
+    _makePSDCompatibilityError(message, loss) {
+        const error = new Error(message);
+        error.code = loss.code;
+        error.lossReport = {
+            format:'psd',
+            direction:'import',
+            accepted:false,
+            warnings:[message],
+            losses:[{ ...loss, message }]
+        };
+        return error;
     },
     _flattenPSDChildren(children = [], out = []) {
         children.forEach(child => {
@@ -8264,6 +8422,11 @@ self.onmessage = function(event) {
     _analyzePSDImport(psd) {
         const groups = [];
         const warnings = [];
+        const losses = [];
+        const addLoss = (loss, message) => {
+            warnings.push(message);
+            losses.push({ ...loss, message });
+        };
         const wholeDocumentReasons = new Set(['layer effects', 'layer mask', 'adjustment layer', 'clipping', 'fill opacity']);
         let flattenWholeDocument = false;
         let leafCount = 0;
@@ -8295,9 +8458,15 @@ self.onmessage = function(event) {
                         opened:node.opened !== false
                     });
                     const groupBlend = String(node.blendMode || 'pass through').toLowerCase();
-                    if (opacity !== 1) warnings.push(`${label}: group opacity is approximated in the editor and preserved for PSD export.`);
+                    if (opacity !== 1) addLoss({
+                        code:'psd.group-opacity', path:path.join(' / '), feature:'group opacity',
+                        fallback:'Group opacity is approximated in the editor and preserved for PSD export.'
+                    }, `${label}: group opacity is approximated in the editor and preserved for PSD export.`);
                     if (groupBlend !== 'pass through' && groupBlend !== 'normal') {
-                        warnings.push(`${label}: group ${groupBlend} blending is approximated in the editor and preserved for PSD export.`);
+                        addLoss({
+                            code:'psd.group-blend', path:path.join(' / '), feature:`group ${groupBlend} blending`,
+                            fallback:'Group blending is approximated in the editor and preserved for PSD export.'
+                        }, `${label}: group ${groupBlend} blending is approximated in the editor and preserved for PSD export.`);
                     }
                 } else {
                     leafCount += 1;
@@ -8307,24 +8476,36 @@ self.onmessage = function(event) {
                     const fallback = wholeDocumentReasons.has(reason)
                         ? 'the document composite is the safe fallback'
                         : 'this layer uses its decoded pixel fallback';
-                    warnings.push(`${label}: ${reasonText[reason] || `${reason} is unsupported`}; ${fallback}.`);
+                    addLoss({
+                        code:`psd.unsupported-${String(reason).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}`,
+                        path:path.join(' / '), feature:reason, fallback
+                    }, `${label}: ${reasonText[reason] || `${reason} is unsupported`}; ${fallback}.`);
                 });
                 const blendMode = String(node.blendMode || (node.sourceKind === 'group' ? 'pass through' : 'normal')).toLowerCase();
                 if (node.sourceKind !== 'group' && !this._isSupportedPSDBlend(blendMode)) {
-                    warnings.push(`${label}: ${blendMode} blending previews as Normal but is preserved when re-exported to PSD.`);
+                    addLoss({
+                        code:'psd.blend-mode', path:path.join(' / '), feature:`${blendMode} blending`,
+                        fallback:'The editor previews the layer as Normal and preserves the original mode for PSD export.'
+                    }, `${label}: ${blendMode} blending previews as Normal but is preserved when re-exported to PSD.`);
                 }
                 visit(node.children, path);
             });
         };
         visit(psd.children || []);
         if (flattenWholeDocument && psd.composite) {
-            warnings.unshift('Unsupported document-wide PSD compositing was detected, so OpenShop imported one flattened appearance layer instead of duplicating the composite beside partial layers.');
+            const message = 'Unsupported document-wide PSD compositing was detected, so OpenShop imported one flattened appearance layer instead of duplicating the composite beside partial layers.';
+            warnings.unshift(message);
+            losses.unshift({ code:'psd.flattened-composite', path:'document', feature:'document-wide compositing', fallback:'Imported composite appearance is preserved as one editable raster layer.', message });
         } else if (flattenWholeDocument && !psd.composite) {
-            warnings.unshift('Unsupported document-wide PSD compositing was detected, but no composite bitmap was available; the decoded layer fallbacks may not match the source appearance.');
+            const message = 'Unsupported document-wide PSD compositing was detected, but no composite bitmap was available; the decoded layer fallbacks may not match the source appearance.';
+            warnings.unshift(message);
+            losses.unshift({ code:'psd.missing-composite', path:'document', feature:'document-wide compositing', fallback:'Decoded layer fallbacks are retained without a source composite.', message });
         }
+        const uniqueLosses = [...new Map(losses.map(loss => [`${loss.code}:${loss.path}:${loss.message}`, loss])).values()];
         return {
             groups:this._normalizePSDInterchange({ groups, warnings })?.groups || [],
             warnings:[...new Set(warnings)].slice(0, 100),
+            losses:uniqueLosses.slice(0, 100),
             flattenWholeDocument:Boolean(flattenWholeDocument && psd.composite),
             leafCount
         };
@@ -8430,7 +8611,8 @@ self.onmessage = function(event) {
     },
     _showPSDCompatibilityReport(report, title = 'PSD compatibility report') {
         const warnings = Array.isArray(report?.warnings) ? report.warnings.filter(Boolean) : [];
-        if (!warnings.length) return null;
+        const losses = Array.isArray(report?.losses) ? report.losses.filter(loss => loss && (loss.feature || loss.message)) : [];
+        if (!warnings.length && !losses.length) return null;
         document.querySelector('.psd-compat-report')?.remove();
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay show psd-compat-report';
@@ -8444,9 +8626,14 @@ self.onmessage = function(event) {
         heading.textContent = title;
         const intro = document.createElement('p');
         intro.style.cssText = 'font-size:12px;color:var(--text-secondary);margin-bottom:10px';
-        intro.textContent = report.flattenWholeDocument
-            ? 'Appearance was prioritized through a flattened fallback.'
-            : 'Supported layers remain editable; the exceptions below use explicit pixel fallbacks.';
+        intro.textContent = report.accepted === false
+            ? 'The file was not opened; the current document was left unchanged.'
+            : report.flattenWholeDocument
+                ? 'Appearance was prioritized through a flattened fallback.'
+                : 'Supported layers remain editable; the exceptions below use explicit pixel fallbacks.';
+        const summary = document.createElement('p');
+        summary.style.cssText = 'font-size:11px;color:var(--text-muted);margin:0 0 8px';
+        summary.textContent = `${losses.length} structured compatibility loss${losses.length === 1 ? '' : 'es'} recorded.`;
         const list = document.createElement('ul');
         list.style.cssText = 'max-height:260px;overflow:auto;padding-left:20px;font-size:12px;color:var(--text-secondary);display:grid;gap:6px';
         warnings.forEach(warning => {
@@ -8462,7 +8649,7 @@ self.onmessage = function(event) {
         close.textContent = 'Continue';
         close.addEventListener('click', () => overlay.remove());
         buttons.appendChild(close);
-        modal.append(heading, intro, list, buttons);
+        modal.append(heading, intro, summary, list, buttons);
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
         close.focus();
@@ -8745,6 +8932,13 @@ self.onmessage = function(event) {
             if (psd.width !== header.width || psd.height !== header.height) throw new Error('PSD decoded dimensions do not match its header');
             const prepared = await this._preparePSDImport(psd, job);
             prepared.colorProfile = this._extractPSDColorProfile(psd, bytes);
+            if (prepared.colorProfile?.iccData) prepared.report.losses.push({
+                code:'psd.icc-opaque',
+                path:'document.colorProfile',
+                feature:'ICC profile metadata',
+                fallback:'The embedded profile is retained as opaque bytes; imported pixels are not color-converted.',
+                message:'ICC profile metadata was retained without pixel color conversion.'
+            });
             this._assertComputeJobCurrent(job);
             this._updatePSDImportProgress(job, 'Committing document…');
             this._commitPSDImport(prepared, psd, file, job);
@@ -8755,6 +8949,10 @@ self.onmessage = function(event) {
         } catch (error) {
             if (error.name === 'AbortError') this.toast('PSD import cancelled', 'info');
             else {
+                if (error.lossReport) {
+                    this._lastPSDImportReport = error.lossReport;
+                    this._showPSDCompatibilityReport(error.lossReport, 'PSD import compatibility');
+                }
                 console.error('PSD parse error:', error);
                 this.toast('PSD import failed: ' + error.message, 'error');
             }
@@ -13194,9 +13392,26 @@ self.onmessage = function(event) {
             return copy;
         });
     },
+    _structuredPSDExportLosses(warnings = []) {
+        return [...new Map(warnings.map(message => {
+            const separator = String(message).indexOf(':');
+            const rawPath = separator > 0 ? String(message).slice(0, separator).trim() : 'document';
+            const path = rawPath.replace(/^"|"$/g, '') || 'document';
+            const detail = separator > 0 ? String(message).slice(separator + 1).trim() : String(message);
+            const [featureText, fallbackText] = detail.split(';').map(value => value.trim());
+            const feature = featureText.replace(/[.!]+$/g, '') || 'PSD export compatibility';
+            return [`${path}:${message}`, {
+                code:'psd.export-compatibility',
+                path,
+                feature,
+                fallback:fallbackText ? fallbackText.replace(/[.!]+$/g, '') : 'The layer was rasterized or omitted according to the export warning.',
+                message
+            }];
+        })).values()];
+    },
     _buildPsdExportStructure() {
         const iccProfile = this._decodeProjectBytes(this._colorProfile?.iccData);
-        const report = { warnings:[], flattenWholeDocument:false, iccProfileAvailable:Boolean(iccProfile?.byteLength) };
+        const report = { warnings:[], losses:[], flattenWholeDocument:false, iccProfileAvailable:Boolean(iccProfile?.byteLength) };
         const structure = {
             width:this.canvasW,
             height:this.canvasH,
@@ -13317,6 +13532,14 @@ self.onmessage = function(event) {
             report.warnings.push(`${orphaned.length} layer${orphaned.length === 1 ? '' : 's'} could not be placed under the document root and ${orphaned.length === 1 ? 'was' : 'were'} omitted: ${orphaned.slice(0, 10).map(node => node.name).join(', ')}.`);
         }
         report.warnings = [...new Set(report.warnings)].slice(0, 100);
+        report.losses = this._structuredPSDExportLosses(report.warnings);
+        if (report.iccProfileAvailable) report.losses.push({
+            code:'psd.icc-opaque',
+            path:'document.colorProfile',
+            feature:'ICC profile metadata',
+            fallback:'The embedded profile is preserved as opaque bytes; pixel values are not converted.',
+            message:'ICC profile metadata was embedded without color conversion.'
+        });
         return { structure, report };
     },
     exportPSD() {

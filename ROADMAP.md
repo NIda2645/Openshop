@@ -62,13 +62,6 @@ testing gates.
 
 ### P1 — Trust, accessibility, and interoperability
 
-- [ ] P1 — Add versioned document migrations and structured loss reports
-  Why: The project has schema version 1 and rejects newer schemas, while PSD support is constrained by ag-psd and ICC data is retained without conversion; users need predictable upgrades and an explicit account of what did not round-trip.
-  Evidence: `index.html` `_documentSchemaVersion`, `_historySchemaVersion`, `_commandSchemaVersion`, `_sanitizeProjectJSON()`; `README.md` OpenShop/ICC notes; [ag-psd format limitations](https://www.npmjs.com/package/ag-psd).
-  Touches: `index.html`, import/export code, fixture files, unit tests, `README.md`.
-  Acceptance: A migration registry handles every supported schema version and rejects unknown future versions without mutating the active document; PSD/OpenShop import and export return a structured loss report naming unsupported color modes, fields, metadata, and approximations; fixtures cover migration rollback and malformed input.
-  Complexity: M
-
 - [ ] P1 — Make WebRTC collaboration revision-safe and peer-identifiable
   Why: Collaboration currently debounces and sends bounded full-document state over unauthenticated peer connections, so concurrent edits can overwrite each other and users cannot verify who is connected or recover a dropped session.
   Evidence: `index.html` collaboration code (`_collabProtocolVersion`, 32 MiB state cap, 180 KiB chunks, `iceServers: []`); `README.md` manual offer/answer workflow; [Figma multiplayer architecture](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/) and [reliability design](https://www.figma.com/blog/making-multiplayer-more-reliable/).
