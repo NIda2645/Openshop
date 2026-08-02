@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-bQIC/IbbcD5LwY83gLI3bunxBxGz7wDJBkQMP0YVfNU=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-TLe8HcYCd88z3yzyWTsDgOROx29IK97AvuW92bF2HTw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -5341,14 +5341,62 @@ const OS = {
             void this._importGifFrames(file);
             return;
         }
+        if (this._isSVGFile(file)) {
+            void this._loadSVGFile(file, 'open');
+            return;
+        }
         void this._loadRasterFile(file);
     },
     _isAvifFile(file) {
         return String(file?.type || '').toLowerCase() === 'image/avif'
             || String(file?.name || '').toLowerCase().endsWith('.avif');
     },
+    _isSVGFile(file) {
+        return String(file?.type || '').toLowerCase() === 'image/svg+xml'
+            || String(file?.name || '').toLowerCase().endsWith('.svg');
+    },
+    // Imported SVG becomes editable Fabric objects rather than an <img>, so a
+    // logo can be recoloured and re-typed instead of only resized. The markup
+    // is untrusted, so it goes through the same sanitiser the exporter uses
+    // before Fabric's parser ever sees it.
+    async _loadSVGFile(file, mode = 'open') {
+        try {
+            if (file.size > this._importLimits.maxJsonBytes) {
+                throw new Error(`SVG is larger than the ${Math.round(this._importLimits.maxJsonBytes / 1024 / 1024)} MB import limit`);
+            }
+            const markup = this._sanitizeSVG(await file.text());
+            const parsed = await fabric.loadSVGFromString(markup);
+            const shapes = (parsed?.objects || []).filter(Boolean);
+            if (!shapes.length) throw new Error('That SVG contains no drawable shapes');
+            if (shapes.length > this._importLimits.maxProjectObjects) {
+                throw new Error(`That SVG has ${shapes.length} shapes, above the ${this._importLimits.maxProjectObjects} object limit`);
+            }
+            const width = Math.round(Number(parsed.options?.width) || 0);
+            const height = Math.round(Number(parsed.options?.height) || 0);
+            const limit = this._importLimits.maxImageDimension;
+            if (mode === 'open' && width >= 1 && height >= 1 && width <= limit && height <= limit) {
+                if (!await this._confirmDiscardUnsaved('Opening an SVG')) return false;
+                this.dismissWelcome();
+                this.createNewDocument(width, height, { resetProject:true });
+            }
+            const group = new fabric.Group(shapes);
+            group.set({ name:'SVG', selectable:true });
+            this.dismissWelcome();
+            this._addObjectAsLayer(group, this._safeText(file.name || 'SVG', 120));
+            this.canvas.setActiveObject(group);
+            this.canvas.requestRenderAll();
+            this.saveHistory('Import SVG');
+            this.updateLayersPanel();
+            this.toast(`Imported ${shapes.length} editable shape${shapes.length === 1 ? '' : 's'}`, 'success');
+            return true;
+        } catch (error) {
+            this.toast(`SVG import failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
     async _loadRasterFile(file) {
         if (this._isAvifFile(file)) return this._loadAvifFile(file, 'open');
+        if (this._isSVGFile(file)) return this._loadSVGFile(file, 'open');
         try {
             const buffer = /jpeg|jpg/i.test(file.type || file.name) ? await file.arrayBuffer() : null;
             const exif = buffer ? this._readExif(buffer) : null;
@@ -5492,6 +5540,10 @@ const OS = {
         try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }
         if (this._isAvifFile(file)) {
             void this._loadAvifFile(file, 'drop');
+            return;
+        }
+        if (this._isSVGFile(file)) {
+            void this._loadSVGFile(file, 'drop');
             return;
         }
         const r = new FileReader(); r.onload = ev => {

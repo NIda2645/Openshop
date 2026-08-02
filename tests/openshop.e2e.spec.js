@@ -1954,6 +1954,69 @@ test('names states and keeps the branch an edit-after-undo used to delete @cross
   expect(result.missing).toBe(false);
 });
 
+test('imports SVG as editable shapes and strips anything executable @cross-browser', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const markup = [
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="160" viewBox="0 0 240 160">',
+      '<script>window.__svgRan = true;<\/script>',
+      '<rect x="10" y="10" width="80" height="60" fill="#d61f4e" onclick="window.__svgClicked = true"/>',
+      '<circle cx="160" cy="80" r="40" fill="#3978ff"/>',
+      '<text x="20" y="140" font-size="18" fill="#ffffff">Vector</text>',
+      '<image x="0" y="0" width="10" height="10" xlink:href="javascript:window.__svgHref = true"/>',
+      '</svg>'
+    ].join('');
+    const file = new File([markup], 'logo.svg', { type: 'image/svg+xml' });
+    OS._confirmDiscardUnsaved = async () => true;
+    const ok = await OS._loadSVGFile(file, 'open');
+    const group = OS.canvas.getActiveObject();
+    const shapes = group?.getObjects?.() || [];
+    return {
+      ok,
+      docSize: [OS.canvasW, OS.canvasH],
+      layerName: OS.layers[OS.activeLayerIdx].name,
+      types: shapes.map(shape => shape.type).sort(),
+      // Editable means real objects with real properties, not one flat <img>.
+      fills: shapes.map(shape => String(shape.fill || '').toLowerCase()).filter(Boolean).sort(),
+      text: shapes.find(shape => typeof shape.text === 'string')?.text ?? null,
+      scriptRan: Boolean(window.__svgRan),
+      clickHandlerKept: shapes.some(shape => typeof shape.onclick === 'function'),
+      hrefRan: Boolean(window.__svgHref),
+      // And the guards refuse what they should.
+      tooManyShapes: await (async () => {
+        const many = ['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'];
+        for (let index = 0; index < 12; index++) many.push(`<rect x="${index}" y="0" width="1" height="1" fill="#fff"/>`);
+        many.push('</svg>');
+        const limit = OS._importLimits.maxProjectObjects;
+        OS._importLimits = { ...OS._importLimits, maxProjectObjects: 5 };
+        const refused = await OS._loadSVGFile(new File([many.join('')], 'many.svg', { type: 'image/svg+xml' }), 'drop');
+        OS._importLimits = { ...OS._importLimits, maxProjectObjects: limit };
+        return refused;
+      })(),
+      empty: await OS._loadSVGFile(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>'], 'empty.svg', { type: 'image/svg+xml' }), 'drop')
+    };
+  });
+
+  expect(result.ok).toBe(true);
+  expect(result.docSize).toEqual([240, 160]);
+  expect(result.layerName).toBe('logo.svg');
+  expect(result.types).toEqual(['circle', 'image', 'rect', 'text']);
+  expect(result.fills).toContain('#d61f4e');
+  expect(result.fills).toContain('#3978ff');
+  expect(result.text).toBe('Vector');
+  // Nothing executable survives the sanitiser.
+  expect(result.scriptRan).toBe(false);
+  expect(result.clickHandlerKept).toBe(false);
+  expect(result.hrefRan).toBe(false);
+  expect(result.tooManyShapes).toBe(false);
+  expect(result.empty).toBe(false);
+  expect(pageErrors).toEqual([]);
+});
+
 test('traces a raster layer into editable paths that survive SVG and PDF export @cross-browser', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));

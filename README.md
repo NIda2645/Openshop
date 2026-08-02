@@ -50,7 +50,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **JPEG** | Yes | Yes |
 | **WebP** | Yes | Yes |
 | **AVIF** | Yes (verified WASM decoder) | Yes (deterministic verified WASM encoder) |
-| **SVG** | — | Yes |
+| **SVG** | Yes (editable shapes, text, and groups — not rasterized) | Yes |
 | **Vector PDF** | — | Yes (real path operators when no raster layer is visible) |
 | **PDF** | — | Yes |
 | **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text) | Yes (same supported semantics; explicit raster fallbacks) |
