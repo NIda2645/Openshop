@@ -64,6 +64,11 @@ Evidence: evidence/screenshots/windows/000_initial_untouched.jpg,
 evidence/screenshots/windows/002_final_restored_baseline.jpg, menu captures 009 through
 041, and tool captures 100 through 118. Do not begin a rebuild until the user says
 BEGIN REBUILD.
+
+Each cataloged tool now has a purpose description in tools/tool-catalog.csv and a
+human-readable explanation in tools/tool-details.md. Sources and the distinction
+between researched purpose and live-tested behavior are recorded in
+tools/tool-research-sources.md.
 '@
 
 Add-Text "environment/windows-environment.json" @'
@@ -308,11 +313,12 @@ Type,T,toolbox,CONFIRMED
 Path Selection,A,toolbox,CONFIRMED
 Shape,U,toolbox,CONFIRMED
 Hand,H,toolbox,CONFIRMED
+Rotate View,R,toolbox,CONFIRMED
 Zoom,Z,toolbox,CONFIRMED
 '@
 
 $toolRows = [Collections.Generic.List[string]]::new()
-$toolRows.Add("tool_id,family,name,shortcut,status,prerequisite,output,evidence")
+$toolRows.Add("tool_id,family,name,shortcut,status,prerequisite,output,what_it_is_and_does,source,evidence")
 $families = @(
     @("Marquee","M",@("Rectangular Marquee Tool","Elliptical Marquee Tool","Single Row Marquee Tool","Single Column Marquee Tool"),"100_tool_marquee_flyout"),
     @("Move","V",@("Move Tool"),"101_tool_move_flyout"),
@@ -333,21 +339,151 @@ $families = @(
     @("Shape","U",@("Rectangle Tool","Rounded Rectangle Tool","Ellipse Tool","Polygon Tool","Line Tool","Custom Shape Tool"),"116_tool_shape_flyout"),
     @("Navigation","H/R/Z",@("Hand Tool","Rotate View Tool","Zoom Tool"),"117_tool_hand_flyout")
 )
+$toolDescriptions = @{
+    "Rectangular Marquee Tool" = "Makes rectangular pixel selections."
+    "Elliptical Marquee Tool" = "Makes elliptical or circular pixel selections."
+    "Single Row Marquee Tool" = "Makes a one-pixel-high selection across the image."
+    "Single Column Marquee Tool" = "Makes a one-pixel-wide selection down the image."
+    "Move Tool" = "Moves a selection, layer, object, or guide."
+    "Lasso Tool" = "Draws a freehand selection boundary."
+    "Polygonal Lasso Tool" = "Builds a selection from straight-edged segments."
+    "Magnetic Lasso Tool" = "Builds a selection that snaps toward detected image edges."
+    "Quick Selection Tool" = "Paints a selection while detecting nearby color and texture edges."
+    "Magic Wand Tool" = "Selects similarly colored pixels based on tolerance and contiguity."
+    "Crop Tool" = "Trims the canvas or image to a chosen crop boundary."
+    "Perspective Crop Tool" = "Crops an image while correcting a perspective-shaped boundary."
+    "Slice Tool" = "Divides an image into rectangular slices for web-oriented output."
+    "Slice Select Tool" = "Selects and edits existing image slices."
+    "Eyedropper Tool" = "Samples a color from the image into the foreground color."
+    "Color Sampler Tool" = "Places sample points that report color values from the image."
+    "Ruler Tool" = "Measures distance, position, and angle in the image."
+    "Note Tool" = "Attaches an annotation note to an image."
+    "Spot Healing Brush Tool" = "Removes small blemishes or objects by blending surrounding pixels."
+    "Healing Brush Tool" = "Repairs imperfections using sampled pixels while blending texture and tone."
+    "Patch Tool" = "Repairs a selected area using pixels from a sampled source or pattern."
+    "Content-Aware Move Tool" = "Moves a selected object and fills its former area using surrounding content."
+    "Red Eye Tool" = "Removes the red reflection caused by a camera flash."
+    "Clone Stamp Tool" = "Paints a copy of pixels from a sampled source."
+    "Pattern Stamp Tool" = "Paints using a selected repeating pattern."
+    "History Brush Tool" = "Paints pixels from a chosen history state or snapshot."
+    "Art History Brush Tool" = "Paints stylized strokes based on a chosen history state or snapshot."
+    "Eraser Tool" = "Erases pixels or restores them toward a saved state depending on its mode."
+    "Background Eraser Tool" = "Erases sampled background colors toward transparency as it is dragged."
+    "Magic Eraser Tool" = "Erases similarly colored contiguous pixels to transparency with a click."
+    "Gradient Tool" = "Fills an area with a gradual blend between colors or presets."
+    "Paint Bucket Tool" = "Fills a contiguous similarly colored area with a color or pattern."
+    "Blur Tool" = "Softens hard edges and reduces local detail."
+    "Sharpen Tool" = "Increases local edge contrast to make soft details appear sharper."
+    "Smudge Tool" = "Smears and blends pixels as though pushing wet paint."
+    "Dodge Tool" = "Lightens selected image areas."
+    "Burn Tool" = "Darkens selected image areas."
+    "Sponge Tool" = "Raises or lowers color saturation in an area."
+    "Pen Tool" = "Draws precise paths with straight and curved segments."
+    "Freeform Pen Tool" = "Draws paths freehand rather than point by point."
+    "Add Anchor Point Tool" = "Adds an anchor point to an existing path."
+    "Delete Anchor Point Tool" = "Removes an anchor point from an existing path."
+    "Convert Point Tool" = "Converts an anchor between corner and smooth curve behavior."
+    "Horizontal Type Tool" = "Creates editable horizontal point or paragraph text."
+    "Vertical Type Tool" = "Creates editable vertical point or paragraph text."
+    "Horizontal Type Mask Tool" = "Creates a selection shaped by horizontal text."
+    "Vertical Type Mask Tool" = "Creates a selection shaped by vertical text."
+    "Path Selection Tool" = "Selects and moves an entire path or shape."
+    "Direct Selection Tool" = "Selects and edits individual path points or segments."
+    "Rectangle Tool" = "Draws rectangular or square shapes and paths."
+    "Rounded Rectangle Tool" = "Draws rectangles with rounded corners."
+    "Ellipse Tool" = "Draws circular or elliptical shapes and paths."
+    "Polygon Tool" = "Draws polygonal shapes with a configurable number of sides."
+    "Line Tool" = "Draws straight line shapes or paths."
+    "Custom Shape Tool" = "Draws a selected predefined or custom vector shape."
+    "Hand Tool" = "Pans the image within its document window."
+    "Rotate View Tool" = "Rotates the canvas view without changing the image pixels."
+    "Zoom Tool" = "Magnifies or reduces the document view."
+    "Quick Mask Mode" = "Edits a temporary selection mask as an overlay."
+    "Screen Mode" = "Switches the Photoshop workspace display mode."
+}
+$sourceMap = @{
+    "Marquee" = "Adobe selection tools overview; Adobe CS6 Photoshop Reference"
+    "Move" = "Adobe selection tools overview; Adobe CS6 Photoshop Reference"
+    "Lasso" = "Adobe selection tools overview; Adobe CS6 Photoshop Reference"
+    "Selection" = "Adobe selection tools overview; Adobe CS6 Photoshop Reference"
+    "Crop" = "Adobe CS6 Photoshop Reference; Adobe crop documentation"
+    "Sampling" = "Adobe navigation and measuring tools overview; Adobe painting tools overview"
+    "Healing" = "Adobe retouch tools overview"
+    "Clone" = "Adobe painting tools overview; Adobe Clone Stamp documentation"
+    "History" = "Adobe painting tools overview; Adobe CS6 Photoshop Reference"
+    "Eraser" = "Adobe retouch tools overview"
+    "Fill" = "Adobe painting tools overview"
+    "Blur" = "Adobe retouch tools overview"
+    "Tone" = "Adobe retouch tools overview"
+    "Pen" = "Adobe drawing tools overview; Adobe Pen tool settings"
+    "Type" = "Adobe add text documentation; Adobe CS6 Photoshop Reference"
+    "Path Selection" = "Adobe CS6 Photoshop Reference; Adobe drawing tools overview"
+    "Shape" = "Adobe drawing tools overview"
+    "Navigation" = "Adobe navigation and measuring tools overview"
+    "Mode" = "Adobe CS6 Photoshop Reference"
+}
+$shortcutByTool = @{
+    "Single Row Marquee Tool" = ""
+    "Single Column Marquee Tool" = ""
+    "Hand Tool" = "H"
+    "Rotate View Tool" = "R"
+    "Zoom Tool" = "Z"
+}
 $n = 0
 foreach ($family in $families) {
     foreach ($name in $family[2]) {
         $n++
-        $shortcut = $family[1]
-        if ($family[0] -eq "Marquee" -and $name -like "Single *") { $shortcut = "" }
-        $output = if ($family[0] -in @("Marquee","Lasso","Selection")) {"selection"} elseif ($family[0] -eq "Type") {"text or selection"} elseif ($family[0] -eq "Pen") {"path"} elseif ($family[0] -eq "Shape") {"shape layer or path"} elseif ($family[0] -eq "Navigation") {"viewport"} else {"document pixels"}
-        $toolRows.Add(("TOOL-{0:D3},{1},{2},{3},VISUALLY_INSPECTED,open document,{4},evidence/tools/screenshots/{5}_0.jpg" -f $n,$family[0],$name,$shortcut,$output,$family[3]))
+        $shortcut = if ($shortcutByTool.ContainsKey($name)) { $shortcutByTool[$name] } else { $family[1] }
+        $output = if ($family[0] -in @("Marquee","Lasso","Selection")) {"selection"} elseif ($family[0] -eq "Move") {"layers or selections"} elseif ($family[0] -eq "Type") {"text or selection"} elseif ($family[0] -eq "Pen") {"path"} elseif ($family[0] -eq "Shape") {"shape layer or path"} elseif ($family[0] -eq "Navigation") {"viewport"} else {"document pixels"}
+        $description = $toolDescriptions[$name]
+        $source = $sourceMap[$family[0]]
+        $toolRows.Add(("TOOL-{0:D3},{1},{2},{3},VISUALLY_INSPECTED,open document,{4},{5},{6},evidence/tools/screenshots/{7}_0.jpg" -f $n,$family[0],$name,$shortcut,$output,$description,$source,$family[3]))
     }
 }
 $n++
-$toolRows.Add(("TOOL-{0:D3},Mode,Quick Mask Mode,,VISUALLY_INSPECTED,document state,mask overlay,evidence/screenshots/windows/002_final_restored_baseline.jpg" -f $n))
+$toolRows.Add(("TOOL-{0:D3},Mode,Quick Mask Mode,,VISUALLY_INSPECTED,document state,mask overlay,{1},Adobe CS6 Photoshop Reference,evidence/screenshots/windows/002_final_restored_baseline.jpg" -f $n,$toolDescriptions["Quick Mask Mode"]))
 $n++
-$toolRows.Add(("TOOL-{0:D3},Mode,Screen Mode,,VISUALLY_INSPECTED,application state,window mode,evidence/screenshots/windows/034_view_screen_mode_submenu_0.jpg" -f $n))
+$toolRows.Add(("TOOL-{0:D3},Mode,Screen Mode,,VISUALLY_INSPECTED,application state,window mode,{1},Adobe CS6 Photoshop Reference,evidence/screenshots/windows/034_view_screen_mode_submenu_0.jpg" -f $n,$toolDescriptions["Screen Mode"]))
 Add-Text "tools/tool-catalog.csv" ($toolRows -join [Environment]::NewLine)
+
+$detailLines = [Collections.Generic.List[string]]::new()
+$detailLines.Add("# Tool details")
+$detailLines.Add("")
+$detailLines.Add("These descriptions explain the intended Photoshop function of every visible tool cataloged in the live audit. The descriptions are research-backed reference behavior; the live instance had no document, so canvas behavior remains UNTESTED.")
+$detailLines.Add("")
+foreach ($family in $families) {
+    $detailLines.Add(("## {0}" -f $family[0]))
+    $detailLines.Add("")
+    foreach ($name in $family[2]) {
+        $detailShortcut = if ($shortcutByTool.ContainsKey($name)) { $shortcutByTool[$name] } else { $family[1] }
+        $detailLines.Add(("- **{0}** ({1}): {2}" -f $name,$detailShortcut,$toolDescriptions[$name]))
+    }
+    $detailLines.Add("")
+}
+$detailLines.Add("## Mode controls")
+$detailLines.Add("")
+$detailLines.Add(("- **Quick Mask Mode**: {0}" -f $toolDescriptions["Quick Mask Mode"]))
+$detailLines.Add(("- **Screen Mode**: {0}" -f $toolDescriptions["Screen Mode"]))
+Add-Text "tools/tool-details.md" ($detailLines -join [Environment]::NewLine)
+
+Add-Text "tools/tool-research-sources.md" @'
+# Tool research sources
+
+The live Photoshop CS6 screenshots establish which tools were present and how they
+were grouped. Adobe documentation was used only to describe intended tool purpose.
+Current Adobe help can include tools added after CS6; those newer tools were not added
+to this audit. The CS6 reference is the version-specific authority where behavior or
+shortcut details differ.
+
+- Adobe Photoshop CS6 Reference: https://helpx.adobe.com/pdf/cs6/photoshop_reference.pdf
+- Adobe selection tools overview: https://helpx.adobe.com/photoshop/desktop/make-selections/get-started-selections/selection-tools-overview.html
+- Adobe painting tools overview: https://helpx.adobe.com/photoshop/desktop/apply-painting-techniques/fill-objects-selections-layers/painting-tools-overview.html
+- Adobe retouch tools overview: https://helpx.adobe.com/photoshop/desktop/repair-retouch/remove-objects-fill-space/retouch-tools-overview.html
+- Adobe drawing tools overview: https://helpx.adobe.com/photoshop/desktop/draw-shapes-paths/create-shapes/drawing-tools-overview.html
+- Adobe Pen tool settings: https://helpx.adobe.com/photoshop/desktop/draw-shapes-paths/draw-lines-curves/overview-of-pen-tool-settings.html
+- Adobe navigation and measuring tools: https://helpx.adobe.com/photoshop/desktop/use-grids-measurement-guides/alignment-grids-guides/navigation-and-measuring-tools-overview.html
+- Adobe text tool guidance: https://helpx.adobe.com/photoshop/desktop/text-typography/get-started-with-text/add-text.html
+'@
 
 Add-Text "tools/tools-menu-overview.md" @'
 # Tools overview
@@ -355,7 +491,9 @@ Add-Text "tools/tools-menu-overview.md" @'
 Photoshop has no separate Tools menu. The equivalent visible surface is the left
 two-column toolbox. Grouped cells open dark anchored flyouts showing glyph, exact
 member label, and shared shortcut. The live audit cataloged every visible member.
-Canvas behavior is untested because no document was open.
+Canvas behavior is untested because no document was open. See tool-catalog.csv for
+machine-readable rows with purpose and research source, and tool-details.md for the
+human-readable explanation of every tool.
 '@
 Add-Text "tools/tool-state-coverage.csv" @'
 family,members,inspection,status,blocked_reason
