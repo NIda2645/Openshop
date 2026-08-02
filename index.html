@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-NmvA2ILZnT+xNRN1ujvlqB3ZTh2mNh8fYsXKvQ0HGGw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-bQIC/IbbcD5LwY83gLI3bunxBxGz7wDJBkQMP0YVfNU=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -3595,6 +3595,10 @@ const OS = {
         return classicSource;
     },
     _downloadBlob(blob, filename) {
+        if (this._embed?.overrideSave) {
+            this._postEmbed({ type:'openshop:save-requested', filename, blob });
+            return true;
+        }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.download = filename; a.href = url; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -4211,6 +4215,7 @@ const OS = {
         });
         // PWA manifest
         this.initPWA();
+        this._initEmbedBridge();
         // Auto-save recovery check
         this._initAutoSave();
         // Phase 6
@@ -5193,6 +5198,12 @@ const OS = {
         return true;
     },
     async openFile() {
+        // A host that took over Open gets asked for the file instead of the
+        // user being shown a picker the host cannot see the result of.
+        if (this._embed?.overrideOpen) {
+            this._postEmbed({ type:'openshop:open-requested' });
+            return;
+        }
         if (window.showOpenFilePicker) {
             try {
                 const [handle] = await window.showOpenFilePicker({
@@ -5610,7 +5621,21 @@ const OS = {
         });
         return { imageData, options:normalized };
     },
+    _dataUrlToBlob(dataUrl) {
+        const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(String(dataUrl || ''));
+        if (!match) throw new Error('Not a data URL');
+        const type = match[1] || 'application/octet-stream';
+        if (!match[2]) return new Blob([decodeURIComponent(match[3])], { type });
+        const binary = atob(match[3]);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        return new Blob([bytes], { type });
+    },
     _downloadDataUrl(dataUrl, filename) {
+        if (this._embed?.overrideSave) {
+            this._postEmbed({ type:'openshop:save-requested', filename, blob:this._dataUrlToBlob(dataUrl) });
+            return true;
+        }
         const link = document.createElement('a');
         link.download = filename;
         link.href = dataUrl;
@@ -10269,7 +10294,7 @@ self.onmessage = function(event) {
             holder.remove();
         }
     },
-    async exportPDF({ matte = '#ffffff', vector = null } = {}) {
+    async exportPDF({ matte = '#ffffff', vector = null, deliver = null } = {}) {
         if (typeof jspdf === 'undefined' && typeof window.jspdf === 'undefined') { this.toast('jsPDF not loaded', 'error'); return false; }
         // jsPDF copies jsPDF.API onto each instance as it is constructed, so
         // the SVG writer has to be installed before `new jsPDF` or this page's
@@ -10318,7 +10343,11 @@ self.onmessage = function(event) {
                 const captured = this._captureExportRaster({ format:'png', transparent:false, matte });
                 pdf.addImage(captured.dataUrl, 'PNG', 0, 0, pageW, pageH, undefined, 'SLOW');
             }
-            pdf.save(this._exportFileName('pdf'));
+            const filename = this._exportFileName('pdf');
+            // An embedding host wants the bytes, not a download in a frame it
+            // cannot see; everything else still goes through jsPDF's own save.
+            if (deliver) deliver(pdf.output('blob'), filename);
+            else pdf.save(filename);
             this.toast(vectorised ? 'Exported as PDF (vector)' : 'Exported as PDF', 'success');
             return true;
         } catch (error) {
@@ -11064,6 +11093,182 @@ self.onmessage = function(event) {
                     ? 'Hosted shell cached for offline reload'
                     : 'Hosted shell is not yet cached';
         return state;
+    },
+
+    // ====================== EMBED CONTRACT ======================
+    // The outward seam, distinct from the plugin API: a host page drives the
+    // editor over postMessage and never touches its internals. Everything is
+    // data — there is no message that carries code.
+    _embedProtocolVersion: 1,
+    _embedFormats: Object.freeze(['png', 'jpeg', 'webp', 'avif', 'svg', 'pdf']),
+    _embed: null,
+    _embedBound: false,
+    _initEmbedBridge() {
+        if (this._embedBound || window.parent === window) return false;
+        this._embedBound = true;
+        window.addEventListener('message', event => { void this._onEmbedMessage(event); });
+        // The host may have wired its listener before or after this frame ran,
+        // so announce readiness rather than depend on winning that race. This
+        // is the only message sent to an unbound origin and it carries nothing
+        // but the protocol version.
+        try {
+            window.parent.postMessage({ type:'openshop:ready', version:this._embedProtocolVersion }, '*');
+        } catch (error) { console.warn('Embed announce failed:', error.message); }
+        return true;
+    },
+    _postEmbed(message) {
+        const host = this._embed;
+        if (!host?.source) return false;
+        try {
+            host.source.postMessage({ version:this._embedProtocolVersion, ...message }, host.target);
+            return true;
+        } catch (error) {
+            console.warn('Embed reply failed:', error.message);
+            return false;
+        }
+    },
+    _applyEmbedTools(tools) {
+        const allowed = Array.isArray(tools) && tools.length
+            ? new Set(tools.map(tool => String(tool)))
+            : null;
+        document.querySelectorAll('.tool-btn[data-tool]').forEach(button => {
+            const permitted = !allowed || allowed.has(button.dataset.tool);
+            button.hidden = !permitted;
+            // A hidden control must leave the tab order too, or the toolbar
+            // still walks through tools the host said it does not want.
+            button.tabIndex = permitted ? 0 : -1;
+        });
+        if (allowed && !allowed.has(this.state.tool)) {
+            const first = [...allowed][0];
+            if (first) this.setTool(first);
+        }
+        return allowed ? [...allowed] : null;
+    },
+    async _captureExportedBlob(format, options = {}) {
+        const normalized = String(format || 'png').toLowerCase();
+        if (!this._embedFormats.includes(normalized)) throw new Error(`Unsupported export format: ${normalized}`);
+        let captured = null;
+        const blobSink = this._downloadBlob;
+        const urlSink = this._downloadDataUrl;
+        const deliver = (blob, filename) => { captured = { blob, filename }; return true; };
+        this._downloadBlob = deliver;
+        this._downloadDataUrl = (dataUrl, filename) => deliver(this._dataUrlToBlob(dataUrl), filename);
+        try {
+            const ok = normalized === 'pdf'
+                ? await this.exportPDF({ ...options, deliver })
+                : await this.saveFile(normalized, options);
+            if (!ok || !captured) throw new Error(`Export as ${normalized} produced nothing`);
+            return captured;
+        } finally {
+            this._downloadBlob = blobSink;
+            this._downloadDataUrl = urlSink;
+        }
+    },
+    async _applyEmbedDocument(spec) {
+        if (!spec || typeof spec !== 'object') return false;
+        if (spec.dataUrl || spec.blob) {
+            const blob = spec.blob instanceof Blob ? spec.blob : this._dataUrlToBlob(spec.dataUrl);
+            const name = this._safeText(spec.name || 'Embedded image', 120);
+            const file = new File([blob], name, { type:blob.type || 'image/png' });
+            this.dismissWelcome();
+            return this._loadRasterFile(file);
+        }
+        const width = Math.round(Number(spec.width) || this._prefs.defaultW);
+        const height = Math.round(Number(spec.height) || this._prefs.defaultH);
+        const limit = this._importLimits.maxImageDimension;
+        if (!(width >= 1 && width <= limit && height >= 1 && height <= limit)) {
+            throw new Error('Document size is outside the supported range');
+        }
+        this.dismissWelcome();
+        this.createNewDocument(width, height, {
+            resetProject:true,
+            background:/^#[0-9a-fA-F]{6}$/.test(String(spec.background || '')) ? String(spec.background) : undefined
+        });
+        return true;
+    },
+    async _onEmbedMessage(event) {
+        const data = event?.data;
+        if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+        if (!data.type.startsWith('openshop:')) return;
+        const bound = this._embed;
+        // The first hello names the host; nothing else is honoured from an
+        // origin or window that is not the one bound at that moment.
+        if (bound && (event.source !== bound.source || event.origin !== bound.origin)) return;
+        if (!bound && data.type !== 'openshop:hello') return;
+        if (Number(data.version) !== this._embedProtocolVersion) {
+            try {
+                event.source?.postMessage({
+                    type:'openshop:error',
+                    id:data.id ?? null,
+                    version:this._embedProtocolVersion,
+                    message:`Unsupported protocol version ${data.version}; this build speaks ${this._embedProtocolVersion}`
+                }, event.origin === 'null' ? '*' : event.origin);
+            } catch (error) { /* the host went away */ }
+            return;
+        }
+        const id = data.id ?? null;
+        try {
+            switch (data.type) {
+                case 'openshop:hello': {
+                    this._embed = {
+                        origin:event.origin,
+                        // A file:// or sandboxed host reports the literal
+                        // origin "null", which postMessage refuses as a target.
+                        // Binding stays on the window either way; only the
+                        // targetOrigin has to relax, and a deployment that
+                        // wants a real one serves the editor over http(s).
+                        target:event.origin === 'null' ? '*' : event.origin,
+                        source:event.source,
+                        overrideOpen:false,
+                        overrideSave:false,
+                        tools:null
+                    };
+                    this._postEmbed({
+                        type:'openshop:ready',
+                        id,
+                        capabilities:{
+                            exportFormats:[...this._embedFormats],
+                            tools:[...new Set([...document.querySelectorAll('.tool-btn[data-tool]')].map(button => button.dataset.tool))],
+                            overrides:['open', 'save']
+                        }
+                    });
+                    return;
+                }
+                case 'openshop:configure': {
+                    if (data.document) await this._applyEmbedDocument(data.document);
+                    this._embed.tools = this._applyEmbedTools(data.tools);
+                    this._embed.overrideOpen = Boolean(data.overrides?.open);
+                    this._embed.overrideSave = Boolean(data.overrides?.save);
+                    this._postEmbed({
+                        type:'openshop:configured',
+                        id,
+                        tools:this._embed.tools,
+                        overrides:{ open:this._embed.overrideOpen, save:this._embed.overrideSave }
+                    });
+                    return;
+                }
+                case 'openshop:export': {
+                    const captured = await this._captureExportedBlob(data.format, data.options || {});
+                    this._postEmbed({
+                        type:'openshop:exported',
+                        id,
+                        format:String(data.format || 'png').toLowerCase(),
+                        filename:captured.filename,
+                        blob:captured.blob
+                    });
+                    return;
+                }
+                case 'openshop:open': {
+                    await this._applyEmbedDocument(data.document || data);
+                    this._postEmbed({ type:'openshop:opened', id });
+                    return;
+                }
+                default:
+                    throw new Error(`Unknown message type ${data.type}`);
+            }
+        } catch (error) {
+            this._postEmbed({ type:'openshop:error', id, message:String(error?.message || error) });
+        }
     },
 
     // ====================== NETWORK TRANSPARENCY ======================

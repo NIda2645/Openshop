@@ -1676,6 +1676,204 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('drives the editor from an embedding host over a versioned contract @cross-browser', async ({ page }) => {
+  test.setTimeout(120_000);
+  // A real cross-document frame, not a stub: the origin binding, the Blob
+  // transfer and the override seams only exist across that boundary. The host
+  // page is same-origin so the assertions can look at what the frame did.
+  await openApp(page);
+  const appUrl = projectAppUrl();
+
+  const result = await page.evaluate(async ({ appUrl, protocolVersion }) => {
+    const frame = document.createElement('iframe');
+    frame.id = 'editor';
+    frame.width = '1200';
+    frame.height = '800';
+    const inbox = [];
+    const waiters = new Map();
+    window.addEventListener('message', (event) => {
+      if (!event.data || typeof event.data.type !== 'string') return;
+      inbox.push(event.data);
+      for (const [key, resolve] of [...waiters]) {
+        const [type, id] = key.split('|');
+        if (event.data.type === type && (id === '' || String(event.data.id) === id)) {
+          waiters.delete(key);
+          resolve(event.data);
+        }
+      }
+    });
+    const awaitMessage = (type, id = '') => new Promise((resolve, reject) => {
+      const existing = inbox.find(message => message.type === type && (id === '' || String(message.id) === id));
+      if (existing) return resolve(existing);
+      const timer = setTimeout(() => reject(new Error('Timed out waiting for ' + type)), 20000);
+      waiters.set(type + '|' + id, (message) => { clearTimeout(timer); resolve(message); });
+    });
+    const send = (message) => frame.contentWindow.postMessage({ version: protocolVersion, ...message }, '*');
+
+    frame.src = appUrl;
+    document.body.appendChild(frame);
+    await new Promise((resolve) => { frame.addEventListener('load', resolve, { once: true }); });
+    await awaitMessage('openshop:ready');
+    // A file:// document is its own opaque origin, so the host cannot look
+    // inside the frame on that lane. The protocol is asserted either way; the
+    // DOM effects it causes are asserted where they are observable.
+    let sameOrigin = false;
+    try { sameOrigin = Boolean(frame.contentDocument?.documentElement); } catch (error) { sameOrigin = false; }
+    if (sameOrigin) {
+      await new Promise((resolve) => {
+        const poll = () => (frame.contentDocument.documentElement.dataset.osBoot === 'ready'
+          ? resolve()
+          : setTimeout(poll, 50));
+        poll();
+      });
+    }
+
+    send({ type: 'openshop:hello', id: 'h1' });
+    const ready = await awaitMessage('openshop:ready', 'h1');
+
+    send({
+      type: 'openshop:configure',
+      id: 'c1',
+      document: { width: 320, height: 200, background: '#101820' },
+      tools: ['select', 'brush', 'text'],
+      overrides: { open: true, save: true }
+    });
+    const configured = await awaitMessage('openshop:configured', 'c1');
+    const hiddenTools = sameOrigin
+      ? [...frame.contentDocument.querySelectorAll('.tool-btn[data-tool]')].filter(button => button.hidden).length
+      : null;
+    const brushVisible = sameOrigin
+      ? !frame.contentDocument.querySelector('.tool-btn[data-tool="brush"]').hidden
+      : null;
+    // `const OS = {...}` is a global lexical binding, not a window property,
+    // so the host reads the frame through its DOM rather than its internals.
+    const presetSize = sameOrigin ? frame.contentDocument.getElementById('canvas-dims').textContent.trim() : null;
+
+    send({ type: 'openshop:export', id: 'e0', format: 'png' });
+    const png = await awaitMessage('openshop:exported', 'e0');
+
+    // A version this build does not speak is refused, not guessed at.
+    frame.contentWindow.postMessage({ type: 'openshop:export', id: 'bad', version: 99, format: 'png' }, '*');
+    const versionError = await awaitMessage('openshop:error', 'bad');
+
+    send({ type: 'openshop:export', id: 'e1', format: 'svg' });
+    const svg = await awaitMessage('openshop:exported', 'e1');
+    const svgText = await svg.blob.text();
+
+    send({ type: 'openshop:export', id: 'e2', format: 'pdf' });
+    const pdf = await awaitMessage('openshop:exported', 'e2');
+
+    send({ type: 'openshop:export', id: 'e3', format: 'tiff' });
+    const badFormat = await awaitMessage('openshop:error', 'e3');
+
+    // Overrides are real seams, not flags.
+    const seen = [];
+    window.addEventListener('message', (event) => { if (event.data?.type) seen.push(event.data); });
+    if (sameOrigin) {
+      // Drive the real menu rows, so the override is proven at the seam a user
+      // would actually reach.
+      frame.contentDocument.querySelector('[data-os-click="click-004"]').click();
+      frame.contentDocument.querySelector('[data-os-click="click-002"]').click();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    const saved = seen.find(message => message.type === 'openshop:save-requested');
+
+    return {
+      readyVersion: ready.version,
+      capabilities: ready.capabilities,
+      configured: { tools: configured.tools, overrides: configured.overrides },
+      hiddenTools,
+      brushVisible,
+      presetSize,
+      png: { type: png.blob.type, size: png.blob.size, filename: png.filename },
+      versionError: versionError.message,
+      svg: { isSvg: svgText.trimStart().startsWith('<'), type: svg.blob.type },
+      pdf: { type: pdf.blob.type, size: pdf.blob.size },
+      badFormat: badFormat.message,
+      sameOrigin,
+      eraserStillHidden: sameOrigin
+        ? frame.contentDocument.querySelector('.tool-btn[data-tool="eraser"]').hidden
+        : null,
+      saved: Boolean(saved),
+      savedFilename: saved?.filename ?? null,
+      savedSize: saved?.blob?.size ?? 0,
+      openRequested: seen.some(message => message.type === 'openshop:open-requested'),
+      downloadAnchors: sameOrigin ? frame.contentDocument.querySelectorAll('a[download]').length : 0
+    };
+  }, { appUrl, protocolVersion: 1 });
+
+  expect(result.readyVersion).toBe(1);
+  expect(result.capabilities.exportFormats).toEqual(['png', 'jpeg', 'webp', 'avif', 'svg', 'pdf']);
+  expect(result.capabilities.overrides).toEqual(['open', 'save']);
+  expect(result.capabilities.tools.length).toBeGreaterThan(10);
+  expect(result.configured.tools).toEqual(['select', 'brush', 'text']);
+  expect(result.configured.overrides).toEqual({ open: true, save: true });
+  if (result.sameOrigin) {
+    expect(result.hiddenTools).toBeGreaterThan(0);
+    expect(result.brushVisible).toBe(true);
+    expect(result.presetSize).toBe('320 x 200');
+  }
+  expect(result.png.type).toBe('image/png');
+  expect(result.png.size).toBeGreaterThan(0);
+  expect(result.png.filename).toMatch(/\.png$/);
+  expect(result.versionError).toContain('Unsupported protocol version 99');
+  expect(result.svg.isSvg).toBe(true);
+  expect(result.svg.type).toContain('svg');
+  expect(result.pdf.type).toBe('application/pdf');
+  expect(result.pdf.size).toBeGreaterThan(0);
+  expect(result.badFormat).toContain('Unsupported export format: tiff');
+  if (result.sameOrigin) {
+    expect(result.eraserStillHidden).toBe(true);
+    expect(result.saved).toBe(true);
+    expect(result.savedFilename).toMatch(/\.png$/);
+    expect(result.savedSize).toBeGreaterThan(0);
+    expect(result.openRequested).toBe(true);
+  }
+  // Nothing was downloaded behind the host's back.
+  expect(result.downloadAnchors).toBe(0);
+
+  // Once a host is bound, another window's message is ignored outright — no
+  // reply, no state change. Reaching through a second frame from this page
+  // would still name this page as the sender, so the guard is exercised
+  // directly against the handler.
+  const binding = await page.evaluate(async () => {
+    const replies = [];
+    const boundSource = { postMessage: (message) => replies.push({ from: 'bound', message }) };
+    const otherSource = { postMessage: (message) => replies.push({ from: 'other', message }) };
+    OS._embed = {
+      origin: 'https://host.example',
+      target: 'https://host.example',
+      source: boundSource,
+      overrideOpen: false,
+      overrideSave: false,
+      tools: ['select']
+    };
+    await OS._onEmbedMessage({
+      data: { type: 'openshop:configure', version: 1, id: 'intruder', tools: ['eraser'] },
+      origin: 'https://host.example',
+      source: otherSource
+    });
+    await OS._onEmbedMessage({
+      data: { type: 'openshop:configure', version: 1, id: 'elsewhere', tools: ['eraser'] },
+      origin: 'https://evil.example',
+      source: boundSource
+    });
+    const afterStrangers = OS._embed.tools;
+    await OS._onEmbedMessage({
+      data: { type: 'openshop:configure', version: 1, id: 'real', tools: ['brush'] },
+      origin: 'https://host.example',
+      source: boundSource
+    });
+    const afterHost = OS._embed.tools;
+    OS._embed = null;
+    OS._applyEmbedTools(null);
+    return { replies: replies.map(entry => `${entry.from}:${entry.message.type}:${entry.message.id}`), afterStrangers, afterHost };
+  });
+  expect(binding.afterStrangers).toEqual(['select']);
+  expect(binding.afterHost).toEqual(['brush']);
+  expect(binding.replies).toEqual(['bound:openshop:configured:real']);
+});
+
 test('names states and keeps the branch an edit-after-undo used to delete @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

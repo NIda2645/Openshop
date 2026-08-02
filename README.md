@@ -161,6 +161,75 @@ OpenShop `.openshop` files are JSON-encoded document schema v1. The same envelop
 
 Recovery uses checksum-verified, immutable generations keyed by stable document IDs rather than one overwrite-in-place file. Writes stage and verify a temporary OPFS file before promotion, retain up to five generations per document, rebuild from snapshot files if the index is damaged, and fall back to the newest verified older generation when necessary. Web Locks serialize the shared index and active tab leases fork competing documents into separate recovery streams. Recovery Storage shows quota and durable/best-effort status and supports metadata preview, naming, export, restore, open-as-copy, and per-generation discard. The legacy singleton autosave migrates on first supported startup.
 
+## Embedding OpenShop
+
+A host page can drive OpenShop in an iframe over a versioned `postMessage` contract. Nothing in it carries code — every message is data, and the editor answers only the window that completed the handshake.
+
+**Protocol version 1.** Every message in both directions carries `version: 1`; a message with any other version is answered with `openshop:error` rather than guessed at.
+
+| Host → OpenShop | Payload | Reply |
+|---|---|---|
+| `openshop:hello` | — | `openshop:ready` with `capabilities: { exportFormats, tools, overrides }` |
+| `openshop:configure` | `document`, `tools`, `overrides` | `openshop:configured` with the tool list and overrides in force |
+| `openshop:export` | `format`, `options` | `openshop:exported` with `{ blob, filename, format }` |
+| `openshop:open` | `document` | `openshop:opened` |
+
+| OpenShop → Host | When |
+|---|---|
+| `openshop:ready` | Once at startup with no `id` (so a host that missed the load event can still start), then again as the reply to `hello` |
+| `openshop:save-requested` | The user saved and the host took `overrides.save`; carries `{ blob, filename }` |
+| `openshop:open-requested` | The user chose Open and the host took `overrides.open` |
+| `openshop:error` | `{ id, message }` for anything refused |
+
+`document` is either `{ width, height, background }` or `{ dataUrl | blob, name }`. `tools` is an allowlist of `data-tool` values; anything outside it is hidden and removed from the tab order. Export formats are `png`, `jpeg`, `webp`, `avif`, `svg`, and `pdf`.
+
+```html
+<iframe id="editor" src="/openshop/index.html" width="1200" height="800"></iframe>
+<script>
+  const frame = document.getElementById('editor');
+  const send = (message) => frame.contentWindow.postMessage({ version: 1, ...message }, '*');
+
+  window.addEventListener('message', async (event) => {
+    if (event.source !== frame.contentWindow) return;
+    const message = event.data;
+    if (message?.version !== 1) return;
+
+    if (message.type === 'openshop:ready' && !message.id) {
+      send({ type: 'openshop:hello', id: 'hello' });
+    }
+    if (message.type === 'openshop:ready' && message.id === 'hello') {
+      send({
+        type: 'openshop:configure',
+        id: 'setup',
+        document: { width: 1200, height: 630, background: '#101820' },
+        tools: ['select', 'brush', 'text', 'crop'],
+        overrides: { open: true, save: true }
+      });
+    }
+    if (message.type === 'openshop:open-requested') {
+      const blob = await fetch('/assets/banner.png').then(response => response.blob());
+      send({ type: 'openshop:open', id: 'open', document: { blob, name: 'banner.png' } });
+    }
+    if (message.type === 'openshop:save-requested') {
+      await fetch('/api/artwork', { method: 'POST', body: message.blob });
+    }
+    if (message.type === 'openshop:exported') {
+      console.log('got', message.filename, message.blob.size, 'bytes');
+    }
+    if (message.type === 'openshop:error') {
+      console.warn('openshop refused', message.id, message.message);
+    }
+  });
+
+  // Ask for the finished artwork whenever the host is ready for it.
+  document.getElementById('done')?.addEventListener('click', () => {
+    send({ type: 'openshop:export', id: 'final', format: 'png', options: { scale: 2 } });
+  });
+</script>
+```
+
+Serve OpenShop over http(s) rather than `file://` when embedding. A `file://` document reports its origin as the literal string `null`, which `postMessage` cannot be given as a target — the editor falls back to `'*'` for its replies in that case, so the handshake still works for local testing but the replies are not origin-restricted. The editor always binds to the exact window that sent `openshop:hello` and ignores every other one.
+
 ## Privacy and Network Use
 
 OpenShop has no account, no credit meter, no telemetry, and no upload path. Every edit, filter, export, and AI inference runs in your browser on your machine. There is no server-side component to send a document to, so no document, layer, selection, or pixel is ever transmitted.
