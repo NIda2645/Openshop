@@ -238,6 +238,22 @@ describe('OpenShop core object', () => {
     expect(bytes[3]).toBe(0x04);
   });
 
+  it('validates manual WebRTC signaling and bounds state chunking', () => {
+    const OS = loadOpenShop();
+    expect(OS._collabParseDescription('{"type":"offer","sdp":"v=0"}')).toEqual({ type:'offer', sdp:'v=0' });
+    expect(() => OS._collabParseDescription('{"type":"candidate","sdp":"x"}')).toThrow('invalid');
+    expect(() => OS._collabParseDescription('not json')).toThrow('valid JSON');
+
+    const messages = [];
+    OS._collabChunkBytes = 4;
+    OS._collab = { channel:{ readyState:'open', send:message => messages.push(message) } };
+    expect(OS._collabSendPayload({ kind:'openshop-collab', version:1, type:'state', state:{ text:'0123456789' } })).toBe(true);
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every(message => JSON.parse(message).type === 'chunk')).toBe(true);
+    OS.closeCollaboration();
+    expect(OS._collab).toBeNull();
+  });
+
   it('registers only capability-scoped sandbox plugins and disposes their resources', () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);
