@@ -1900,7 +1900,40 @@ describe('OpenShop core object', () => {
     }));
     expect(clicks[0].download).toBe('openshop-export.psd');
 
+    expect(OS._extractPSDColorProfile({ imageResources: { iccUntaggedProfile: new Uint8Array([4, 5, 6]) } })).toEqual(expect.objectContaining({
+      sourceKind: 'psd',
+      iccData: 'data:application/vnd.openshop.icc;base64,BAUG'
+    }));
+
     delete globalThis.agPsd;
+  });
+
+  it('embeds and reads the PSD ICC profile resource without transforming pixels', () => {
+    const OS = loadOpenShop();
+    OS._colorProfile = {
+      name: 'Fixture Display P3',
+      sourceKind: 'embedded-icc',
+      iccData: 'data:application/vnd.openshop.icc;base64,AAECAwQ='
+    };
+    const source = new Uint8Array(38);
+    source.set([0x38, 0x42, 0x50, 0x53], 0);
+    const sourceView = new DataView(source.buffer);
+    sourceView.setUint16(4, 1, false);
+    sourceView.setUint16(12, 3, false);
+    sourceView.setUint32(14, 1, false);
+    sourceView.setUint32(18, 1, false);
+    sourceView.setUint16(22, 8, false);
+    sourceView.setUint16(24, 3, false);
+    sourceView.setUint32(26, 0, false);
+    sourceView.setUint32(30, 0, false);
+    sourceView.setUint32(34, 0, false);
+
+    const embedded = OS._embedPSDICCProfile(source, OS._decodeProjectBytes(OS._colorProfile.iccData));
+    expect([...OS._readPSDICCProfile(embedded)]).toEqual([0, 1, 2, 3, 4]);
+    expect(OS._extractPSDColorProfile(null, embedded)).toEqual(expect.objectContaining({
+      sourceKind: 'psd',
+      iccData: 'data:application/vnd.openshop.icc;base64,AAECAwQ='
+    }));
   });
 
   it('chooses one explicit PSD composite fallback for unsupported document-wide semantics', () => {

@@ -4827,10 +4827,26 @@ test('creates documents in physical units at a chosen resolution @cross-browser'
 
   // And the PSD resolution resource declares it rather than a hardcoded 96.
   const psd = await page.evaluate(() => {
-    const { structure } = OS._withExportCanvasState({ transparent: true }, () => OS._buildPsdExportStructure());
-    return structure.imageResources?.resolutionInfo || null;
+    OS._colorProfile = {
+      name: 'Fixture Display P3',
+      sourceKind: 'embedded-icc',
+      iccData: 'data:application/vnd.openshop.icc;base64,AAECAwQ='
+    };
+    const { structure, report } = OS._withExportCanvasState({ transparent: true }, () => OS._buildPsdExportStructure());
+    const bytes = agPsd.writePsd(structure, { trimImageData: true, noBackground: true });
+    const profile = OS._decodeProjectBytes(OS._colorProfile.iccData);
+    const embedded = OS._embedPSDICCProfile(bytes, profile);
+    return {
+      resolution: structure.imageResources?.resolutionInfo || null,
+      report,
+      builtProfile: [...profile],
+      parsedProfile: [...OS._readPSDICCProfile(embedded)]
+    };
   });
-  expect(psd).toMatchObject({ horizontalResolution: 300, verticalResolution: 300 });
+  expect(psd.resolution).toMatchObject({ horizontalResolution: 300, verticalResolution: 300 });
+  expect(psd.report.iccProfileAvailable).toBe(true);
+  expect(psd.builtProfile).toEqual([0, 1, 2, 3, 4]);
+  expect(psd.parsedProfile).toEqual([0, 1, 2, 3, 4]);
 });
 
 test('says what best-effort storage actually costs @cross-browser', async ({ page }) => {

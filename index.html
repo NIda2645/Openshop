@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-/k/pbSUgCuGsCPH6SPTTEvYHcsMvLVbsrxDzbIWeF/g=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-yXDRqfRZja4dFWY6Mh8dhg1rXlPAmg+9rhS3IYjHhRA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -5327,6 +5327,18 @@ const OS = {
         }
         return `data:${mime};base64,${btoa(binary)}`;
     },
+    _decodeProjectBytes(data, prefix = 'data:application/vnd.openshop.icc;base64,') {
+        if (typeof data !== 'string' || !data.startsWith(prefix)) return null;
+        try {
+            const binary = atob(data.slice(prefix.length));
+            if (binary.length > this._importLimits.maxColorProfileBytes) return null;
+            const bytes = new Uint8Array(binary.length);
+            for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+            return bytes;
+        } catch (_) {
+            return null;
+        }
+    },
     _normalizeColorProfile(profile) {
         const value = profile && typeof profile === 'object' ? profile : {};
         const prefix = 'data:application/vnd.openshop.icc;base64,';
@@ -7840,9 +7852,96 @@ self.onmessage = function(event) {
             leafCount
         };
     },
-    _extractPSDColorProfile(psd) {
+    _readPSDICCProfile(bytes) {
+        const viewBytes = bytes instanceof Uint8Array
+            ? bytes
+            : bytes instanceof ArrayBuffer
+                ? new Uint8Array(bytes)
+                : ArrayBuffer.isView(bytes)
+                    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+                    : null;
+        if (!viewBytes || viewBytes.length < 34 || String.fromCharCode(...viewBytes.slice(0, 4)) !== '8BPS') return null;
+        const view = new DataView(viewBytes.buffer, viewBytes.byteOffset, viewBytes.byteLength);
+        const colorModeLength = view.getUint32(26, false);
+        const resourcesStart = 30 + colorModeLength;
+        if (resourcesStart < 30 || resourcesStart + 4 > viewBytes.length) return null;
+        const resourcesLength = view.getUint32(resourcesStart, false);
+        const resourcesEnd = resourcesStart + 4 + resourcesLength;
+        if (resourcesEnd > viewBytes.length) return null;
+        let offset = resourcesStart + 4;
+        while (offset + 12 <= resourcesEnd) {
+            if (String.fromCharCode(...viewBytes.slice(offset, offset + 4)) !== '8BIM') return null;
+            const resourceId = view.getUint16(offset + 4, false);
+            const nameLength = viewBytes[offset + 6];
+            const paddedNameBytes = (1 + nameLength + 1) & ~1;
+            const sizeOffset = offset + 6 + paddedNameBytes;
+            if (sizeOffset + 4 > resourcesEnd) return null;
+            const dataLength = view.getUint32(sizeOffset, false);
+            const dataStart = sizeOffset + 4;
+            const dataEnd = dataStart + dataLength;
+            const blockEnd = dataEnd + (dataLength & 1);
+            if (dataEnd > resourcesEnd || blockEnd > resourcesEnd) return null;
+            if (resourceId === 0x040f) return viewBytes.slice(dataStart, dataEnd);
+            offset = blockEnd;
+        }
+        return null;
+    },
+    _embedPSDICCProfile(buffer, profileBytes) {
+        const bytes = buffer instanceof Uint8Array
+            ? buffer
+            : buffer instanceof ArrayBuffer
+                ? new Uint8Array(buffer)
+                : ArrayBuffer.isView(buffer)
+                    ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+                    : null;
+        const profile = profileBytes instanceof Uint8Array ? profileBytes : new Uint8Array(profileBytes || []);
+        if (!bytes || bytes.length < 38 || profile.length > this._importLimits.maxColorProfileBytes) throw new Error('PSD ICC resource cannot be embedded');
+        if (String.fromCharCode(...bytes.slice(0, 4)) !== '8BPS') throw new Error('PSD ICC resource cannot be embedded');
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const resourcesStart = 30 + view.getUint32(26, false);
+        if (resourcesStart + 4 > bytes.length) throw new Error('PSD image resources are truncated');
+        const resourcesLength = view.getUint32(resourcesStart, false);
+        const resourcesEnd = resourcesStart + 4 + resourcesLength;
+        if (resourcesEnd > bytes.length) throw new Error('PSD image resources are truncated');
+        const retained = [];
+        let offset = resourcesStart + 4;
+        while (offset < resourcesEnd) {
+            if (offset + 12 > resourcesEnd || String.fromCharCode(...bytes.slice(offset, offset + 4)) !== '8BIM') throw new Error('PSD image resources are invalid');
+            const resourceId = view.getUint16(offset + 4, false);
+            const nameLength = bytes[offset + 6];
+            const paddedNameBytes = (1 + nameLength + 1) & ~1;
+            const sizeOffset = offset + 6 + paddedNameBytes;
+            if (sizeOffset + 4 > resourcesEnd) throw new Error('PSD image resources are invalid');
+            const dataLength = view.getUint32(sizeOffset, false);
+            const blockEnd = sizeOffset + 4 + dataLength + (dataLength & 1);
+            if (blockEnd > resourcesEnd) throw new Error('PSD image resources are invalid');
+            if (resourceId !== 0x040f) retained.push(bytes.slice(offset, blockEnd));
+            offset = blockEnd;
+        }
+        const profileBlock = new Uint8Array(12 + profile.length + (profile.length & 1));
+        profileBlock.set([0x38, 0x42, 0x49, 0x4d], 0);
+        const profileView = new DataView(profileBlock.buffer);
+        profileView.setUint16(4, 0x040f, false);
+        profileBlock[6] = 0;
+        profileBlock[7] = 0;
+        profileView.setUint32(8, profile.length, false);
+        profileBlock.set(profile, 12);
+        const resourceBytes = new Uint8Array(retained.reduce((total, block) => total + block.length, 0) + profileBlock.length);
+        let resourceOffset = 0;
+        retained.forEach(block => { resourceBytes.set(block, resourceOffset); resourceOffset += block.length; });
+        resourceBytes.set(profileBlock, resourceOffset);
+        const result = new Uint8Array(resourcesStart + 4 + resourceBytes.length + bytes.length - resourcesEnd);
+        result.set(bytes.slice(0, resourcesStart + 4), 0);
+        new DataView(result.buffer).setUint32(resourcesStart, resourceBytes.length, false);
+        result.set(resourceBytes, resourcesStart + 4);
+        result.set(bytes.slice(resourcesEnd), resourcesStart + 4 + resourceBytes.length);
+        return result;
+    },
+    _extractPSDColorProfile(psd, bytes = null) {
+        const embedded = this._readPSDICCProfile(bytes);
+        if (embedded) return this._normalizeColorProfile({ name:'Embedded ICC profile', source:'psd', iccData:embedded });
         const resources = psd?.imageResources || {};
-        const raw = resources.icc || resources.iccProfile || resources.colorProfile;
+        const raw = resources.iccUntaggedProfile || resources.icc || resources.iccProfile || resources.colorProfile;
         if (raw instanceof Uint8Array || raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
             return this._normalizeColorProfile({
                 name: resources.colorProfileName || 'Embedded ICC profile',
@@ -8168,6 +8267,7 @@ self.onmessage = function(event) {
             this._validatePSDDecodedPayload(psd);
             if (psd.width !== header.width || psd.height !== header.height) throw new Error('PSD decoded dimensions do not match its header');
             const prepared = await this._preparePSDImport(psd, job);
+            prepared.colorProfile = this._extractPSDColorProfile(psd, bytes);
             this._assertComputeJobCurrent(job);
             this._updatePSDImportProgress(job, 'Committing document…');
             this._commitPSDImport(prepared, psd, file, job);
@@ -12441,7 +12541,8 @@ self.onmessage = function(event) {
         });
     },
     _buildPsdExportStructure() {
-        const report = { warnings:[], flattenWholeDocument:false };
+        const iccProfile = this._decodeProjectBytes(this._colorProfile?.iccData);
+        const report = { warnings:[], flattenWholeDocument:false, iccProfileAvailable:Boolean(iccProfile?.byteLength) };
         const structure = {
             width:this.canvasW,
             height:this.canvasH,
@@ -12573,7 +12674,14 @@ self.onmessage = function(event) {
                 { transparent:true },
                 () => this._buildPsdExportStructure()
             );
-            const buffer = lib.writePsd(structure, { trimImageData:true, noBackground:true });
+            let buffer = lib.writePsd(structure, { trimImageData:true, noBackground:true });
+            const iccProfile = this._decodeProjectBytes(this._colorProfile?.iccData);
+            if (iccProfile?.byteLength) {
+                buffer = this._embedPSDICCProfile(buffer, iccProfile);
+                report.iccProfileEmbedded = true;
+            } else {
+                report.iccProfileEmbedded = false;
+            }
             const blob = new Blob([buffer], { type: 'application/octet-stream' });
             this._downloadBlob(blob, this._exportFileName('psd'));
             this._lastPSDExportReport = report;

@@ -26,8 +26,6 @@ testing gates.
 - **Photopea has shipped nothing since 5.6 (Sep 2024)** — verified 2026-07-31, blog dormant ~22 months. The free incumbent has stalled; its users' loudest complaints (ads eating canvas width, anti-adblock lockout, COPPA-driven school bans) are all things OpenShop already avoids by construction and never advertises.
 
 ## Nice-to-Haves
-- Color management with embedded ICC profiles on export
-  Research note (2026-07-31): Confirmed absent — exported PSDs carry no `0x040F` image-resource block, so every file is untagged sRGB by assumption. `lcms-wasm` (MIT, ~550 KB) is the only library that performs real ICC→ICC pixel transforms; the `icc` npm package parses headers only. Adobe publicly states Photoshop Web dropped CMYK because "browsers can't do it accurately", so shipping even **soft-proofing** would be a headline. Do not attempt print-accurate separation.
 - Batch processor (drop a folder, apply an action recipe, zip the output)
   Research note (2026-07-29): Depends on the versioned command/history item below; current label-based macro recording does not replay normal edits.
 - Collaborative session via WebRTC data channel (single doc, no server)
