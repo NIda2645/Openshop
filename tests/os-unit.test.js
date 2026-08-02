@@ -1369,6 +1369,16 @@ describe('OpenShop core object', () => {
     ]);
   });
 
+  it('preserves source text while applying basic OpenType feature choices', () => {
+    const OS = loadOpenShop();
+    const features = OS._normalizeTextFeatures({ ligatures:1, smallCaps:true, tabularNumbers:0 });
+    expect(features).toEqual({ ligatures:true, smallCaps:true, tabularNumbers:false });
+    expect(OS._formatTextFeatures('office files', features)).toBe('OFFICE FILES');
+    expect(OS._normalizeTextOnPath({
+      text:'Hello', pathObjectId:'path-1', features, style:{ fontSize:48, opacity:2 }
+    })).toMatchObject({ version:1, text:'Hello', pathObjectId:'path-1', features, style:{ fontSize:48, opacity:1 } });
+  });
+
   it('registers one installed-app launch consumer and routes supported files', async () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);

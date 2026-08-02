@@ -12,7 +12,6 @@ testing gates.
 
 ### Format & I/O
 ### Editor Core
-- Text on path + basic OpenType feature toggles (ligatures, small caps, tabular)
 
 ### AI / ML (Transformers.js)
 - Generative fill for selections (in-browser SDXL-turbo lite or remote-optional)
