@@ -62,13 +62,6 @@ testing gates.
 
 ### P1 — Trust, accessibility, and interoperability
 
-- [ ] P1 — Synchronize version, browser-support, and release documentation
-  Why: `CLAUDE.md` still identifies v0.27.0 while the package, manifest, shell, README, source, and changelog identify v0.28.0; the support table also distinguishes desktop breadth from unverified physical mobile coverage but has no automated consistency check.
-  Evidence: `CLAUDE.md`, `package.json`, `manifest.webmanifest`, `README.md`, `index.html`, `sw.js`, and `CHANGELOG.md`.
-  Touches: version-bearing files, `tests/os-unit.test.js`, release tooling.
-  Acceptance: A release test validates every user-facing version and shell revision against one source of truth and fails with the stale path; the support matrix explicitly separates browser engine, `file://`/hosted mode, viewport emulation, physical mobile, pen input, and offline claims; release notes describe verified limits and migration behavior.
-  Complexity: S
-
 ### P2 — Performance, mobile, extensibility, and workflow depth
 
 - [ ] P2 — Publish measured large-document performance and memory budgets

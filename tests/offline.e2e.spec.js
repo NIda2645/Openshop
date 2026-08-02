@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { releaseMetadata } from '../tools/release-metadata.mjs';
 
 const origin = 'http://127.0.0.1:4173';
-const productionRevision = '0.28.0-r1';
+const productionRevision = releaseMetadata.shellRevision;
 
 async function setServerState(request, state = {}) {
   const response = await request.post(`${origin}/__test/control`, {

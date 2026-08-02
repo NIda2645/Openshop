@@ -10,6 +10,7 @@ All notable changes to Openshop will be documented in this file.
 - Make the Layers and History panels keyboard-operable listboxes with active-descendant semantics, announced position/selection state, keyboard reorder/delete paths, and Chromium/Firefox/WebKit coverage.
 - Add an explicit document migration registry, rollback-safe future-schema rejection, and structured OpenShop/PSD loss reports for unsupported fields, color modes, metadata, and approximations.
 - Make manual WebRTC sessions peer-identifiable and revision-safe with explicit consent, replay rejection, deterministic conflict handling, reconnect queuing, and local-document restore on failed remote loads.
+- Add a package-owned release metadata source and consistency gate for project versions, hosted shell revisions, offline test fixtures, and documented browser/file/hosted support boundaries.
 
 ## [v0.28.0] - 2026-08-02
 

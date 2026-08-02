@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readReleaseMetadata } from '../tools/release-metadata.mjs';
 import {
   createCanvasMock,
   installFabricMock,
@@ -2169,7 +2170,7 @@ describe('OpenShop core object', () => {
 
 describe('release metadata', () => {
   const read = (name) => readFileSync(join(process.cwd(), name), 'utf8');
-  const version = JSON.parse(read('package.json')).version;
+  const { version, shellRevision } = readReleaseMetadata(process.cwd());
 
   it('ships no stray control bytes', () => {
     // A NUL that reached a comment once silently broke the CSP hash and the
@@ -2237,12 +2238,12 @@ describe('release metadata', () => {
 
     // The offline shell keys its cache on the revision, so a stale one serves
     // the previous build forever.
-    const shellRevision = read('sw.js').match(/SHELL_REVISION = '([^']+)'/)?.[1];
-    expect(shellRevision, 'sw.js SHELL_REVISION').toMatch(new RegExp(`^${version.replace(/\./g, '\\.')}(-r\\d+)?$`));
-    const serverRevision = read('tests/server.mjs').match(/productionRevision = '([^']+)'/)?.[1];
-    expect(serverRevision, 'tests/server.mjs productionRevision mirrors sw.js').toBe(shellRevision);
-    const offlineRevision = read('tests/offline.e2e.spec.js').match(/productionRevision = '([^']+)'/)?.[1];
-    expect(offlineRevision, 'offline spec productionRevision mirrors sw.js').toBe(shellRevision);
+    const swShellRevision = read('sw.js').match(/SHELL_REVISION = '([^']+)'/)?.[1];
+    expect(swShellRevision, 'sw.js SHELL_REVISION').toBe(shellRevision);
+    expect(shellRevision, 'release metadata shell revision').toMatch(new RegExp(`^${version.replace(/\./g, '\\.')}(-r\\d+)?$`));
+    expect(read('tests/server.mjs'), 'tests/server.mjs productionRevision source').toContain('productionRevision = releaseMetadata.shellRevision');
+    expect(read('tests/offline.e2e.spec.js'), 'offline spec productionRevision source').toContain('productionRevision = releaseMetadata.shellRevision');
+    expect(read('sw.js'), 'sw.js current revision').toContain(`const SHELL_REVISION = '${shellRevision}';`);
   });
 });
 

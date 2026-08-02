@@ -2,11 +2,12 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { releaseMetadata } from '../tools/release-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.OPENSHOP_TEST_PORT || 4173);
 const origin = `http://127.0.0.1:${port}`;
-const productionRevision = '0.28.0-r1';
+const productionRevision = releaseMetadata.shellRevision;
 const CONTROL_BODY_LIMIT = 16 * 1024;
 const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 const allowedControlOrigins = new Set([origin, `http://localhost:${port}`]);

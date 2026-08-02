@@ -365,14 +365,14 @@ Runtime CDN URLs, integrity hashes, cache policy, and package metadata share one
 
 ## Browser Support
 
-| Browser | Status | Evidence |
-|---------|--------|----------|
-| Chrome / Edge 90+ | Full support (including AI via WebGPU) | Full automated suite runs on every change |
-| Firefox 90+ | Core editing supported (AI via WASM fallback). No File System Access API, so Open uses the file picker and Save Project downloads rather than writing in place | Open, edit, filter, save, recover, export, keyboard and dialog flows run automatically, plus a capability probe asserting each fallback |
-| Safari 15+ / WebKit | Core editing supported (AI via WASM fallback, auto-save via Worker). Opening the single HTML file directly gives no auto-save or crash recovery — WebKit exposes no origin-private file system to a `file://` origin, so host it to get them | Same automated flows run on WebKit, including a per-engine capability probe; not yet verified on Safari hardware |
-| Mobile Chrome/Safari | Responsive shell and dialogs; precision canvas work is best on a larger display | Viewport tests only; not verified on a physical device |
+| Browser engine | `file://` / hosted mode | Viewport or emulation | Physical device | Pen / stylus | Offline claim |
+|----------------|-----------------------|----------------------|-----------------|--------------|---------------|
+| Chrome / Edge 90+ | Core editor works from the single file; hosted HTTPS/localhost adds File System Access and PWA install | Chromium Playwright suite, including narrow viewport cases | Not validated on physical Android or desktop hardware | PointerEvent pressure path is automated; hardware pressure curve is not validated | Hosted shell and runtime cache are verified by the offline suite |
+| Firefox 90+ | Core editing from the file picker; hosted mode is required for origin-backed recovery; Save Project downloads rather than writing in place | Firefox Playwright suite plus capability probe | Not validated on physical Android or desktop hardware | PointerEvent path only; no hardware claim | No offline claim for the direct `file://` lane; hosted service-worker behavior is covered where supported |
+| Safari 15+ / WebKit | Core editing from the single file; hosted mode is required for auto-save/recovery | WebKit Playwright suite plus capability probe | Safari hardware is not validated | PointerEvent path only; no hardware claim | No direct-file offline/recovery claim; hosted behavior is limited to the observed WebKit capability |
+| Mobile Chrome / Safari | Responsive shell and dialogs; precision canvas work is best on a larger display | Viewport emulation only | Physical Android/iOS behavior is unverified | No physical stylus claim | No physical-device offline claim |
 
-Run the cross-engine flows yourself with `npm run test:cross-browser`.
+The matrix reflects automated and capability checks run on 2026-08-02; it does not convert viewport emulation into a physical-device support claim. Run the cross-engine flows yourself with `npm run test:cross-browser`.
 
 Offline installation depends on service-worker/PWA support. Operating-system file associations are currently a desktop Chromium capability; OpenShop feature-detects them and does not claim them in Firefox or Safari.
 

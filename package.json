@@ -4,6 +4,9 @@
   "private": true,
   "description": "Single-file browser image editor test harness",
   "type": "module",
+  "release": {
+    "shellRevision": 1
+  },
   "engines": {
     "node": ">=20"
   },
