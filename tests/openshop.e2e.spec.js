@@ -1676,6 +1676,132 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('reconstructs an enlargement with a real model and falls back honestly @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    // A 200x200 source with a 128px tile is a 2x2 grid, so the seam maths and
+    // the skirt cropping are both exercised without downloading a model.
+    const size = 200;
+    const element = document.createElement('canvas');
+    element.width = size;
+    element.height = size;
+    const context = element.getContext('2d');
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        context.fillStyle = `rgb(${x % 256},${y % 256},${(x + y) % 256})`;
+        context.fillRect(x, y, 1, 1);
+      }
+    }
+    const target = { name: 'Photo', type: 'image', getElement: () => element };
+    OS._getActiveImage = () => target;
+    OS._isEditCurrent = () => true;
+    OS._canvasToRawImage = async (canvas) => {
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+      return { data: data.data, width: canvas.width, height: canvas.height, channels: 4 };
+    };
+
+    const seen = [];
+    // Stand in for Swin2SR: nearest-neighbour to exactly 2x, but padded the way
+    // the real model pads its window, so the normalisation step is proven too.
+    OS._loadPipeline = async (task, model) => {
+      seen.push({ task, model });
+      return async (raw) => {
+        const pad = 3;
+        const w = raw.width * 2, h = raw.height * 2;
+        const out = new Uint8ClampedArray((w + pad) * (h + pad) * 3);
+        for (let y = 0; y < h + pad; y++) {
+          for (let x = 0; x < w + pad; x++) {
+            const sx = Math.min(raw.width - 1, x >> 1);
+            const sy = Math.min(raw.height - 1, y >> 1);
+            const from = (sy * raw.width + sx) * 4;
+            const to = (y * (w + pad) + x) * 3;
+            out[to] = raw.data[from];
+            out[to + 1] = raw.data[from + 1];
+            out[to + 2] = raw.data[from + 2];
+          }
+        }
+        return { data: out, width: w + pad, height: h + pad, channels: 3 };
+      };
+    };
+    let replacement = null;
+    OS._replaceActiveImage = async (_target, url, label) => { replacement = { url, label }; return true; };
+
+    const ok = await OS.aiSuperResolve(2);
+    const image = await new Promise((resolve, reject) => {
+      const node = new Image();
+      node.onload = () => resolve(node);
+      node.onerror = reject;
+      node.src = replacement.url;
+    });
+    const check = document.createElement('canvas');
+    check.width = image.width;
+    check.height = image.height;
+    check.getContext('2d').drawImage(image, 0, 0);
+    const pixels = check.getContext('2d').getImageData(0, 0, check.width, check.height).data;
+    const read = (x, y) => [...pixels.slice((y * check.width + x) * 4, (y * check.width + x) * 4 + 3)];
+    // The source is a 1-unit-per-pixel ramp, so a correctly stitched 2x is
+    // monotonic with steps of 0 or 1. A tile placed at the wrong offset repeats
+    // or drops its whole 16px skirt, which shows up as a double-digit jump.
+    let worstRowStep = 0;
+    let worstColumnStep = 0;
+    for (let x = 1; x < check.width; x++) worstRowStep = Math.max(worstRowStep, Math.abs(read(x, 100)[0] - read(x - 1, 100)[0]));
+    for (let y = 1; y < check.height; y++) worstColumnStep = Math.max(worstColumnStep, Math.abs(read(100, y)[1] - read(100, y - 1)[1]));
+
+    // The fallback path: a model that will not load must still enlarge.
+    OS._loadPipeline = async () => null;
+    let resampled = null;
+    OS._replaceActiveImage = async (_target, url, label) => { resampled = label; return true; };
+    const fellBack = await OS.aiSuperResolve(4);
+
+    // A source too large for the model path is redirected, not refused.
+    OS._superResolutionTileLimit = 1;
+    let redirected = null;
+    OS._replaceActiveImage = async (_target, url, label) => { redirected = label; return true; };
+    const redirectedOk = await OS.aiSuperResolve(2);
+    OS._superResolutionTileLimit = 256;
+
+    return {
+      ok,
+      seen,
+      label: replacement.label,
+      width: image.width,
+      height: image.height,
+      // Every tile boundary must continue the ramp rather than show a seam.
+      worstRowStep,
+      worstColumnStep,
+      corner: read(0, 0),
+      farCorner: read(398, 398),
+      fellBack,
+      resampled,
+      redirectedOk,
+      redirected,
+      pinned: Object.keys(OS._modelRevisions).filter(model => model.includes('swin2SR'))
+    };
+  });
+
+  expect(result.ok).toBe(true);
+  expect(result.seen).toEqual([{ task: 'image-to-image', model: 'Xenova/swin2SR-classical-sr-x2-64' }]);
+  expect(result.label).toBe('Super Resolution 2x');
+  expect(result.width).toBe(400);
+  expect(result.height).toBe(400);
+  expect(result.worstRowStep).toBeLessThanOrEqual(4);
+  expect(result.worstColumnStep).toBeLessThanOrEqual(4);
+  // The ramp still starts and ends where the source does.
+  expect(result.corner[0]).toBeLessThanOrEqual(4);
+  expect(result.farCorner[0]).toBeGreaterThanOrEqual(195);
+  expect(result.farCorner[1]).toBeGreaterThanOrEqual(195);
+  expect(result.fellBack).toBe(true);
+  expect(result.resampled).toBe('Upscale 4x');
+  expect(result.redirectedOk).toBe(true);
+  expect(result.redirected).toBe('Upscale 2x');
+  expect(result.pinned).toEqual([
+    'Xenova/swin2SR-classical-sr-x2-64',
+    'Xenova/swin2SR-classical-sr-x4-64'
+  ]);
+});
+
 test('drags gradient stops on canvas and colours text decorations @cross-browser', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -6027,7 +6153,7 @@ test('uses the Transformers.js 4.x background-removal pipeline with pinned MODNe
   expect(result.revision).toMatch(/^[0-9a-f]{40}$/);
 });
 
-test('describes the enlarge command as the resample it is, outside the AI menu', async ({ page }) => {
+test('distinguishes the model-backed enlarge from the resample one', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
@@ -6040,22 +6166,33 @@ test('describes the enlarge command as the resample it is, outside the AI menu',
     return {
       enlarge2Menu: menuOf('click-099'),
       enlarge4Menu: menuOf('click-100'),
+      model2Menu: menuOf('click-222'),
+      model4Menu: menuOf('click-223'),
       backgroundRemoveMenu: menuOf('click-096'),
       claimsSmartUpscale: labels.some(text => /smart upscale/i.test(text)),
-      commandLabels: OS._getCommands().filter(c => /enlarge|upscale/i.test(c.label)).map(c => `${c.cat}:${c.label}`)
+      commandLabels: OS._getCommands().filter(c => /enlarge|upscale/i.test(c.label)).map(c => `${c.cat}:${c.label}`),
+      // The two paths must not share an implementation, or the labels lie.
+      resampleRunsNoModel: !/loadPipeline/.test(OS.aiUpscale.toString()),
+      modelLoadsAPipeline: /_loadPipeline/.test(OS.aiSuperResolve.toString())
     };
   });
 
-  // Stepped canvas resampling plus a sharpen pass is not super-resolution.
+  // Stepped canvas resampling plus a sharpen pass is not super-resolution, and
+  // the two sit side by side saying which is which.
   expect(placement.claimsSmartUpscale).toBe(false);
   expect(placement.enlarge2Menu).toBe('Image');
   expect(placement.enlarge4Menu).toBe('Image');
-  // The genuinely model-backed commands stay in the AI menu.
+  expect(placement.model2Menu).toBe('Image');
+  expect(placement.model4Menu).toBe('Image');
   expect(placement.backgroundRemoveMenu).toBe('AI');
   expect(placement.commandLabels).toEqual([
+    'Image:Enlarge 2x (AI model)',
+    'Image:Enlarge 4x (AI model)',
     'Image:Enlarge 2x (resample)',
     'Image:Enlarge 4x (resample)'
   ]);
+  expect(placement.resampleRunsNoModel).toBe(true);
+  expect(placement.modelLoadsAPipeline).toBe(true);
 });
 
 test('reports and clears cached model files per model', async ({ page }) => {
