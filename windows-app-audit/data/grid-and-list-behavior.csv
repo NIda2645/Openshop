@@ -1,0 +1,5 @@
+surface,behavior,status
+menus,compact hierarchical list with disabled entries,VISUALLY_INSPECTED
+tool flyouts,anchored list with glyph/name/shortcut,VISUALLY_INSPECTED
+panel tabs,stacked tabbed dock,VISUALLY_INSPECTED
+layers list,empty/disabled without document,VISUALLY_INSPECTED

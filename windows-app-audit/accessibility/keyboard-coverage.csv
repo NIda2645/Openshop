@@ -1,0 +1,7 @@
+surface,coverage,status
+main menu,menu shortcuts,VISUALLY_INSPECTED
+toolbox,tool shortcuts,VISUALLY_INSPECTED
+flyouts,Escape close,CONFIRMED
+About,Escape close,CONFIRMED
+panel traversal,full keyboard path,UNTESTED
+canvas interaction,keyboard path,UNTESTED

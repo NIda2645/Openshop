@@ -1,0 +1,15 @@
+{
+    "toolFamily":  "Marquee",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Rectangular Marquee Tool",
+                    "Elliptical Marquee Tool",
+                    "Single Row Marquee Tool",
+                    "Single Column Marquee Tool"
+                ],
+    "shortcut":  "M",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg"
+}

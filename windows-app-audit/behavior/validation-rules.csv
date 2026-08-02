@@ -1,0 +1,7 @@
+rule_id,area,rule,status
+VAL-001,Document gating,document commands disable without document,CONFIRMED
+VAL-002,Tools,selection alone must not mutate artwork,STRONG_INFERENCE
+VAL-003,Menus,Escape closes open menu or flyout,CONFIRMED
+VAL-004,Options bar,tool selection changes options context,CONFIRMED
+VAL-005,Persistence,settings and workspace changes persist,UNKNOWN
+VAL-006,Files,file actions require side-effect review,UNTESTED_EXTERNAL_SIDE_EFFECT

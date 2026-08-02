@@ -1,0 +1,9 @@
+flow_id,name,entry,state,status,side_effects,evidence
+FLOW-001,Initial shell,current Photoshop,blank workspace,VISUALLY_INSPECTED,none,evidence/screenshots/windows/000_initial_untouched.jpg
+FLOW-002,Menu inventory,menu bar,menus and submenus,VISUALLY_INSPECTED,none,evidence/screenshots/windows/009_file_menu_open_0.jpg
+FLOW-003,Tool inventory,left toolbox,flyouts,VISUALLY_INSPECTED,tool selection changed options bar,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg
+FLOW-004,About inspection,Help menu,About surface,VISUALLY_INSPECTED,closed with Escape,evidence/screenshots/windows/041_about_dialog_0.jpg
+FLOW-005,Restore baseline,left toolbox,blank workspace,CONFIRMED,none,evidence/screenshots/windows/002_final_restored_baseline.jpg
+FLOW-006,Create document,File > New,not entered,UNTESTED_DESTRUCTIVE,not attempted,evidence/screenshots/windows/009_file_menu_open_0.jpg
+FLOW-007,Edit artwork,canvas,not entered,UNTESTED_DESTRUCTIVE,not attempted,evidence/screenshots/windows/000_initial_untouched.jpg
+FLOW-008,File and clipboard,File menu,not entered,UNTESTED_EXTERNAL_SIDE_EFFECT,not attempted,evidence/screenshots/windows/009_file_menu_open_0.jpg

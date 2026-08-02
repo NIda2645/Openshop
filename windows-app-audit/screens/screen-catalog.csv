@@ -1,0 +1,33 @@
+screen_id,name,state,status,evidence,notes
+000_initial_untouched,Initial blank workspace,untouched,VISUALLY_INSPECTED,evidence/screenshots/windows/000_initial_untouched.jpg,no document
+002_final_restored_baseline,Restored blank workspace,restored,CONFIRMED,evidence/screenshots/windows/002_final_restored_baseline.jpg,Rectangular Marquee active
+009_file_menu_open,File menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/009_file_menu_open_0.jpg,disabled document commands
+013_edit_menu_open,Edit menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/013_edit_menu_open_0.jpg,disabled document commands
+017_image_menu_open,Image menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/017_image_menu_open_0.jpg,no document
+023_layer_menu_open,Layer menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/023_layer_menu_open_0.jpg,no document
+026_type_menu_open,Type menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/026_type_menu_open_0.jpg,no document
+029_select_menu_open,Select menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/029_select_menu_open_0.jpg,no document
+031_filter_menu_open,Filter menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/031_filter_menu_open_0.jpg,no document
+033_view_menu_open,View menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/033_view_menu_open_0.jpg,safe visual inspection
+036_window_menu_open,Window menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/036_window_menu_open_0.jpg,dock inventory
+040_help_menu_open,Help menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/040_help_menu_open_0.jpg,safe visual inspection
+041_about_dialog,About Photoshop,visual modal,VISUALLY_INSPECTED,evidence/screenshots/windows/041_about_dialog_0.jpg,closed with Escape
+100_tool_marquee_flyout,Marquee flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg,4 members
+101_tool_move_flyout,Move tool,selected,VISUALLY_INSPECTED,evidence/tools/screenshots/101_tool_move_flyout_0.jpg,no flyout
+102_tool_lasso_flyout,Lasso flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/102_tool_lasso_flyout_0.jpg,3 members
+103_tool_quick_selection_flyout,Quick Selection flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/103_tool_quick_selection_flyout_0.jpg,2 members
+104_tool_crop_flyout,Crop flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/104_tool_crop_flyout_0.jpg,4 members
+105_tool_eyedropper_flyout,Eyedropper flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg,4 members
+106_tool_healing_flyout,Healing flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/106_tool_healing_flyout_0.jpg,5 members
+107_tool_clone_stamp_flyout,Clone Stamp flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/107_tool_clone_stamp_flyout_0.jpg,2 members
+108_tool_history_brush_flyout,History Brush flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/108_tool_history_brush_flyout_0.jpg,2 members
+109_tool_eraser_flyout,Eraser flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/109_tool_eraser_flyout_0.jpg,3 members
+110_tool_gradient_flyout,Gradient flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/110_tool_gradient_flyout_0.jpg,2 members
+111_tool_blur_flyout,Blur flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/111_tool_blur_flyout_0.jpg,3 members
+112_tool_dodge_flyout,Dodge flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/112_tool_dodge_flyout_0.jpg,3 members
+113_tool_pen_flyout,Pen flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/113_tool_pen_flyout_0.jpg,5 members
+114_tool_type_flyout,Type flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/114_tool_type_flyout_0.jpg,4 members
+115_tool_path_selection_flyout,Path Selection flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/115_tool_path_selection_flyout_0.jpg,2 members
+116_tool_shape_flyout,Shape flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg,6 members
+117_tool_hand_flyout,Hand flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/117_tool_hand_flyout_0.jpg,2 members
+118_tool_zoom_flyout,Zoom tool,selected,VISUALLY_INSPECTED,evidence/tools/screenshots/118_tool_zoom_flyout.jpg,no flyout

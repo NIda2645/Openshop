@@ -1,0 +1,14 @@
+{
+    "toolFamily":  "Eraser",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Eraser Tool",
+                    "Background Eraser Tool",
+                    "Magic Eraser Tool"
+                ],
+    "shortcut":  "E",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/109_tool_eraser_flyout_0.jpg"
+}

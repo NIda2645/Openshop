@@ -1,0 +1,16 @@
+{
+    "toolFamily":  "Healing",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Spot Healing Brush Tool",
+                    "Healing Brush Tool",
+                    "Patch Tool",
+                    "Content-Aware Move Tool",
+                    "Red Eye Tool"
+                ],
+    "shortcut":  "J",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/106_tool_healing_flyout_0.jpg"
+}

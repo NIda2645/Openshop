@@ -1,0 +1,13 @@
+{
+    "toolFamily":  "History",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "History Brush Tool",
+                    "Art History Brush Tool"
+                ],
+    "shortcut":  "Y",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/108_tool_history_brush_flyout_0.jpg"
+}

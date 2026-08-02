@@ -1,0 +1,61 @@
+tool_id,family,name,shortcut,status,prerequisite,output,evidence
+TOOL-001,Marquee,Rectangular Marquee Tool,M,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg
+TOOL-002,Marquee,Elliptical Marquee Tool,M,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg
+TOOL-003,Marquee,Single Row Marquee Tool,,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg
+TOOL-004,Marquee,Single Column Marquee Tool,,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg
+TOOL-005,Move,Move Tool,V,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/101_tool_move_flyout_0.jpg
+TOOL-006,Lasso,Lasso Tool,L,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/102_tool_lasso_flyout_0.jpg
+TOOL-007,Lasso,Polygonal Lasso Tool,L,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/102_tool_lasso_flyout_0.jpg
+TOOL-008,Lasso,Magnetic Lasso Tool,L,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/102_tool_lasso_flyout_0.jpg
+TOOL-009,Selection,Quick Selection Tool,W,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/103_tool_quick_selection_flyout_0.jpg
+TOOL-010,Selection,Magic Wand Tool,W,VISUALLY_INSPECTED,open document,selection,evidence/tools/screenshots/103_tool_quick_selection_flyout_0.jpg
+TOOL-011,Crop,Crop Tool,C,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/104_tool_crop_flyout_0.jpg
+TOOL-012,Crop,Perspective Crop Tool,C,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/104_tool_crop_flyout_0.jpg
+TOOL-013,Crop,Slice Tool,C,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/104_tool_crop_flyout_0.jpg
+TOOL-014,Crop,Slice Select Tool,C,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/104_tool_crop_flyout_0.jpg
+TOOL-015,Sampling,Eyedropper Tool,I,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg
+TOOL-016,Sampling,Color Sampler Tool,I,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg
+TOOL-017,Sampling,Ruler Tool,I,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg
+TOOL-018,Sampling,Note Tool,I,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg
+TOOL-019,Healing,Spot Healing Brush Tool,J,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/106_tool_healing_flyout_0.jpg
+TOOL-020,Healing,Healing Brush Tool,J,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/106_tool_healing_flyout_0.jpg
+TOOL-021,Healing,Patch Tool,J,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/106_tool_healing_flyout_0.jpg
+TOOL-022,Healing,Content-Aware Move Tool,J,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/106_tool_healing_flyout_0.jpg
+TOOL-023,Healing,Red Eye Tool,J,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/106_tool_healing_flyout_0.jpg
+TOOL-024,Clone,Clone Stamp Tool,S,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/107_tool_clone_stamp_flyout_0.jpg
+TOOL-025,Clone,Pattern Stamp Tool,S,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/107_tool_clone_stamp_flyout_0.jpg
+TOOL-026,History,History Brush Tool,Y,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/108_tool_history_brush_flyout_0.jpg
+TOOL-027,History,Art History Brush Tool,Y,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/108_tool_history_brush_flyout_0.jpg
+TOOL-028,Eraser,Eraser Tool,E,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/109_tool_eraser_flyout_0.jpg
+TOOL-029,Eraser,Background Eraser Tool,E,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/109_tool_eraser_flyout_0.jpg
+TOOL-030,Eraser,Magic Eraser Tool,E,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/109_tool_eraser_flyout_0.jpg
+TOOL-031,Fill,Gradient Tool,G,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/110_tool_gradient_flyout_0.jpg
+TOOL-032,Fill,Paint Bucket Tool,G,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/110_tool_gradient_flyout_0.jpg
+TOOL-033,Blur,Blur Tool,R,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/111_tool_blur_flyout_0.jpg
+TOOL-034,Blur,Sharpen Tool,R,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/111_tool_blur_flyout_0.jpg
+TOOL-035,Blur,Smudge Tool,R,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/111_tool_blur_flyout_0.jpg
+TOOL-036,Tone,Dodge Tool,O,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/112_tool_dodge_flyout_0.jpg
+TOOL-037,Tone,Burn Tool,O,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/112_tool_dodge_flyout_0.jpg
+TOOL-038,Tone,Sponge Tool,O,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/112_tool_dodge_flyout_0.jpg
+TOOL-039,Pen,Pen Tool,P,VISUALLY_INSPECTED,open document,path,evidence/tools/screenshots/113_tool_pen_flyout_0.jpg
+TOOL-040,Pen,Freeform Pen Tool,P,VISUALLY_INSPECTED,open document,path,evidence/tools/screenshots/113_tool_pen_flyout_0.jpg
+TOOL-041,Pen,Add Anchor Point Tool,P,VISUALLY_INSPECTED,open document,path,evidence/tools/screenshots/113_tool_pen_flyout_0.jpg
+TOOL-042,Pen,Delete Anchor Point Tool,P,VISUALLY_INSPECTED,open document,path,evidence/tools/screenshots/113_tool_pen_flyout_0.jpg
+TOOL-043,Pen,Convert Point Tool,P,VISUALLY_INSPECTED,open document,path,evidence/tools/screenshots/113_tool_pen_flyout_0.jpg
+TOOL-044,Type,Horizontal Type Tool,T,VISUALLY_INSPECTED,open document,text or selection,evidence/tools/screenshots/114_tool_type_flyout_0.jpg
+TOOL-045,Type,Vertical Type Tool,T,VISUALLY_INSPECTED,open document,text or selection,evidence/tools/screenshots/114_tool_type_flyout_0.jpg
+TOOL-046,Type,Horizontal Type Mask Tool,T,VISUALLY_INSPECTED,open document,text or selection,evidence/tools/screenshots/114_tool_type_flyout_0.jpg
+TOOL-047,Type,Vertical Type Mask Tool,T,VISUALLY_INSPECTED,open document,text or selection,evidence/tools/screenshots/114_tool_type_flyout_0.jpg
+TOOL-048,Path Selection,Path Selection Tool,A,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/115_tool_path_selection_flyout_0.jpg
+TOOL-049,Path Selection,Direct Selection Tool,A,VISUALLY_INSPECTED,open document,document pixels,evidence/tools/screenshots/115_tool_path_selection_flyout_0.jpg
+TOOL-050,Shape,Rectangle Tool,U,VISUALLY_INSPECTED,open document,shape layer or path,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg
+TOOL-051,Shape,Rounded Rectangle Tool,U,VISUALLY_INSPECTED,open document,shape layer or path,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg
+TOOL-052,Shape,Ellipse Tool,U,VISUALLY_INSPECTED,open document,shape layer or path,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg
+TOOL-053,Shape,Polygon Tool,U,VISUALLY_INSPECTED,open document,shape layer or path,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg
+TOOL-054,Shape,Line Tool,U,VISUALLY_INSPECTED,open document,shape layer or path,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg
+TOOL-055,Shape,Custom Shape Tool,U,VISUALLY_INSPECTED,open document,shape layer or path,evidence/tools/screenshots/116_tool_shape_flyout_0.jpg
+TOOL-056,Navigation,Hand Tool,H/R/Z,VISUALLY_INSPECTED,open document,viewport,evidence/tools/screenshots/117_tool_hand_flyout_0.jpg
+TOOL-057,Navigation,Rotate View Tool,H/R/Z,VISUALLY_INSPECTED,open document,viewport,evidence/tools/screenshots/117_tool_hand_flyout_0.jpg
+TOOL-058,Navigation,Zoom Tool,H/R/Z,VISUALLY_INSPECTED,open document,viewport,evidence/tools/screenshots/117_tool_hand_flyout_0.jpg
+TOOL-059,Mode,Quick Mask Mode,,VISUALLY_INSPECTED,document state,mask overlay,evidence/screenshots/windows/002_final_restored_baseline.jpg
+TOOL-060,Mode,Screen Mode,,VISUALLY_INSPECTED,application state,window mode,evidence/screenshots/windows/034_view_screen_mode_submenu_0.jpg

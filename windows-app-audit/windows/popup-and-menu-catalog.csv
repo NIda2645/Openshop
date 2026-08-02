@@ -1,0 +1,11 @@
+popup_id,owner,contents,status,evidence
+POP-001,File,New Open Save Import Automate Scripts Print Exit,VISUALLY_INSPECTED,evidence/screenshots/windows/009_file_menu_open_0.jpg
+POP-002,Edit,Undo Clipboard Fill Transform Preferences,VISUALLY_INSPECTED,evidence/screenshots/windows/013_edit_menu_open_0.jpg
+POP-003,Image,Mode Adjustments Size Canvas Rotation Analysis,VISUALLY_INSPECTED,evidence/screenshots/windows/017_image_menu_open_0.jpg
+POP-004,Layer,New Duplicate Styles Masks Arrange Merge Flatten,VISUALLY_INSPECTED,evidence/screenshots/windows/023_layer_menu_open_0.jpg
+POP-005,Type,Panels Orientation OpenType Rasterize Warp,VISUALLY_INSPECTED,evidence/screenshots/windows/026_type_menu_open_0.jpg
+POP-006,Select,selection and layer-selection commands,VISUALLY_INSPECTED,evidence/screenshots/windows/029_select_menu_open_0.jpg
+POP-007,Filter,filter families and plug-in entry points,VISUALLY_INSPECTED,evidence/screenshots/windows/031_filter_menu_open_0.jpg
+POP-008,View,proof zoom screen extras guides slices,VISUALLY_INSPECTED,evidence/screenshots/windows/033_view_menu_open_0.jpg
+POP-009,Window,docks workspaces extensions arrange,VISUALLY_INSPECTED,evidence/screenshots/windows/036_window_menu_open_0.jpg
+POP-010,Help,help about system info online resources,VISUALLY_INSPECTED,evidence/screenshots/windows/040_help_menu_open_0.jpg

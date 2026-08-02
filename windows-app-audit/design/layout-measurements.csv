@@ -1,0 +1,7 @@
+region,observed_value,classification
+capture region,1728x929,CONFIRMED
+capture origin,57x30,CONFIRMED
+primary display,1920x1080,CONFIRMED
+secondary display,1920x1080,CONFIRMED
+toolbox,two compact columns,CONFIRMED_VISUAL
+right dock,stacked panels,CONFIRMED_VISUAL

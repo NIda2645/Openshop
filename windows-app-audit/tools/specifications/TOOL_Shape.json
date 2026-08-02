@@ -1,0 +1,17 @@
+{
+    "toolFamily":  "Shape",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Rectangle Tool",
+                    "Rounded Rectangle Tool",
+                    "Ellipse Tool",
+                    "Polygon Tool",
+                    "Line Tool",
+                    "Custom Shape Tool"
+                ],
+    "shortcut":  "U",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/116_tool_shape_flyout_0.jpg"
+}

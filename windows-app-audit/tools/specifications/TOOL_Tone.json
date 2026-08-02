@@ -1,0 +1,14 @@
+{
+    "toolFamily":  "Tone",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Dodge Tool",
+                    "Burn Tool",
+                    "Sponge Tool"
+                ],
+    "shortcut":  "O",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/112_tool_dodge_flyout_0.jpg"
+}

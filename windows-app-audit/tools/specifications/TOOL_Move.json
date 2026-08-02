@@ -1,0 +1,12 @@
+{
+    "toolFamily":  "Move",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Move Tool"
+                ],
+    "shortcut":  "V",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/101_tool_move_flyout_0.jpg"
+}

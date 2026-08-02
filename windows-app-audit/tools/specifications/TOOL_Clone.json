@@ -1,0 +1,13 @@
+{
+    "toolFamily":  "Clone",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Clone Stamp Tool",
+                    "Pattern Stamp Tool"
+                ],
+    "shortcut":  "S",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/107_tool_clone_stamp_flyout_0.jpg"
+}

@@ -1,0 +1,9 @@
+{
+    "screenId":  "108_tool_history_brush_flyout",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "evidence":  "evidence/tools/screenshots/108_tool_history_brush_flyout_0.jpg",
+    "documentState":  "no document open",
+    "uiAutomation":  "partial; screenshot authoritative for custom surfaces",
+    "sideEffects":  "none from recorded inspection"
+}

@@ -1,0 +1,9 @@
+{
+    "screenId":  "002_final_restored_baseline",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "evidence":  "evidence/windows/screenshots/002_final_restored_baseline_0.jpg",
+    "documentState":  "no document open",
+    "uiAutomation":  "partial; screenshot authoritative for custom surfaces",
+    "sideEffects":  "none from recorded inspection"
+}

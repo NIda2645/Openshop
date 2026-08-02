@@ -1,0 +1,4 @@
+asset,source,status,note
+toolbar glyphs,live Photoshop screenshot,REFERENCE_ONLY,recreate original project assets
+Photoshop mark,live application chrome,REFERENCE_ONLY,do not ship Adobe artwork
+panel glyphs,live screenshot,REFERENCE_ONLY,design original equivalents

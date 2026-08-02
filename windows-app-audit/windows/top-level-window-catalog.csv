@@ -1,0 +1,4 @@
+window_id,title,role,hWnd,status,notes
+WIN-001,Adobe Photoshop CS6,main application window,6884148,CONFIRMED,maximized and responding
+WIN-002,About Photoshop,visual modal surface,not separately enumerated,VISUALLY_INSPECTED,no second top-level window
+WIN-003,Photoshop menu and flyout surfaces,owner-drawn popup,not separately enumerated,VISUALLY_INSPECTED,screenshot evidence

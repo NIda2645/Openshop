@@ -1,0 +1,9 @@
+{
+    "screenId":  "100_tool_marquee_flyout",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "evidence":  "evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg",
+    "documentState":  "no document open",
+    "uiAutomation":  "partial; screenshot authoritative for custom surfaces",
+    "sideEffects":  "none from recorded inspection"
+}

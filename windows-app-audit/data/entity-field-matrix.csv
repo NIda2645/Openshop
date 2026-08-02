@@ -1,0 +1,10 @@
+entity,observed_fields,confidence
+ApplicationSession,PID and HWND,CONFIRMED
+Workspace,Essentials and panel arrangement,CONFIRMED
+Document,absence/no active document,CONFIRMED
+ToolState,active tool/options/group,CONFIRMED
+Panel,Color/Swatches/Adjustments/Styles/Layers/Channels/Paths,CONFIRMED
+Layer,unknown,UNKNOWN
+Channel,unknown,UNKNOWN
+Path,unknown,UNKNOWN
+Selection,commands only,STRONG_INFERENCE

@@ -1,0 +1,13 @@
+{
+    "toolFamily":  "Fill",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Gradient Tool",
+                    "Paint Bucket Tool"
+                ],
+    "shortcut":  "G",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/110_tool_gradient_flyout_0.jpg"
+}

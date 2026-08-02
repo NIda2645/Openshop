@@ -1,0 +1,16 @@
+{
+    "toolFamily":  "Pen",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Pen Tool",
+                    "Freeform Pen Tool",
+                    "Add Anchor Point Tool",
+                    "Delete Anchor Point Tool",
+                    "Convert Point Tool"
+                ],
+    "shortcut":  "P",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/113_tool_pen_flyout_0.jpg"
+}

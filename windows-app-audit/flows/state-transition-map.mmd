@@ -1,0 +1,11 @@
+stateDiagram-v2
+    [*] --> BlankWorkspace
+    BlankWorkspace --> MenuOpen: open menu
+    MenuOpen --> BlankWorkspace: Escape
+    BlankWorkspace --> ToolFlyout: right-click grouped tool
+    ToolFlyout --> ToolSelected: inspect/select tool
+    ToolSelected --> BlankWorkspace: choose Rectangular Marquee
+    BlankWorkspace --> AboutSurface: Help > About Photoshop
+    AboutSurface --> BlankWorkspace: Escape
+    BlankWorkspace --> DocumentState: File > New
+    DocumentState --> BlankWorkspace: not exercised

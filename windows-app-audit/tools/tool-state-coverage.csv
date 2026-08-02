@@ -1,0 +1,19 @@
+family,members,inspection,status,blocked_reason
+Marquee,4,flyout,VISUALLY_INSPECTED,no document
+Move,1,options bar,VISUALLY_INSPECTED,no document
+Lasso,3,flyout,VISUALLY_INSPECTED,no document
+Selection,2,flyout,VISUALLY_INSPECTED,no document
+Crop,4,flyout,VISUALLY_INSPECTED,no document
+Sampling,4,flyout,VISUALLY_INSPECTED,no document
+Healing,5,flyout,VISUALLY_INSPECTED,no document
+Clone,2,flyout,VISUALLY_INSPECTED,no document
+History,2,flyout,VISUALLY_INSPECTED,no document
+Eraser,3,flyout,VISUALLY_INSPECTED,no document
+Fill,2,flyout,VISUALLY_INSPECTED,no document
+Blur,3,flyout,VISUALLY_INSPECTED,no document
+Tone,3,flyout,VISUALLY_INSPECTED,no document
+Pen,5,flyout,VISUALLY_INSPECTED,no document
+Type,4,flyout,VISUALLY_INSPECTED,no document
+Path Selection,2,flyout,VISUALLY_INSPECTED,no document
+Shape,6,flyout,VISUALLY_INSPECTED,no document
+Navigation,3,flyout/options,VISUALLY_INSPECTED,no document

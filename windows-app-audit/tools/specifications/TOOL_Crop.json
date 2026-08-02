@@ -1,0 +1,15 @@
+{
+    "toolFamily":  "Crop",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Crop Tool",
+                    "Perspective Crop Tool",
+                    "Slice Tool",
+                    "Slice Select Tool"
+                ],
+    "shortcut":  "C",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/104_tool_crop_flyout_0.jpg"
+}

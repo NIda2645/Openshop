@@ -1,0 +1,23 @@
+Window: "Adobe Photoshop CS6", App: Photoshop.exe.
+	0 window Adobe Photoshop CS6 Secondary Actions: Raise
+		453 pane
+			454 pane
+		1 title bar
+			2 menu bar System ID: MenuBar
+				18 menu item System
+			4 button Minimize
+			5 button Maximize
+			6 button Close
+		442 menu bar menu bar
+			443 menu item File
+			444 menu item Edit
+			445 menu item Image
+			446 menu item Layer
+			447 menu item Type
+			448 menu item Select
+			449 menu item Filter
+			450 menu item View
+			451 menu item Window
+			452 menu item Help
+
+The focused UI element is 454 pane.

@@ -1,0 +1,9 @@
+{
+    "screenId":  "111_tool_blur_flyout",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "evidence":  "evidence/tools/screenshots/111_tool_blur_flyout_0.jpg",
+    "documentState":  "no document open",
+    "uiAutomation":  "partial; screenshot authoritative for custom surfaces",
+    "sideEffects":  "none from recorded inspection"
+}

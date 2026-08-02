@@ -1,0 +1,14 @@
+{
+    "toolFamily":  "Navigation",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Hand Tool",
+                    "Rotate View Tool",
+                    "Zoom Tool"
+                ],
+    "shortcut":  "H/R/Z",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/117_tool_hand_flyout_0.jpg"
+}

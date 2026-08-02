@@ -1,0 +1,7 @@
+family,classification,status,reason
+Marquee/Lasso/Selection,read-only visual,VISUALLY_INSPECTED,only flyouts opened
+Navigation,read-only visual,VISUALLY_INSPECTED,no viewport
+Sampling/Measurement,read-only visual,VISUALLY_INSPECTED,no canvas
+Pen/Type/Shape,document mutation possible,UNTESTED_DESTRUCTIVE,no document
+Healing/Clone/Eraser/Blur/Tone/Fill,pixel mutation possible,UNTESTED_DESTRUCTIVE,no document
+Quick Mask/Screen Mode,mode change,UNTESTED_EXTERNAL_SIDE_EFFECT,no toggle committed

@@ -1,0 +1,9 @@
+{
+    "screenId":  "000_initial_untouched",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "evidence":  "evidence/windows/screenshots/000_initial_untouched_0.jpg",
+    "documentState":  "no document open",
+    "uiAutomation":  "partial; screenshot authoritative for custom surfaces",
+    "sideEffects":  "none from recorded inspection"
+}

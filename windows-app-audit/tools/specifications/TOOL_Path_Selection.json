@@ -1,0 +1,13 @@
+{
+    "toolFamily":  "Path Selection",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Path Selection Tool",
+                    "Direct Selection Tool"
+                ],
+    "shortcut":  "A",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/115_tool_path_selection_flyout_0.jpg"
+}

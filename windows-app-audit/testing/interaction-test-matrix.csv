@@ -1,0 +1,9 @@
+test_id,area,case,status,evidence
+TEST-001,Shell,blank workspace,VISUALLY_INSPECTED,evidence/screenshots/windows/000_initial_untouched.jpg
+TEST-002,Menus,top-level menus and safe submenus,VISUALLY_INSPECTED,evidence/screenshots/windows/
+TEST-003,Tools,every visible flyout,VISUALLY_INSPECTED,evidence/tools/screenshots/
+TEST-004,Recovery,close popup and restore baseline,CONFIRMED,evidence/screenshots/windows/002_final_restored_baseline.jpg
+TEST-005,Documents,create scratch document,UNTESTED_DESTRUCTIVE,not run
+TEST-006,Editing,reversible pixel edit,UNTESTED_DESTRUCTIVE,not run
+TEST-007,Files,open save import export,UNTESTED_EXTERNAL_SIDE_EFFECT,not run
+TEST-008,Accessibility,full keyboard traversal,UNTESTED,not run

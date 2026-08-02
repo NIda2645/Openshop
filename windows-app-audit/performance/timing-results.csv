@@ -1,0 +1,5 @@
+operation,result,status,notes
+initial observation,completed,QUALITATIVE,automation overhead included
+menu inspection,completed,QUALITATIVE,no app latency measurement
+tool inspection,completed,QUALITATIVE,no app latency measurement
+document creation,not run,UNTESTED_DESTRUCTIVE,disposable test state needed

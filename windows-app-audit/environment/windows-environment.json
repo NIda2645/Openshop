@@ -1,0 +1,13 @@
+{
+  "classification": "CONFIRMED",
+  "capturedOn": "2026-08-01",
+  "machine": "XRAY-PC",
+  "operatingSystem": "Microsoft Windows NT 10.0.26200.0",
+  "architecture": "64-bit",
+  "culture": "en-US",
+  "shortDatePattern": "M/d/yyyy",
+  "longTimePattern": "h:mm:ss tt",
+  "timeZone": "Eastern Standard Time",
+  "displayCount": 2,
+  "packageIdentity": "none observed; classic executable"
+}

@@ -1,0 +1,21 @@
+Window: "Adobe Photoshop CS6", App: Photoshop.exe.
+	0 window Adobe Photoshop CS6 Secondary Actions: Raise
+		1 title bar
+			2 menu bar System ID: MenuBar
+				18 menu item System
+			4 button Minimize
+			5 button Maximize
+			6 button Close
+		455 menu bar menu bar
+			456 menu item File
+			457 menu item Edit
+			458 menu item Image
+			459 menu item Layer
+			460 menu item Type
+			461 menu item Select
+			462 menu item Filter
+			463 menu item View
+			464 menu item Window
+			465 menu item Help
+
+The focused UI element is 0 window Adobe Photoshop CS6 Secondary Actions: Raise.

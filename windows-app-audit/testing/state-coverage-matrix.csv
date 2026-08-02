@@ -1,0 +1,10 @@
+state,observed,status
+blank workspace,yes,CONFIRMED
+menu open,yes,VISUALLY_INSPECTED
+submenu open,yes,VISUALLY_INSPECTED
+tool flyout open,yes,VISUALLY_INSPECTED
+About surface,yes,VISUALLY_INSPECTED
+document with pixels,no,BLOCKED_BY_PREREQUISITE
+text editing,no,BLOCKED_BY_PREREQUISITE
+layer stack,no,BLOCKED_BY_PREREQUISITE
+file dialog,no,UNTESTED_EXTERNAL_SIDE_EFFECT

@@ -1,0 +1,13 @@
+{
+    "toolFamily":  "Selection",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Quick Selection Tool",
+                    "Magic Wand Tool"
+                ],
+    "shortcut":  "W",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/103_tool_quick_selection_flyout_0.jpg"
+}

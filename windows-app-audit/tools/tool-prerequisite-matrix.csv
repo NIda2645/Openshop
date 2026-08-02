@@ -1,0 +1,19 @@
+family,requires_document,requires_layer,requires_path,requires_selection,observed
+Marquee,yes,no,no,no,flyout only
+Move,yes,usually,no,no,options bar only
+Lasso,yes,no,no,no,flyout only
+Selection,yes,usually,no,no,flyout only
+Crop,yes,no,no,no,flyout only
+Sampling,yes,no,no,no,flyout only
+Healing,yes,usually,no,no,flyout only
+Clone,yes,usually,no,no,flyout only
+History,yes,usually,optional,no,flyout only
+Eraser,yes,usually,no,no,flyout only
+Fill,yes,usually,no,no,flyout only
+Blur,yes,usually,no,no,flyout only
+Tone,yes,usually,no,no,flyout only
+Pen,yes,no,optional,no,options bar only
+Type,yes,no,no,no,options bar only
+Path Selection,yes,no,yes,no,options bar only
+Shape,yes,no,optional,no,options bar only
+Navigation,yes,no,no,no,options bar only

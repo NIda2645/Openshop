@@ -1,0 +1,6 @@
+role,observation,classification
+workspace,dark neutral gray,CONFIRMED_VISUAL
+menu text,light gray on dark gray,CONFIRMED_VISUAL
+disabled controls,reduced contrast gray,CONFIRMED_VISUAL
+selected tool,blue-gray highlight,CONFIRMED_VISUAL
+foreground/background,black and white swatches,CONFIRMED_VISUAL

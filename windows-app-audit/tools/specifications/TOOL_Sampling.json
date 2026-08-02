@@ -1,0 +1,15 @@
+{
+    "toolFamily":  "Sampling",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Eyedropper Tool",
+                    "Color Sampler Tool",
+                    "Ruler Tool",
+                    "Note Tool"
+                ],
+    "shortcut":  "I",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg"
+}

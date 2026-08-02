@@ -1,0 +1,21 @@
+{
+  "capturedAtUtc": "2026-08-02T03:21:40.155Z",
+  "window": {
+    "app": "{6D809377-6AF0-444B-8957-A3773F02200E}\\Adobe\\Adobe Photoshop CS6 (64 Bit)\\Photoshop.exe",
+    "id": 6884148,
+    "title": "Adobe Photoshop CS6"
+  },
+  "focusedElement": "0 window Adobe Photoshop CS6 Secondary Actions: Raise",
+  "selectedText": null,
+  "documentText": null,
+  "tree": "Window: \"Adobe Photoshop CS6\", App: Photoshop.exe.\n\t0 window Adobe Photoshop CS6 Secondary Actions: Raise\n\t\t1 title bar\n\t\t\t2 menu bar System ID: MenuBar\n\t\t\t\t18 menu item System\n\t\t\t4 button Minimize\n\t\t\t5 button Maximize\n\t\t\t6 button Close\n\t\t7 menu bar menu bar\n\t\t\t8 menu item File\n\t\t\t9 menu item Edit\n\t\t\t10 menu item Image\n\t\t\t11 menu item Layer\n\t\t\t12 menu item Type\n\t\t\t13 menu item Select\n\t\t\t14 menu item Filter\n\t\t\t15 menu item View\n\t\t\t16 menu item Window\n\t\t\t17 menu item Help\n\nThe focused UI element is 0 window Adobe Photoshop CS6 Secondary Actions: Raise.",
+  "screenshots": [
+    {
+      "id": "screenshot-0",
+      "width": 1728,
+      "height": 929,
+      "originX": 57,
+      "originY": 30
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+    "toolFamily":  "Type",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Horizontal Type Tool",
+                    "Vertical Type Tool",
+                    "Horizontal Type Mask Tool",
+                    "Vertical Type Mask Tool"
+                ],
+    "shortcut":  "T",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/114_tool_type_flyout_0.jpg"
+}

@@ -1,0 +1,9 @@
+element,role,name,automation_status,notes
+Main window,Window,Adobe Photoshop CS6,EXPOSED,HWND 6884148
+Menu bar,MenuBar,menu bar,EXPOSED,top-level container
+Menu items,MenuItem,File through Help,EXPOSED,labels read
+Window buttons,Button,Minimize Maximize Close,EXPOSED,standard chrome
+Toolbox,Pane,partial,PARTIAL,custom drawn
+Tool flyout,Menu,partial,PARTIAL,screenshot authoritative
+Right dock,Pane,partial,PARTIAL,custom panels
+About,Dialog,unknown,UNKNOWN,visual surface only

@@ -1,0 +1,4 @@
+dialog_id,name,trigger,status,side_effect_policy,evidence
+DIALOG-001,About Photoshop,Help > About Photoshop,VISUALLY_INSPECTED,closed with Escape,evidence/screenshots/windows/041_about_dialog_0.jpg
+DIALOG-002,Preferences,Edit > Preferences,UNTESTED_EXTERNAL_SIDE_EFFECT,not opened,evidence/screenshots/windows/014_edit_preferences_submenu_0.jpg
+DIALOG-003,New Document,File > New,UNTESTED_DESTRUCTIVE,not opened,evidence/screenshots/windows/009_file_menu_open_0.jpg

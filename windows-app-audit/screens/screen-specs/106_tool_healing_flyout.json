@@ -1,0 +1,9 @@
+{
+    "screenId":  "106_tool_healing_flyout",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "evidence":  "evidence/tools/screenshots/106_tool_healing_flyout_0.jpg",
+    "documentState":  "no document open",
+    "uiAutomation":  "partial; screenshot authoritative for custom surfaces",
+    "sideEffects":  "none from recorded inspection"
+}

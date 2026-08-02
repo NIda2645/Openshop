@@ -1,0 +1,34 @@
+command,shortcut,source,status
+New,Ctrl+N,File,CONFIRMED
+Open,Ctrl+O,File,CONFIRMED
+Close,Ctrl+W,File,disabled without document
+Save,Ctrl+S,File,disabled without document
+Print,Ctrl+P,File,disabled without document
+Exit,Ctrl+Q,File,CONFIRMED
+Undo,Ctrl+Z,Edit,disabled without document
+Free Transform,Ctrl+T,Edit,disabled without document
+Preferences,Ctrl+K,Edit,CONFIRMED
+Keyboard Shortcuts,Alt+Shift+Ctrl+K,Edit,CONFIRMED
+Zoom In,Ctrl++,View,CONFIRMED
+Zoom Out,Ctrl+-,View,CONFIRMED
+Fit on Screen,Ctrl+0,View,CONFIRMED
+Actual Pixels,Ctrl+1,View,CONFIRMED
+Rectangular Marquee,M,toolbox,CONFIRMED
+Move,V,toolbox,CONFIRMED
+Lasso,L,toolbox,CONFIRMED
+Quick Selection,W,toolbox,CONFIRMED
+Crop,C,toolbox,CONFIRMED
+Eyedropper,I,toolbox,CONFIRMED
+Healing,J,toolbox,CONFIRMED
+Clone Stamp,S,toolbox,CONFIRMED
+History Brush,Y,toolbox,CONFIRMED
+Eraser,E,toolbox,CONFIRMED
+Gradient,G,toolbox,CONFIRMED
+Blur,R,toolbox,CONFIRMED
+Dodge,O,toolbox,CONFIRMED
+Pen,P,toolbox,CONFIRMED
+Type,T,toolbox,CONFIRMED
+Path Selection,A,toolbox,CONFIRMED
+Shape,U,toolbox,CONFIRMED
+Hand,H,toolbox,CONFIRMED
+Zoom,Z,toolbox,CONFIRMED

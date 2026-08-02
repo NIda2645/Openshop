@@ -1,0 +1,14 @@
+{
+    "toolFamily":  "Blur",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Blur Tool",
+                    "Sharpen Tool",
+                    "Smudge Tool"
+                ],
+    "shortcut":  "R",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/111_tool_blur_flyout_0.jpg"
+}

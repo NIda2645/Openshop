@@ -1,0 +1,14 @@
+{
+    "toolFamily":  "Lasso",
+    "classification":  "CONFIRMED",
+    "status":  "VISUALLY_INSPECTED",
+    "members":  [
+                    "Lasso Tool",
+                    "Polygonal Lasso Tool",
+                    "Magnetic Lasso Tool"
+                ],
+    "shortcut":  "L",
+    "canvasBehavior":  "UNTESTED",
+    "prerequisite":  "Open document",
+    "evidence":  "evidence/tools/screenshots/102_tool_lasso_flyout_0.jpg"
+}

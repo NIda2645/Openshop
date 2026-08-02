@@ -1,0 +1,8 @@
+output_type,producer_families,status,notes
+Pixel selection,Marquee/Lasso/Selection/Type Mask,UNTESTED,requires document
+Path,Pen/Path Selection/Shape,UNTESTED,requires document
+Text layer,Type,UNTESTED,requires document and font handling
+Shape layer,Shape,UNTESTED,requires document
+Pixel edits,Healing/Clone/Eraser/Blur/Tone/Fill,UNTESTED_DESTRUCTIVE,not exercised
+Viewport,Hand/Rotate View/Zoom,VISUALLY_INSPECTED,no document viewport
+Mask overlay,Quick Mask Mode,UNTESTED,no document
