@@ -26,9 +26,6 @@ testing gates.
 - **Photopea has shipped nothing since 5.6 (Sep 2024)** — verified 2026-07-31, blog dormant ~22 months. The free incumbent has stalled; its users' loudest complaints (ads eating canvas width, anti-adblock lockout, COPPA-driven school bans) are all things OpenShop already avoids by construction and never advertises.
 
 ## Nice-to-Haves
-- Mobile-first toolbar layout toggle with pressure-sensitive stylus support
-  Research note (2026-07-29): Define a tested compact phone/tablet subset first; pressure support follows pointer, target-size, and non-drag interaction coverage.
-  Research note (2026-07-31): Two concrete traps. (1) Non-pressure touchscreens report a constant `PointerEvent.pressure` of `0.5`, so pressure must be feature-detected by observing variance during a stroke, not by reading the property — this is the exact bug that stalled miniPaint#179 for years (the maintainer also had no tablet to test with, which is why nobody has shipped this well). (2) Safari caps a single canvas at ~16,777,216 px and total canvas memory at roughly 224–384 MB, and retains canvases after dereference — a layered editor on iPad hits this before it hits any of our own limits, so the compact subset needs canvas pooling and a DPR cap, not just a smaller toolbar. WCAG 2.5.8 also requires ≥24×24 CSS px targets, and Fabric's default corner handles are smaller.
 
 ## Open-Source Research (Round 2)
 

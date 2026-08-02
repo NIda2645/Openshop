@@ -9,8 +9,8 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-5q1a/W2cWOdcy8d7j0hSzXXK39IRfx0wMN4wtn5MB5Y=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
-<title>OpenShop v0.27.0 — Online Image Editor</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-f5BIkh5j2rQGg/sUvgK0d8i1v1A2c34hJhFM45PtWuc=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
 // Promise-based v7 API while each call site is migrated independently.
@@ -539,7 +539,7 @@ html.os-native-popovers #context-menu[popover]{position-area:block-end span-inli
 .history-item.future{opacity:.35}
 
 /* === CANVAS === */
-#canvas-area{position:absolute;left:var(--toolbar-w);top:calc(var(--topbar-h) + 34px);right:var(--panel-width);bottom:calc(var(--statusbar-h) + var(--bottom-tabs-h));background:var(--canvas-bg);overflow:hidden;cursor:crosshair}
+#canvas-area{position:absolute;left:var(--toolbar-w);top:calc(var(--topbar-h) + 34px);right:var(--panel-width);bottom:calc(var(--statusbar-h) + var(--bottom-tabs-h));background:var(--canvas-bg);overflow:hidden;cursor:crosshair;touch-action:none}
 #bottom-tabs{position:absolute;left:var(--toolbar-w);right:var(--panel-width);bottom:var(--statusbar-h);height:var(--bottom-tabs-h);display:flex;align-items:stretch;gap:1px;padding:0 8px;background:var(--bg-depth-1);border-top:1px solid var(--border);z-index:900;}
 .bottom-tab{min-width:112px;padding:0 14px;border:0;border-right:1px solid var(--border);background:transparent;color:var(--text-muted);font:600 10px 'DM Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:var(--transition-chrome)}
 .bottom-tab:hover{background:var(--bg-depth-3);color:var(--text-secondary)}
@@ -2043,6 +2043,37 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 @media(max-width:1024px){
   .modal .btn{min-height:44px}
 }
+
+/* The Mobile workspace can be selected on a desktop-sized viewport when a
+   tablet-style layout is preferred. Keep it as a real layout mode rather than
+   relying only on the viewport media query, so the same target-size and
+   pointer-input behavior is testable before a device is connected. */
+html[data-os-workspace="mobile"]{
+  --panel-width:0px;--toolbar-w:0px;--topbar-h:44px;--tool-size:34px;--statusbar-h:0px;--bottom-tabs-h:40px;
+}
+html[data-os-workspace="mobile"] #statusbar{display:none}
+html[data-os-workspace="mobile"] #topbar{gap:1px;padding:0 6px;overflow-x:auto;overflow-y:visible;scrollbar-width:none}
+html[data-os-workspace="mobile"] #topbar::-webkit-scrollbar{display:none}
+html[data-os-workspace="mobile"] #topbar .logo{flex:0 0 auto;margin-right:3px}
+html[data-os-workspace="mobile"] #topbar .logo .logo-mark{width:25px;height:29px;font-size:7px}
+html[data-os-workspace="mobile"] #topbar .logo .logo-word,html[data-os-workspace="mobile"] #topbar .logo .logo-version{display:none}
+html[data-os-workspace="mobile"] .menu-item{flex:0 0 auto;padding:6px 5px;font-size:9px;letter-spacing:.055em}
+html[data-os-workspace="mobile"] .local-badge{display:none}
+html[data-os-workspace="mobile"] #workspace-selector-wrap{margin-left:auto;padding-inline:5px;gap:4px;font-size:8px}
+html[data-os-workspace="mobile"] #workspace-selector-wrap select{min-width:78px}
+html[data-os-workspace="mobile"] .mobile-panel-toggle{display:flex!important;margin-left:4px}
+html[data-os-workspace="mobile"] #toolbar{position:fixed;top:auto;z-index:100;display:flex!important;flex-direction:row;overflow-x:auto;overflow-y:hidden;left:6px;right:6px;bottom:calc(var(--bottom-tabs-h) + 6px);width:auto;height:46px;padding:3px 5px;gap:3px;border:1px solid var(--border);border-radius:10px}
+html[data-os-workspace="mobile"] .tool-btn{width:34px;height:34px;flex:0 0 34px}
+html[data-os-workspace="mobile"] .tool-btn.active::after{left:8px;right:8px;top:auto;bottom:-4px;width:auto;height:2px}
+html[data-os-workspace="mobile"] .tool-sep{width:1px;height:18px;margin:0 2px;flex:0 0 1px}
+html[data-os-workspace="mobile"] #tool-options{left:6px;right:6px;top:calc(var(--topbar-h) + 6px);height:36px;padding:0 9px;gap:9px;font-size:10px;border-radius:8px}
+html[data-os-workspace="mobile"] #canvas-area{left:6px;right:6px;top:calc(var(--topbar-h) + 48px);bottom:calc(var(--bottom-tabs-h) + 58px);border-radius:8px}
+html[data-os-workspace="mobile"] #panels{position:fixed;display:flex;z-index:200;right:-320px;top:calc(var(--topbar-h) + 48px);bottom:calc(var(--bottom-tabs-h) + 58px);width:min(304px,calc(100vw - 24px));gap:6px;padding:6px;overflow-x:hidden;overflow-y:auto;background:color-mix(in srgb, var(--bg-depth-0) 90%, transparent);border:1px solid var(--border);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.48);backdrop-filter:blur(14px);transition:right .25s var(--ease-out)}
+html[data-os-workspace="mobile"] #panels.mobile-open{right:6px}
+html[data-os-workspace="mobile"] #panels .panel-tab-group{flex-shrink:0}
+html[data-os-workspace="mobile"] #panels .panel-tab-group.ptg-flex{flex:0 0 250px}
+html[data-os-workspace="mobile"] #bottom-tabs{left:0;right:0}
+
 @media(min-width:768px) and (max-width:1023px){
   :root{--panel-width:248px;--toolbar-w:112px}
   #toolbar{left:6px;width:104px}
@@ -2096,10 +2127,10 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 
 <!-- ===== TOP MENU ===== -->
 <div id="topbar">
-    <div class="logo" aria-label="OpenShop version 0.27.0">
+    <div class="logo" aria-label="OpenShop version 0.28.0">
         <span class="logo-mark">OS</span>
         <span class="logo-word">OpenShop</span>
-        <span class="logo-version">v0.27</span>
+        <span class="logo-version">v0.28</span>
     </div>
     <div class="menu-bar" role="menubar" aria-label="Main menu">
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
@@ -2372,6 +2403,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
             <option value="standard">Standard</option>
             <option value="essentials">Essentials</option>
             <option value="motion">Motion</option>
+            <option value="mobile">Mobile</option>
         </select>
     </label>
     <div class="local-badge" title="Your files and edits stay on this device" aria-label="Local-only editing">
@@ -2478,6 +2510,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <label>Opacity</label>
         <input type="range" id="brush-opacity" min="1" max="100" value="100" data-os-input="input-002">
         <span class="opt-val" id="brush-opacity-val">100</span>
+        <span class="opt-val" id="brush-pressure-status" title="Pressure changes are enabled after a pen stroke reports varying pressure">Stylus: ready</span>
     </div>
     <div class="opt-group" id="opt-spray" style="display:none">
         <label>Density</label>
@@ -2658,7 +2691,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 <div id="welcome-overlay" role="dialog" aria-modal="true" aria-label="Welcome to OpenShop">
     <div class="welcome-inner">
         <section class="welcome-hero">
-            <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.27</small></div>
+            <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.28</small></div>
             <div class="welcome-kicker"><span></span> Local creative studio</div>
             <h1>Edit boldly.<br><em>Stay local.</em></h1>
             <p>A full image workspace that opens in one file. Your canvas, layers, and exports stay on this device.</p>
@@ -3031,7 +3064,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 
 <script>
 // ================================================================
-//  OpenShop v0.27.0 — Core Engine (Phase 10: Pro Toolbar)
+//  OpenShop v0.28.0 — Core Engine (Phase 10: Pro Toolbar)
 // ================================================================
 // Static controls declare opaque action IDs; executable behavior lives only in this reviewed registry.
 const OS_EVENT_HANDLERS = Object.freeze({
@@ -4196,7 +4229,7 @@ const OS = {
     // scene. A blank workspace owns the shell, tools, panels, preferences, and
     // viewport without manufacturing a hidden document just to paint the UI.
     session: {
-        application: { id:'openshop', version:'0.27.0', ready:false },
+        application: { id:'openshop', version:'0.28.0', ready:false },
         workspace: { layout:'default', mode:'standard' },
         tool: { selectedId:'select' },
         document: { activeId:null, openIds:[], name:null },
@@ -4221,7 +4254,7 @@ const OS = {
     // while the app was 0.24.0 — and any future compatibility gate keyed on
     // appVersion would have misread them. The release-metadata test pins this
     // to package.json along with every other version string.
-    version: '0.27.0',
+    version: '0.28.0',
     // Canvas pixels are CSS pixels, so 96 is the honest default. A document
     // created in millimetres or inches carries whatever it was created at, and
     // the PSD and PDF exporters declare that rather than assuming 96.
@@ -4318,6 +4351,8 @@ const OS = {
     _macroRecording: false, _macroPlaying: false, _macroSteps: [],
     _liquifyData: null,
     _symmetryMode: 'off',
+    _pressureStroke: null,
+    _pressureSupported: false,
     _prefs: { gridSize: 20, historyStates: 120, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false, vectorStrokes: false },
     _importLimits: {
         maxJsonBytes: 10 * 1024 * 1024,
@@ -4435,15 +4470,16 @@ const OS = {
             theme: this._currentTheme || 'default'
         };
     },
-    setWorkspaceMode(mode) {
-        const allowed = new Set(['standard', 'essentials', 'motion']);
+    setWorkspaceMode(mode, { announce = true } = {}) {
+        const allowed = new Set(['standard', 'essentials', 'motion', 'mobile']);
         const next = allowed.has(mode) ? mode : 'standard';
         this.session.workspace = { ...this.session.workspace, mode: next };
         document.documentElement.dataset.osWorkspace = next;
         const selector = document.getElementById('workspace-selector');
         if (selector && selector.value !== next) selector.value = next;
+        try { localStorage.setItem('os_workspace_mode', next); } catch(e) { /* storage is optional */ }
         this._syncSessionWorkspace();
-        this.toast(`Workspace: ${next[0].toUpperCase()}${next.slice(1)}`, 'info');
+        if (announce) this.toast(`Workspace: ${next[0].toUpperCase()}${next.slice(1)}`, 'info');
     },
     _updateDocumentAvailability() {
         const blank = !this._hasActiveDocument();
@@ -4942,7 +4978,7 @@ const OS = {
         if (label) label.textContent = labels[this._persistenceState];
         const dirtyPrefix = this._isDirty ? '* ' : '';
         const stateSuffix = this._persistenceState === 'saving' ? ' (Saving)' : this._persistenceState === 'error' ? ' (Save failed)' : '';
-        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.27.0`;
+        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.28.0`;
         if (this.session) this.session.persistence = { state:this._persistenceState, dirty:Boolean(this._isDirty) };
     },
     _markDocumentDirty() {
@@ -9826,10 +9862,51 @@ self.onmessage = function(event) {
         c.freeDrawingBrush.color=this.state.tool==='eraser'?'rgba(0,0,0,1)':(this.state.brushOpacity<100?this._hexToRgba(this.state.fgColor,this.state.brushOpacity):this.state.fgColor);
         c.freeDrawingBrush.width = this.state.brushSize;
     },
+    _setPressureStatus(label) {
+        const status = document.getElementById('brush-pressure-status');
+        if (status) status.textContent = label;
+    },
+    _beginPressureStroke(event) {
+        if (!['brush', 'pencil', 'eraser'].includes(this.state.tool)) return;
+        if (String(event?.pointerType || '').toLowerCase() !== 'pen' || !Number.isFinite(Number(event?.pressure))) return;
+        const pressure = Math.max(0, Math.min(1, Number(event.pressure)));
+        this._pressureStroke = { min:pressure, max:pressure };
+        this._pressureSupported = false;
+        this._setPressureStatus('Stylus: tracking');
+        this._updatePressureBrush(event);
+    },
+    _updatePressureBrush(event) {
+        const stroke = this._pressureStroke;
+        const brush = this.canvas?.freeDrawingBrush;
+        if (!stroke || !brush || String(event?.pointerType || '').toLowerCase() !== 'pen') return;
+        const raw = Number(event?.pressure);
+        if (!Number.isFinite(raw)) return;
+        const pressure = Math.max(0, Math.min(1, raw));
+        stroke.min = Math.min(stroke.min, pressure);
+        stroke.max = Math.max(stroke.max, pressure);
+        const range = stroke.max - stroke.min;
+        if (range >= 0.05) {
+            this._pressureSupported = true;
+            this._setPressureStatus('Stylus: pressure');
+            const base = this.state.tool === 'pencil' ? 1 : Math.max(1, Number(this.state.brushSize) || 1);
+            brush.width = Math.max(1, base * (0.25 + pressure * 0.75));
+        } else {
+            this._setPressureStatus('Stylus: tracking');
+        }
+    },
+    _endPressureStroke() {
+        if (!this._pressureStroke) return;
+        const supported = this._pressureSupported;
+        this._pressureStroke = null;
+        const brush = this.canvas?.freeDrawingBrush;
+        if (brush) brush.width = this.state.tool === 'pencil' ? 1 : Math.max(1, Number(this.state.brushSize) || 1);
+        this._setPressureStatus(supported ? 'Stylus: pressure' : 'Stylus: fixed');
+    },
 
     // ====================== MOUSE ======================
     onMouseDown(opt) {
         const ptr = this.canvas.getPointer(opt.e), tool = this.state.tool;
+        this._beginPressureStroke(opt.e);
         // Read the modifier at the start of the gesture; by the time a marquee
         // is released it is usually already back up.
         if (this._selectionCombineTools.has(tool)) this._captureSelectionCombine(opt.e);
@@ -9925,6 +10002,7 @@ self.onmessage = function(event) {
     },
     onMouseMove(opt) {
         const ptr=this.canvas.getPointer(opt.e);
+        this._updatePressureBrush(opt.e);
         document.getElementById('cursor-pos').textContent=`X: ${Math.round(ptr.x)} Y: ${Math.round(ptr.y)}`;
         // Light the close marker while the pointer is over it.
         if (this.state.tool === 'lasso') {
@@ -9960,6 +10038,7 @@ self.onmessage = function(event) {
         }
     },
     onMouseUp(opt) {
+        this._endPressureStroke(opt.e);
         if(this.state.isPanning){
             this.state.isPanning=false;
             if (this._tempPanning) { this.canvas.defaultCursor='grab'; }
@@ -13258,6 +13337,7 @@ self.onmessage = function(event) {
         try {
             const savedLang = localStorage.getItem('os_lang');
             if (savedLang && savedLang !== 'en') this.setLocale(savedLang);
+            this.setWorkspaceMode(localStorage.getItem('os_workspace_mode') || this.session.workspace.mode, { announce:false });
         } catch(e) { console.warn('Language restore failed:', e.message); }
         this.updateMinimap();
     },

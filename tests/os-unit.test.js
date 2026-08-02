@@ -48,6 +48,47 @@ describe('OpenShop core object', () => {
     expect(document.getElementById('opt-ai-segment').style.display).toBe('flex');
   });
 
+  it('switches to the compact mobile workspace and persists the choice', () => {
+    const OS = loadOpenShop();
+    OS.toast = vi.fn();
+
+    OS.setWorkspaceMode('mobile');
+
+    expect(OS.session.workspace.mode).toBe('mobile');
+    expect(document.documentElement.dataset.osWorkspace).toBe('mobile');
+    expect(localStorage.getItem('os_workspace_mode')).toBe('mobile');
+    expect(OS.toast).toHaveBeenCalledWith('Workspace: Mobile', 'info');
+
+    OS.setWorkspaceMode('standard', { announce:false });
+    expect(document.documentElement.dataset.osWorkspace).toBe('standard');
+    expect(OS.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('enables stylus pressure only after observing pressure variance', () => {
+    const OS = loadOpenShop();
+    OS.canvas = createCanvasMock();
+    OS.canvas.freeDrawingBrush = { width:8 };
+    OS.state.tool = 'brush';
+    const status = document.createElement('span');
+    status.id = 'brush-pressure-status';
+    document.body.appendChild(status);
+
+    OS._beginPressureStroke({ pointerType:'pen', pressure:0.5 });
+    OS._updatePressureBrush({ pointerType:'pen', pressure:0.5 });
+    expect(OS._pressureSupported).toBe(false);
+    OS._endPressureStroke();
+    expect(status.textContent).toBe('Stylus: fixed');
+
+    OS.canvas.freeDrawingBrush.width = 8;
+    OS._beginPressureStroke({ pointerType:'pen', pressure:0.2 });
+    OS._updatePressureBrush({ pointerType:'pen', pressure:0.9 });
+    expect(OS._pressureSupported).toBe(true);
+    expect(OS.canvas.freeDrawingBrush.width).not.toBe(8);
+    OS._endPressureStroke();
+    expect(status.textContent).toBe('Stylus: pressure');
+    expect(OS.canvas.freeDrawingBrush.width).toBe(8);
+  });
+
   it('adds and deletes layers while keeping canvas objects in sync', () => {
     const OS = loadOpenShop();
     const canvasObject = { name: 'Pixel Layer', type: 'image' };

@@ -1,6 +1,6 @@
 # OpenShop
 
-![Version](https://img.shields.io/badge/version-0.27.0-blue)
+![Version](https://img.shields.io/badge/version-0.28.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Browser-orange)
 ![Zero Install](https://img.shields.io/badge/install-none_required-brightgreen)
@@ -31,6 +31,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Layer System** | Multi-layer canvas with canonical render/export stacking, non-destructive Levels, Curves, and HSL adjustment layers, independent raster masks with feather and density controls, re-editable embedded Smart Objects, editable vector paths with draggable anchors and Bezier controls, text-on-path with basic OpenType features, protected hidden or locked content, and undoable visibility, lock, opacity, blend, rename, and drag-reorder changes |
 | **34 Tools** | Move, Brush, Pencil, Eraser, Spray, Clone Stamp, Healing Brush, Dodge, Burn, Sponge, Smudge, Shapes (rect, ellipse, triangle, polygon, star, arrow, line), Pen, Text, Gradient, Pattern Fill, Flood Fill, Eyedropper, Crop, Measure, Sticky Notes, AI Segment Select, Pan, Zoom |
 | **Brush Engine** | Round, Soft, Flat, Scatter, Pixel presets with adjustable size, opacity, and flow; bounded `.abr` brush-set import adds persistent selectable presets |
+| **Mobile Workspace** | Switch the Workspace selector to Mobile for a compact bottom toolbar, slide-out panels, touch-safe canvas targets, and variance-detected pen pressure sizing |
 | **Selection Tools** | Rectangular/Elliptical Marquee, Magic Wand (contiguous + global), Lasso, Color Range dialog with fuzziness, presets, and live preview |
 | **Selection Operations** | Select All, Deselect, Reselect, Inverse, Grow, Similar, Modify (Expand, Contract, Feather, Border, Smooth) |
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |

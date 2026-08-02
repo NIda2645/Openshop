@@ -1,6 +1,6 @@
 'use strict';
 
-const SHELL_REVISION = '0.27.0-r2';
+const SHELL_REVISION = '0.28.0-r1';
 // State is origin-readable, so a cache name from it is never trusted merely
 // because it looks like a revision. Keep the bounded set of revisions this
 // worker knows were actually shipped; releases carry the newest predecessors
