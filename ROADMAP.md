@@ -62,13 +62,6 @@ testing gates.
 
 ### P1 — Trust, accessibility, and interoperability
 
-- [ ] P1 — Make WebRTC collaboration revision-safe and peer-identifiable
-  Why: Collaboration currently debounces and sends bounded full-document state over unauthenticated peer connections, so concurrent edits can overwrite each other and users cannot verify who is connected or recover a dropped session.
-  Evidence: `index.html` collaboration code (`_collabProtocolVersion`, 32 MiB state cap, 180 KiB chunks, `iceServers: []`); `README.md` manual offer/answer workflow; [Figma multiplayer architecture](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/) and [reliability design](https://www.figma.com/blog/making-multiplayer-more-reliable/).
-  Touches: `index.html`, collaboration unit/e2e tests, `README.md`.
-  Acceptance: Messages carry session/document/peer identity, monotonic revision and replay protection; concurrent layer/property edits converge deterministically or surface an explicit conflict; the UI shows peer fingerprint/consent, connection state, stale-message rejection, reconnect queue, and restore path; no pixel or document data leaves the selected peers.
-  Complexity: L
-
 - [ ] P1 — Synchronize version, browser-support, and release documentation
   Why: `CLAUDE.md` still identifies v0.27.0 while the package, manifest, shell, README, source, and changelog identify v0.28.0; the support table also distinguishes desktop breadth from unverified physical mobile coverage but has no automated consistency check.
   Evidence: `CLAUDE.md`, `package.json`, `manifest.webmanifest`, `README.md`, `index.html`, `sw.js`, and `CHANGELOG.md`.

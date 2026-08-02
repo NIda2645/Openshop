@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-dMEBMCcViWwCmxKHjbDsMhbsl+whJ8SoVtJ4YPztRuI=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-fASbAGn3aPEmYIWyi3L1uf1m7WXJO6Wg8wbmtd/F6Vk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -7422,13 +7422,48 @@ const OS = {
             if (rollback) await this._restoreRollbackState(rollback);
         }
     },
-    _collabProtocolVersion: 1,
+    _collabProtocolVersion: 2,
     _collabMaxStateBytes: 32 * 1024 * 1024,
     _collabChunkBytes: 180 * 1024,
     _collab: null,
+    _collabNewId(prefix) {
+        const uuid = globalThis.crypto?.randomUUID?.();
+        return `${prefix}-${(uuid || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`).replace(/-/g, '').slice(0, 20)}`;
+    },
+    _collabEnsureState(collab = this._collab) {
+        if (!collab) return null;
+        collab.peerId ||= this._collabNewId('peer');
+        collab.sessionId ||= null;
+        collab.remotePeerId ||= null;
+        collab.remoteRevision = Number.isInteger(collab.remoteRevision) ? collab.remoteRevision : null;
+        collab.localSequence = Number.isInteger(collab.localSequence) ? collab.localSequence : 0;
+        collab.lastReceivedByPeer ||= new Map();
+        collab.currentTuple ||= { revision:0, peerId:collab.peerId };
+        collab.pendingState = Boolean(collab.pendingState);
+        collab.consentGranted = collab.consentGranted !== false;
+        return collab;
+    },
+    _collabTupleKey(tuple) {
+        return `${String(tuple?.revision ?? -1).padStart(12, '0')}:${String(tuple?.peerId || '')}`;
+    },
+    _collabDescriptionMetadata() {
+        const collab = this._collabEnsureState();
+        if (!collab?.sessionId) return {};
+        return {
+            protocolVersion:this._collabProtocolVersion,
+            sessionId:collab.sessionId,
+            peerId:collab.peerId,
+            documentId:this._documentId || null
+        };
+    },
     _collabSetStatus(message, type = 'info') {
         const status = document.getElementById('collab-status');
         if (status) status.textContent = this._safeText(message, 240);
+        const peer = document.getElementById('collab-peer');
+        if (peer) {
+            const peerId = this._collab?.remotePeerId;
+            peer.textContent = peerId ? `Peer fingerprint: ${this._safeText(peerId, 80)}` : 'Peer fingerprint: not established';
+        }
         if (message && type === 'error') this.toast(message, 'error');
     },
     _collabWaitForIce(pc) {
@@ -7450,7 +7485,7 @@ const OS = {
         });
     },
     _collabDescriptionText(description) {
-        return JSON.stringify({ type:description.type, sdp:description.sdp });
+        return JSON.stringify({ type:description.type, sdp:description.sdp, ...this._collabDescriptionMetadata() });
     },
     _collabParseDescription(text) {
         if (String(text || '').length > 2 * 1024 * 1024) throw new Error('Signaling text is too large');
@@ -7459,18 +7494,27 @@ const OS = {
         if (!description || !['offer','answer'].includes(description.type) || typeof description.sdp !== 'string' || description.sdp.length > 2 * 1024 * 1024) {
             throw new Error('Signaling description is invalid');
         }
+        if (description.protocolVersion !== undefined && description.protocolVersion !== this._collabProtocolVersion) throw new Error('Signaling protocol version is unsupported');
+        if (description.sessionId !== undefined && (typeof description.sessionId !== 'string' || description.sessionId.length < 8 || description.sessionId.length > 80)) throw new Error('Signaling session identity is invalid');
+        if (description.peerId !== undefined && (typeof description.peerId !== 'string' || description.peerId.length < 8 || description.peerId.length > 80)) throw new Error('Signaling peer identity is invalid');
+        if (description.documentId !== undefined && description.documentId !== null && (typeof description.documentId !== 'string' || description.documentId.length > 100)) throw new Error('Signaling document identity is invalid');
         return description;
     },
     _collabAttachChannel(channel) {
         if (!this._collab || !channel) return false;
+        const collab = this._collabEnsureState();
         this._collab.channel?.close?.();
         this._collab.channel = channel;
         channel.binaryType = 'arraybuffer';
         channel.onopen = () => {
-            this._collabSetStatus('Connected — peer channel is ready', 'success');
-            if (this._collab?.role === 'offer') void this._collabSendState();
+            collab.pendingState = false;
+            this._collabSetStatus(`Connected — peer channel is ready (${collab.remotePeerId ? `peer ${collab.remotePeerId}` : 'identity pending'})`, 'success');
+            void this._collabSendState();
         };
-        channel.onclose = () => this._collabSetStatus('Peer channel closed', 'info');
+        channel.onclose = () => {
+            collab.pendingState = true;
+            this._collabSetStatus('Peer channel closed — local changes are queued for reconnect', 'info');
+        };
         channel.onerror = () => this._collabSetStatus('Peer channel reported an error', 'error');
         channel.onmessage = event => this._collabHandleMessage(event.data);
         return true;
@@ -7479,7 +7523,22 @@ const OS = {
         if (!window.RTCPeerConnection) throw new Error('WebRTC is not available in this browser');
         this.closeCollaboration({ silent:true });
         const peer = new RTCPeerConnection({ iceServers:[] });
-        this._collab = { role, peer, channel:null, applying:false, applyChain:Promise.resolve(), chunks:new Map(), broadcastTimer:null };
+        this._collab = this._collabEnsureState({
+            role,
+            peer,
+            channel:null,
+            applying:false,
+            applyChain:Promise.resolve(),
+            chunks:new Map(),
+            broadcastTimer:null,
+            sessionId:role === 'offer' ? this._collabNewId('session') : null,
+            peerId:this._collabNewId('peer'),
+            documentId:this._documentId || null,
+            localSequence:0,
+            currentTuple:{ revision:0, peerId:this._collabNewId('peer') },
+            consentGranted:this._collabConsentGiven()
+        });
+        this._collab.currentTuple.peerId = this._collab.peerId;
         peer.onconnectionstatechange = () => {
             const state = peer.connectionState || peer.iceConnectionState;
             this._collabSetStatus(`Peer connection: ${state}`);
@@ -7489,8 +7548,28 @@ const OS = {
         if (role === 'offer') this._collabAttachChannel(peer.createDataChannel('openshop-document', { ordered:true }));
         return peer;
     },
+    _collabConsentGiven() {
+        const consent = document.getElementById('collab-consent');
+        return consent ? Boolean(consent.checked) : true;
+    },
+    _collabRequireConsent() {
+        if (this._collabConsentGiven()) return true;
+        this._collabSetStatus('Check the consent box before sharing this document', 'error');
+        return false;
+    },
+    _collabAdoptDescriptionIdentity(description) {
+        const collab = this._collabEnsureState();
+        if (!collab || !description?.sessionId || !description.peerId) throw new Error('Signaling text has no peer identity');
+        if (collab.sessionId && collab.sessionId !== description.sessionId) throw new Error('Signaling text belongs to another session');
+        if (collab.remotePeerId && collab.remotePeerId !== description.peerId) throw new Error('A different peer is already attached');
+        collab.sessionId = description.sessionId;
+        collab.remotePeerId = description.peerId;
+        collab.remoteDocumentId = description.documentId || null;
+        return collab;
+    },
     async _collabCreateOffer(localField) {
         try {
+            if (!this._collabRequireConsent()) return false;
             const peer = this._collabCreatePeer('offer');
             await peer.setLocalDescription(await peer.createOffer());
             await this._collabWaitForIce(peer);
@@ -7504,11 +7583,14 @@ const OS = {
     },
     async _collabCreateAnswer(localField, remoteField) {
         try {
+            if (!this._collabRequireConsent()) return false;
+            const description = this._collabParseDescription(remoteField.value);
             const session = this._collab || (this._collabCreatePeer('answer'), this._collab);
+            this._collabAdoptDescriptionIdentity(description);
             if (session.role !== 'answer') {
                 throw new Error('This peer already created an offer');
             }
-            await session.peer.setRemoteDescription(this._collabParseDescription(remoteField.value));
+            await session.peer.setRemoteDescription(description);
             await session.peer.setLocalDescription(await session.peer.createAnswer());
             await this._collabWaitForIce(session.peer);
             localField.value = this._collabDescriptionText(session.peer.localDescription);
@@ -7521,15 +7603,18 @@ const OS = {
     },
     async _collabApplyRemote(remoteField, localField) {
         try {
+            if (!this._collabRequireConsent()) return false;
             const description = this._collabParseDescription(remoteField.value);
             if (!this._collab) {
                 if (description.type !== 'offer') throw new Error('Start with an offer when joining a session');
                 this._collabCreatePeer('answer');
+                this._collabAdoptDescriptionIdentity(description);
                 await this._collabCreateAnswer(localField, remoteField);
                 return true;
             }
             if (this._collab.role === 'offer' && description.type !== 'answer') throw new Error('The offer peer expects an answer');
             if (this._collab.role === 'answer' && description.type !== 'offer') throw new Error('The joining peer expects an offer');
+            this._collabAdoptDescriptionIdentity(description);
             await this._collab.peer.setRemoteDescription(description);
             if (this._collab.role === 'answer') {
                 await this._collab.peer.setLocalDescription(await this._collab.peer.createAnswer());
@@ -7548,66 +7633,167 @@ const OS = {
     _collabSendPayload(payload) {
         const channel = this._collab?.channel;
         if (!channel || channel.readyState !== 'open') return false;
+        const collab = this._collabEnsureState();
         const text = JSON.stringify(payload);
         const bytes = new TextEncoder().encode(text);
         if (bytes.byteLength <= this._collabChunkBytes) { channel.send(text); return true; }
         if (bytes.byteLength > this._collabMaxStateBytes) throw new Error('Document is too large for the collaboration channel');
         const transferId = `state-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const total = Math.ceil(bytes.byteLength / this._collabChunkBytes);
+        const identity = {
+            sessionId:payload.sessionId || collab?.sessionId || null,
+            peerId:payload.peerId || collab?.peerId || null,
+            documentId:payload.documentId || this._documentId || null,
+            revision:Number.isInteger(payload.revision) ? payload.revision : null,
+            baseRevision:Number.isInteger(payload.baseRevision) ? payload.baseRevision : null
+        };
         for (let index = 0; index < total; index++) {
             const chunk = bytes.subarray(index * this._collabChunkBytes, (index + 1) * this._collabChunkBytes);
-            channel.send(JSON.stringify({ kind:'openshop-collab', version:this._collabProtocolVersion, type:'chunk', transferId, index, total, data:this._encodeHistoryBytes(chunk) }));
+            channel.send(JSON.stringify({ kind:'openshop-collab', version:this._collabProtocolVersion, type:'chunk', transferId, index, total, data:this._encodeHistoryBytes(chunk), ...identity }));
         }
         return true;
     },
     async _collabSendState() {
         try {
+            const collab = this._collabEnsureState();
+            if (!collab?.channel || collab.channel.readyState !== 'open') {
+                if (collab) collab.pendingState = true;
+                return false;
+            }
+            if (!collab.consentGranted) throw new Error('Document sharing consent has not been granted');
             const state = this._captureDocumentState();
             const text = JSON.stringify(state);
             if (new TextEncoder().encode(text).byteLength > this._collabMaxStateBytes) throw new Error('Document is too large for the collaboration channel');
-            return this._collabSendPayload({ kind:'openshop-collab', version:this._collabProtocolVersion, type:'state', state });
+            const revision = Math.max(collab.localSequence + 1, this._documentRevision, Number(collab.currentTuple?.revision || 0) + 1);
+            collab.localSequence = revision;
+            collab.currentTuple = { revision, peerId:collab.peerId };
+            collab.pendingState = false;
+            return this._collabSendPayload({
+                kind:'openshop-collab',
+                version:this._collabProtocolVersion,
+                type:'state',
+                sessionId:collab.sessionId,
+                peerId:collab.peerId,
+                documentId:this._documentId || state.document?.id || null,
+                revision,
+                baseRevision:collab.remoteRevision,
+                state
+            });
         } catch (error) {
             this._collabSetStatus(`Could not send document: ${error.message}`, 'error');
             return false;
         }
     },
     _scheduleCollabStateBroadcast() {
-        if (!this._collab?.channel || this._collab.applying) return;
+        if (!this._collab || this._collab.applying) return;
+        if (!this._collab.channel || this._collab.channel.readyState !== 'open') {
+            this._collab.pendingState = true;
+            return;
+        }
         clearTimeout(this._collab.broadcastTimer);
         this._collab.broadcastTimer = setTimeout(() => { void this._collabSendState(); }, 120);
     },
+    _collabValidateIdentity(message, { markReceived = true } = {}) {
+        const collab = this._collabEnsureState();
+        if (!collab || message?.sessionId !== collab.sessionId || typeof message?.peerId !== 'string' || message.peerId === collab.peerId) {
+            this._collabSetStatus('Rejected collaboration message from an unknown session or peer', 'error');
+            return false;
+        }
+        if (collab.remotePeerId && collab.remotePeerId !== message.peerId) {
+            this._collabSetStatus('Rejected collaboration message from a second peer', 'error');
+            return false;
+        }
+        if (!Number.isInteger(message.revision) || message.revision < 0) {
+            this._collabSetStatus('Rejected collaboration message without a valid revision', 'error');
+            return false;
+        }
+        collab.remotePeerId ||= message.peerId;
+        const previousRevision = collab.lastReceivedByPeer.get(message.peerId) ?? -1;
+        if (message.revision <= previousRevision) {
+            this._collabSetStatus(`Ignored stale collaboration revision ${message.revision}`, 'info');
+            return false;
+        }
+        if (markReceived) {
+            collab.lastReceivedByPeer.set(message.peerId, message.revision);
+            collab.remoteRevision = Math.max(collab.remoteRevision ?? -1, message.revision);
+        }
+        return true;
+    },
+    _collabHandleStatePayload(message) {
+        const collab = this._collabEnsureState();
+        if (!message?.state || message.state.kind !== 'openshop-document' || !collab) return false;
+        const stateDocumentId = message.state.document?.id || null;
+        if (message.documentId !== stateDocumentId) {
+            this._collabSetStatus('Rejected collaboration state with mismatched document identity', 'error');
+            return false;
+        }
+        if (!this._collabValidateIdentity(message)) return false;
+        const incomingTuple = { revision:message.revision, peerId:message.peerId };
+        const currentTuple = collab.currentTuple || { revision:0, peerId:collab.peerId };
+        const concurrent = Number.isInteger(message.baseRevision) && message.baseRevision !== currentTuple.revision;
+        if (this._collabTupleKey(incomingTuple) <= this._collabTupleKey(currentTuple)) {
+            collab.lastConflict = {
+                winner:currentTuple,
+                loser:incomingTuple,
+                reason:concurrent ? 'concurrent revisions' : 'older revision'
+            };
+            this._collabSetStatus(`Conflict resolved locally; retained revision ${currentTuple.revision}`, 'info');
+            return false;
+        }
+        this._collabQueueState(message.state, { tuple:incomingTuple, concurrent });
+        return true;
+    },
     _collabHandleMessage(raw) {
         let message;
-        try { message = typeof raw === 'string' ? JSON.parse(raw) : null; } catch { return; }
+        try { message = typeof raw === 'string' ? JSON.parse(raw) : null; } catch { this._collabSetStatus('Received collaboration message was not valid JSON', 'error'); return; }
         if (!message || message.kind !== 'openshop-collab' || message.version !== this._collabProtocolVersion) return;
-        if (message.type === 'state' && message.state) {
-            this._collabQueueState(message.state);
+        if (message.type === 'state') {
+            this._collabHandleStatePayload(message);
             return;
         }
         if (message.type !== 'chunk' || typeof message.transferId !== 'string' || !Number.isInteger(message.index) || !Number.isInteger(message.total) || message.total < 1 || message.total > 512 || message.index < 0 || message.index >= message.total || typeof message.data !== 'string') return;
+        if (!this._collab?.chunks) return;
         let transfer = this._collab.chunks.get(message.transferId);
-        if (!transfer) { transfer = { total:message.total, parts:new Array(message.total), size:0 }; this._collab.chunks.set(message.transferId, transfer); }
-        if (transfer.total !== message.total || transfer.parts[message.index]) return;
-        const bytes = this._decodeHistoryBytes(message.data);
+        if (!transfer) {
+            if (!this._collabValidateIdentity(message, { markReceived:false })) return;
+            transfer = {
+                total:message.total,
+                parts:new Array(message.total),
+                size:0,
+                identity:{ sessionId:message.sessionId, peerId:message.peerId, documentId:message.documentId, revision:message.revision, baseRevision:message.baseRevision }
+            };
+            this._collab.chunks.set(message.transferId, transfer);
+        }
+        if (transfer.total !== message.total || transfer.parts[message.index] || Object.entries(transfer.identity).some(([key, value]) => message[key] !== value)) return;
+        let bytes;
+        try { bytes = this._decodeHistoryBytes(message.data); } catch { this._collab.chunks.delete(message.transferId); return; }
         transfer.parts[message.index] = bytes; transfer.size += bytes.byteLength;
         if (transfer.size > this._collabMaxStateBytes) { this._collab.chunks.delete(message.transferId); return; }
         if (transfer.parts.some(part => !part)) return;
         const merged = new Uint8Array(transfer.size); let offset = 0;
         transfer.parts.forEach(part => { merged.set(part, offset); offset += part.byteLength; });
         this._collab.chunks.delete(message.transferId);
-        try { this._collabQueueState(JSON.parse(new TextDecoder().decode(merged))); } catch { this._collabSetStatus('Received collaboration state was invalid', 'error'); }
+        try { this._collabHandleStatePayload(JSON.parse(new TextDecoder().decode(merged))); } catch { this._collabSetStatus('Received collaboration state was invalid', 'error'); }
     },
-    _collabQueueState(state) {
+    _collabQueueState(state, { tuple = null, concurrent = false } = {}) {
         if (!state || state.kind !== 'openshop-document') return;
-        const collab = this._collab;
+        const collab = this._collabEnsureState();
         if (!collab) return;
         collab.applyChain = collab.applyChain.then(async () => {
+            const rollback = this._captureRollbackState();
             collab.applying = true;
             try {
                 const loaded = await this._loadDocumentState(state, { fitToViewport:true, trusted:false });
-                this._collabSetStatus(loaded === false ? 'Peer document was rejected' : 'Synchronized with peer');
+                if (loaded === false) {
+                    if (rollback) await this._restoreRollbackState(rollback);
+                    this._collabSetStatus('Peer document was rejected; local document restored', 'error');
+                    return;
+                }
+                if (tuple) collab.currentTuple = tuple;
+                this._collabSetStatus(concurrent ? 'Concurrent edit resolved deterministically' : 'Synchronized with peer', 'success');
             } catch (error) {
-                this._collabSetStatus(`Could not apply peer document: ${error.message}`, 'error');
+                if (rollback) await this._restoreRollbackState(rollback);
+                this._collabSetStatus(`Peer document rejected; local document restored: ${error.message}`, 'error');
             } finally {
                 collab.applying = false;
             }
@@ -7636,17 +7822,19 @@ const OS = {
         if (overlay) { overlay.classList.add('show'); return overlay; }
         overlay = document.createElement('div'); overlay.id = 'collab-overlay'; overlay.className = 'modal-overlay';
         overlay.innerHTML = `<div class="modal" style="max-width:680px"><h3>Collaborative Session</h3>
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Peer-to-peer WebRTC session with manual offer/answer exchange. No server or document relay is used.</p>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Peer-to-peer WebRTC session with manual offer/answer exchange. No server or document relay is used; only the selected peer receives document state.</p>
+            <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text-secondary);margin-bottom:8px"><input id="collab-consent" type="checkbox"> I consent to share this document with the peer identified by the exchanged signaling text.</label>
             <div class="modal-row"><button class="btn btn-primary" data-collab-offer>Create offer</button><button class="btn" data-collab-join>Join with offer</button><button class="btn" data-collab-copy>Copy local</button></div>
             <label style="display:block;font-size:11px;color:var(--text-secondary);margin-top:10px">Local signaling text</label><textarea id="collab-local" rows="5" readonly spellcheck="false" style="width:100%;font-family:monospace;font-size:10px"></textarea>
             <label style="display:block;font-size:11px;color:var(--text-secondary);margin-top:10px">Remote signaling text</label><textarea id="collab-remote" rows="5" spellcheck="false" style="width:100%;font-family:monospace;font-size:10px"></textarea>
-            <div class="modal-row"><button class="btn btn-primary" data-collab-apply>Apply remote / create answer</button><span id="collab-status" style="font-size:11px;color:var(--text-secondary)">Not connected</span></div>
+            <div class="modal-row"><button class="btn btn-primary" data-collab-apply>Apply remote / create answer</button><span id="collab-status" style="font-size:11px;color:var(--text-secondary)" aria-live="polite">Not connected</span></div>
+            <p id="collab-peer" style="font-size:11px;color:var(--text-muted);margin:8px 0 0">Peer fingerprint: not established</p>
             <div class="modal-btns"><button class="btn" data-collab-disconnect>Disconnect</button><button class="btn" data-modal-close>Close</button></div></div>`;
         const local = overlay.querySelector('#collab-local');
         const remote = overlay.querySelector('#collab-remote');
         overlay.querySelector('[data-modal-close]').addEventListener('click', () => overlay.remove());
         overlay.querySelector('[data-collab-offer]').addEventListener('click', () => { void this._collabCreateOffer(local); });
-        overlay.querySelector('[data-collab-join]').addEventListener('click', () => { try { this._collabCreatePeer('answer'); this._collabSetStatus('Paste the offer into Remote signaling text'); } catch (error) { this._collabSetStatus(error.message, 'error'); } });
+        overlay.querySelector('[data-collab-join]').addEventListener('click', () => { try { if (!this._collabRequireConsent()) return; this._collabCreatePeer('answer'); this._collabSetStatus('Paste the offer into Remote signaling text'); } catch (error) { this._collabSetStatus(error.message, 'error'); } });
         overlay.querySelector('[data-collab-copy]').addEventListener('click', () => { void this._collabCopyLocal(); });
         overlay.querySelector('[data-collab-apply]').addEventListener('click', () => { void this._collabApplyRemote(remote, local); });
         overlay.querySelector('[data-collab-disconnect]').addEventListener('click', () => this.closeCollaboration());

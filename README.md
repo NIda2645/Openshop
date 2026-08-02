@@ -66,7 +66,7 @@ Batch processing accepts raster images plus an `openshop-command-sequence` JSON 
 
 Use **Color → Swatches → Import** for ASE/GPL/JSON palettes, Photoshop ABR brush sets, or Photoshop GRD gradients. Imported brushes and gradients are bounded, sanitized, and retained in browser storage; ABR entries use the closest native stroke adapter while preserving their selectable preset metadata.
 
-Collaborative Session is available from the command palette. It uses WebRTC with no configured ICE relay: the offer creator selects **Create offer**, sends the generated JSON to the other peer, then applies the returned answer; the joining peer selects **Join with offer**, pastes the offer, and sends the generated answer back. State transfers are bounded and chunked, and received projects go through the normal document sanitizer before replacing the local canvas.
+Collaborative Session is available from the command palette. It uses WebRTC with no configured ICE relay: the offer creator selects **Create offer**, sends the generated JSON to the other peer, then applies the returned answer; the joining peer selects **Join with offer**, pastes the offer, and sends the generated answer back. The dialog requires explicit sharing consent and shows an opaque peer fingerprint. State transfers are bounded, chunked, bound to a session/document/peer identity, and revision-checked; stale or concurrent states are rejected or resolved by deterministic `(revision, peer)` ordering, and a failed remote load restores the local document.
 
 ### AI Features (Client-Side, via Transformers.js 4.2)
 

@@ -295,6 +295,57 @@ describe('OpenShop core object', () => {
     expect(OS._collab).toBeNull();
   });
 
+  it('binds collaboration state to a session, peer, document, and monotonic revision', () => {
+    const OS = loadOpenShop();
+    OS._collab = {
+      sessionId:'session-12345678',
+      peerId:'peer-local123',
+      remotePeerId:'peer-remote123',
+      channel:{ readyState:'open', send:vi.fn() },
+      applyChain:Promise.resolve(),
+      chunks:new Map(),
+      currentTuple:{ revision:2, peerId:'peer-local123' },
+      lastReceivedByPeer:new Map(),
+      localSequence:2,
+      remoteRevision:null,
+      consentGranted:true
+    };
+    OS._collabQueueState = vi.fn();
+    const state = { kind:'openshop-document', schemaVersion:1, document:{ id:'remote-document' } };
+    const message = {
+      kind:'openshop-collab', version:OS._collabProtocolVersion, type:'state',
+      sessionId:'session-12345678', peerId:'peer-remote123', documentId:'remote-document',
+      revision:3, baseRevision:2, state
+    };
+
+    expect(OS._collabHandleStatePayload(message)).toBe(true);
+    expect(OS._collabQueueState).toHaveBeenCalledWith(state, { tuple:{ revision:3, peerId:'peer-remote123' }, concurrent:false });
+    expect(OS._collabHandleStatePayload(message)).toBe(false);
+    expect(OS._collabSetStatus).toBeDefined();
+    expect(OS._collab.lastReceivedByPeer.get('peer-remote123')).toBe(3);
+  });
+
+  it('surfaces concurrent collaboration conflicts with deterministic tuple ordering', () => {
+    const OS = loadOpenShop();
+    OS._collab = {
+      sessionId:'session-12345678', peerId:'peer-local123', remotePeerId:'peer-remote123',
+      currentTuple:{ revision:4, peerId:'peer-local123' }, lastReceivedByPeer:new Map(),
+      chunks:new Map(), applyChain:Promise.resolve(), localSequence:4, remoteRevision:null, consentGranted:true
+    };
+    OS._collabQueueState = vi.fn();
+    const state = { kind:'openshop-document', schemaVersion:1, document:{ id:'remote-document' } };
+    const message = {
+      kind:'openshop-collab', version:OS._collabProtocolVersion, type:'state',
+      sessionId:'session-12345678', peerId:'peer-remote123', documentId:'remote-document',
+      revision:4, baseRevision:0, state
+    };
+
+    expect(OS._collabHandleStatePayload(message)).toBe(true);
+    expect(OS._collabQueueState).toHaveBeenCalledTimes(1);
+    expect(OS._collabQueueState.mock.calls[0][1].concurrent).toBe(true);
+    expect(OS._collab.currentTuple).toEqual({ revision:4, peerId:'peer-local123' });
+  });
+
   it('registers only capability-scoped sandbox plugins and disposes their resources', () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);

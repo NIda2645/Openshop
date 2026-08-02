@@ -9,6 +9,7 @@ All notable changes to Openshop will be documented in this file.
 - Drive the page loader, service-worker cache allowlist, security checker, and runtime package/license report from one canonical asset manifest; all 23 verified lazy assets are now cache-allowlisted.
 - Make the Layers and History panels keyboard-operable listboxes with active-descendant semantics, announced position/selection state, keyboard reorder/delete paths, and Chromium/Firefox/WebKit coverage.
 - Add an explicit document migration registry, rollback-safe future-schema rejection, and structured OpenShop/PSD loss reports for unsupported fields, color modes, metadata, and approximations.
+- Make manual WebRTC sessions peer-identifiable and revision-safe with explicit consent, replay rejection, deterministic conflict handling, reconnect queuing, and local-document restore on failed remote loads.
 
 ## [v0.28.0] - 2026-08-02
 

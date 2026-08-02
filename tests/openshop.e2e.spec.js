@@ -121,6 +121,24 @@ test('navigates Layers and History listboxes without a pointer @cross-browser', 
   await expect(history.locator('[aria-selected="true"]')).toHaveCount(1);
 });
 
+test('requires collaboration consent and exposes peer identity status', async ({ page }) => {
+  await openApp(page);
+  const result = await page.evaluate(() => {
+    OS.showCollaborationDialog();
+    const overlay = document.getElementById('collab-overlay');
+    return {
+      consentRequired: overlay.querySelector('#collab-consent').checked === false,
+      consentLabel: overlay.querySelector('label').textContent,
+      peerStatus: overlay.querySelector('#collab-peer').textContent,
+      statusLive: overlay.querySelector('#collab-status').getAttribute('aria-live')
+    };
+  });
+  expect(result.consentRequired).toBe(true);
+  expect(result.consentLabel).toContain('consent');
+  expect(result.peerStatus).toBe('Peer fingerprint: not established');
+  expect(result.statusLive).toBe('polite');
+});
+
 test('exposes clean, dirty, saving, and saved project states @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
