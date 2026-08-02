@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-DhhM/AONPrbTu2h/wi7o+Lxoz0BD4W0Sk5uKjZXNOjg=' 'sha256-kQtnoZ3YRrdjSM73F/FmzIWkN/XZUg2telqdNcn6PBM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-DhhM/AONPrbTu2h/wi7o+Lxoz0BD4W0Sk5uKjZXNOjg=' 'sha256-KzmmFZ7Yq9brGvRB1ypJivDRWoR9n/To2kNQ+1/F4FY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2757,6 +2757,12 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
                      <button class="btn" id="edit-smart-object" type="button">Edit Source</button>
                  </div>
                  <div style="height:1px;background:var(--border);margin:10px 0"></div>
+                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Vector Path</div>
+                 <div class="adj-btns">
+                     <button class="btn btn-primary" id="convert-vector-path" type="button">Convert to Path</button>
+                     <button class="btn" id="edit-vector-path" type="button">Edit Path</button>
+                 </div>
+                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Text Effects</div>
                 <div class="text-fx-row"><label>Shadow X</label><input type="range" id="tfx-sx" min="-20" max="20" value="2" data-os-input="input-020"></div>
                 <div class="text-fx-row"><label>Shadow Y</label><input type="range" id="tfx-sy" min="-20" max="20" value="2" data-os-input="input-020"></div>
@@ -4689,6 +4695,8 @@ const OS = {
         document.getElementById('apply-adjustment-layers')?.addEventListener('click', () => { void this.applyAdjustmentLayers(); });
         document.getElementById('convert-smart-object')?.addEventListener('click', () => { void this.convertToSmartObject(); });
         document.getElementById('edit-smart-object')?.addEventListener('click', () => { this.showSmartObjectDialog(); });
+        document.getElementById('convert-vector-path')?.addEventListener('click', () => { this.convertSelectedVectorToPath(); });
+        document.getElementById('edit-vector-path')?.addEventListener('click', () => { this.editSelectedVectorPath(); });
         const ca = document.getElementById('canvas-area');
         ca.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
         ca.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); this.handleDrop(e); });
@@ -8349,6 +8357,7 @@ self.onmessage = function(event) {
     // structure they were saved with.
     _addObjectAsLayer(object, name) {
         if (!this.canvas.getObjects().includes(object)) this.canvas.add(object);
+        this.canvas.setActiveObject?.(object);
         if (this._prefs?.stackNewObjects && this.layers[this.activeLayerIdx]?.kind !== 'adjustment') {
             this.layers[this.activeLayerIdx].objects.push(object);
             return this.layers[this.activeLayerIdx];
@@ -15827,6 +15836,132 @@ self.onmessage = async function(event) {
             reader.readAsDataURL(selected);
         });
         return overlay;
+    },
+
+    // ====================== VECTOR PATHS ======================
+    _vectorPathData(object) {
+        if (!object) return null;
+        if (object.type === 'path') return object.path;
+        if (object.type === 'line') {
+            const x1 = Number(object.x1 || 0), y1 = Number(object.y1 || 0), x2 = Number(object.x2 || 0), y2 = Number(object.y2 || 0);
+            return [['M', x1, y1], ['L', x2, y2]];
+        }
+        if (object.type === 'rect' || object.type === 'triangle') {
+            const width = Math.max(1, Number(object.width) || 1), height = Math.max(1, Number(object.height) || 1);
+            return object.type === 'triangle'
+                ? [['M', width / 2, 0], ['L', width, height], ['L', 0, height], ['Z']]
+                : [['M', 0, 0], ['L', width, 0], ['L', width, height], ['L', 0, height], ['Z']];
+        }
+        if (object.type === 'circle' || object.type === 'ellipse') {
+            const rx = object.type === 'circle' ? Number(object.radius) || 1 : (Number(object.rx) || Number(object.width) / 2 || 1);
+            const ry = object.type === 'circle' ? rx : (Number(object.ry) || Number(object.height) / 2 || 1);
+            const k = 0.5522848;
+            return [['M', rx, 0], ['C', rx + k * rx, 0, rx + k * rx, 2 * ry, rx, 2 * ry], ['C', rx - k * rx, 2 * ry, rx - k * rx, 0, rx, 0], ['Z']];
+        }
+        if (object.type === 'polygon' || object.type === 'polyline') {
+            const points = Array.isArray(object.points) ? object.points : [];
+            if (points.length < 2) return null;
+            const minX = Math.min(...points.map(point => Number(point.x) || 0));
+            const minY = Math.min(...points.map(point => Number(point.y) || 0));
+            const commands = points.map((point, index) => [index ? 'L' : 'M', (Number(point.x) || 0) - minX, (Number(point.y) || 0) - minY]);
+            if (object.type === 'polygon') commands.push(['Z']);
+            return commands;
+        }
+        return null;
+    },
+    convertSelectedVectorToPath() {
+        const active = this.canvas.getActiveObject();
+        if (!active) { this.toast('Select a vector shape first', 'info'); return false; }
+        const pathData = this._vectorPathData(active);
+        if (!pathData) { this.toast('Select a vector shape or path first', 'info'); return false; }
+        if (active.type === 'path') { this.editSelectedVectorPath(); return true; }
+        const replacement = new fabric.Path(pathData, {
+            fill:active.fill, stroke:active.stroke, strokeWidth:active.strokeWidth,
+            strokeUniform:active.strokeUniform, opacity:active.opacity,
+            globalCompositeOperation:active.globalCompositeOperation,
+            selectable:active.selectable, evented:active.evented,
+            name:active.name || this._shapeLayerName(active.type)
+        });
+        replacement.set({ angle:active.angle || 0, scaleX:active.scaleX || 1, scaleY:active.scaleY || 1, skewX:active.skewX || 0, skewY:active.skewY || 0, flipX:Boolean(active.flipX), flipY:Boolean(active.flipY) });
+        if (active.getCenterPoint && replacement.setPositionByOrigin) replacement.setPositionByOrigin(active.getCenterPoint(), 'center', 'center');
+        const layer = this.layers.find(layer => layer.objects.includes(active));
+        if (!layer) return false;
+        const index = layer.objects.indexOf(active); layer.objects[index] = replacement;
+        this.canvas.remove(active); this.canvas.add(replacement); this.canvas.setActiveObject(replacement);
+        this._enforceLayerInvariants(); this.canvas.renderAll(); this.saveHistory('Convert Vector to Path'); this.updateLayersPanel();
+        this.toast('Vector shape converted to an editable path', 'success');
+        return true;
+    },
+    _pathHandleEntries(object) {
+        const entries = [];
+        (object?.path || []).forEach((command, commandIndex) => {
+            const type = String(command[0]).toUpperCase();
+            const points = type === 'C' ? [1, 2, 3, 4, 5, 6] : type === 'Q' ? [1, 2, 3, 4] : type === 'M' || type === 'L' ? [1, 2] : [];
+            for (let index = 0; index < points.length; index += 2) entries.push({ commandIndex, xIndex:points[index], yIndex:points[index + 1], control:index < points.length - 2 });
+        });
+        return entries;
+    },
+    _pathLocalPoint(entry) {
+        const command = this._pathEditObject?.path?.[entry.commandIndex];
+        return command ? { x:Number(command[entry.xIndex]) || 0, y:Number(command[entry.yIndex]) || 0 } : null;
+    },
+    _pathScreenPoint(point) {
+        const object = this._pathEditObject;
+        const canvas = this.canvas;
+        const element = canvas.lowerCanvasEl || canvas.upperCanvasEl;
+        const canvasRect = element.getBoundingClientRect();
+        const vpt = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+        const transformed = fabric.util.transformPoint(point, object.calcTransformMatrix());
+        return { x:canvasRect.left + transformed.x * vpt[0] + transformed.y * vpt[2] + vpt[4], y:canvasRect.top + transformed.x * vpt[1] + transformed.y * vpt[3] + vpt[5] };
+    },
+    _renderPathEditOverlay() {
+        const overlay = document.getElementById('path-edit-overlay');
+        if (!overlay || !this._pathEditObject) return;
+        const svg = overlay.querySelector('svg'); svg.replaceChildren();
+        const namespace = 'http://www.w3.org/2000/svg';
+        this._pathHandleEntries(this._pathEditObject).forEach((entry, index) => {
+            const point = this._pathLocalPoint(entry); if (!point) return;
+            const screen = this._pathScreenPoint(point);
+            const handle = document.createElementNS(namespace, 'circle');
+            handle.setAttribute('cx', screen.x); handle.setAttribute('cy', screen.y); handle.setAttribute('r', entry.control ? '4' : '6');
+            handle.setAttribute('class', entry.control ? 'path-control-handle' : 'path-anchor-handle'); handle.dataset.handleIndex = index; handle.style.pointerEvents = 'auto';
+            svg.appendChild(handle);
+        });
+    },
+    editSelectedVectorPath() {
+        if (document.getElementById('path-edit-overlay')) return this.finishPathEdit(true);
+        const active = this.canvas.getActiveObject();
+        if (!active) { this.toast('Select a vector path first', 'info'); return false; }
+        if (active.type !== 'path') {
+            if (!this.convertSelectedVectorToPath()) return false;
+            return this.editSelectedVectorPath();
+        }
+        this.finishPathEdit(false);
+        this._pathEditObject = active; this._pathEditDirty = false;
+        const overlay = document.createElement('div'); overlay.id = 'path-edit-overlay'; overlay.style.cssText = 'position:fixed;inset:0;z-index:12000;pointer-events:none';
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', String(window.innerWidth)); svg.setAttribute('height', String(window.innerHeight)); svg.style.cssText = 'position:absolute;inset:0;overflow:visible;pointer-events:none'; overlay.appendChild(svg); document.body.appendChild(overlay);
+        const down = event => {
+            const handle = event.target.closest?.('[data-handle-index]');
+            if (!handle) return; event.preventDefault(); this._pathEditHandle = this._pathHandleEntries(this._pathEditObject)[Number(handle.dataset.handleIndex)];
+        };
+        const move = event => {
+            if (!this._pathEditHandle) return;
+            const pointer = this.canvas.getPointer(event); const inverse = fabric.util.invertTransform(this._pathEditObject.calcTransformMatrix()); const local = fabric.util.transformPoint(pointer, inverse); const command = this._pathEditObject.path[this._pathEditHandle.commandIndex];
+            command[this._pathEditHandle.xIndex] = local.x; command[this._pathEditHandle.yIndex] = local.y; this._pathEditDirty = true; this._pathEditObject.dirty = true; this._pathEditObject.setCoords?.(); this.canvas.renderAll(); this._renderPathEditOverlay();
+        };
+        const up = () => { this._pathEditHandle = null; };
+        svg.addEventListener('pointerdown', down); document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+        overlay._cleanup = () => { svg.removeEventListener('pointerdown', down); document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+        this._renderPathEditOverlay(); this.toast('Drag path anchors and Bezier controls; click Edit Path again when done', 'info');
+        return true;
+    },
+    finishPathEdit(record = true) {
+        const overlay = document.getElementById('path-edit-overlay');
+        if (!overlay) return false;
+        overlay._cleanup?.(); overlay.remove();
+        const changed = Boolean(this._pathEditDirty); this._pathEditObject = null; this._pathEditHandle = null; this._pathEditDirty = false;
+        if (record && changed) { this.canvas.renderAll(); this.saveHistory('Edit Vector Path'); }
+        return changed;
     },
 
     // ====================== PEN / BEZIER TOOL ======================

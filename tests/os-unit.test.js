@@ -1355,6 +1355,20 @@ describe('OpenShop core object', () => {
     expect(() => OS._normalizeSmartObject({ source:'https://example.test/photo.png' }, { validate:true })).toThrow(/invalid/);
   });
 
+  it('keeps vector conversions as editable path commands with Bezier handles', () => {
+    const OS = loadOpenShop();
+    expect(OS._vectorPathData({ type:'rect', width:40, height:20 })).toEqual([
+      ['M', 0, 0], ['L', 40, 0], ['L', 40, 20], ['L', 0, 20], ['Z']
+    ]);
+    const path = { path:[['M', 0, 0], ['C', 10, 20, 30, 40, 50, 60], ['Z']] };
+    expect(OS._pathHandleEntries(path)).toEqual([
+      { commandIndex:0, xIndex:1, yIndex:2, control:false },
+      { commandIndex:1, xIndex:1, yIndex:2, control:true },
+      { commandIndex:1, xIndex:3, yIndex:4, control:true },
+      { commandIndex:1, xIndex:5, yIndex:6, control:false }
+    ]);
+  });
+
   it('registers one installed-app launch consumer and routes supported files', async () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);
