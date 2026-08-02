@@ -4373,6 +4373,39 @@ test('imports animated WebP frames with microsecond durations converted to timel
   });
 });
 
+test('loads the verified LibRaw runtime and imports a demosaiced RAW preview', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const LibRaw = await OS._loadLibRaw();
+    const runtimeLoaded = typeof LibRaw === 'function';
+    const decoder = new LibRaw();
+    decoder.dispose();
+    class FakeLibRaw {
+      async open() {}
+      async metadata() { return { camera_make:'OpenShop', camera_model:'Fixture', iso_speed:200, width:2, height:1 }; }
+      async imageData() { return { width:2, height:1, colors:3, bits:8, data:new Uint8Array([255,0,0, 0,255,0]) }; }
+      dispose() {}
+    }
+    OS._libRawPromise = Promise.resolve(FakeLibRaw);
+    const imported = await OS._loadRAWFile(new File([new Uint8Array([1,2,3])], 'fixture.dng', { type:'application/octet-stream' }));
+    return {
+      runtimeLoaded,
+      imported,
+      size:[OS.canvasW, OS.canvasH],
+      raw:OS._lastImportRaw,
+      imageCount:OS.layers.flatMap(layer => layer.objects).filter(object => object.type === 'image').length
+    };
+  });
+
+  expect(result.runtimeLoaded).toBe(true);
+  expect(result.imported).toBe(true);
+  expect(result.size).toEqual([2, 1]);
+  expect(result.raw.model).toBe('Fixture');
+  expect(result.imageCount).toBe(1);
+});
+
 test('exports a smaller, more accurate animated GIF than the legacy encoder', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

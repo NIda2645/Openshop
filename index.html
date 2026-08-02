@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-gSZ3ot1uVBCNda8h2EWbcwz6OLc+moKNps8NBnUPmzU=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-KSDyVoK8jLHw1eN9lgRGlDGE1qQY3vYrHXrk7JHF/SQ=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2928,7 +2928,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 <div id="dropzone-overlay">
     <div class="dropzone-ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
     <div class="dropzone-text">Drop files here</div>
-    <div class="dropzone-sub">PNG, JPEG, WebP, SVG, GIF, PDF, PSD, .openshop</div>
+    <div class="dropzone-sub">PNG, JPEG, WebP, SVG, GIF, PDF, RAW, PSD, .openshop</div>
 </div>
 <!-- ===== ANNOTATION CONTAINER ===== -->
 <div id="sticky-container" style="position:absolute;inset:0;pointer-events:none;z-index:99"></div>
@@ -2995,7 +2995,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <div class="ba-label after">After</div>
     </div>
 </div>
-<input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none" data-os-change="change-034">
+<input type="file" id="file-input" accept="image/*,.pdf,application/pdf,.cr2,.cr3,.nef,.arw,.dng,.raf,.rw2,.orf,.srw,.pef,.raw" style="display:none" data-os-change="change-034">
 <input type="file" id="psd-input" accept=".psd" style="display:none" data-os-change="change-035">
 <input type="file" id="project-input" accept=".openshop,.json,application/vnd.openshop+json,application/json" style="display:none" data-os-change="change-036">
 
@@ -3391,6 +3391,26 @@ const OS = {
                     integrity:'sha384-lS/cXbzefVJPqzSsLi430d1UtgZaucPKENmu9LpJTCLiIsjid1N/bYxkzDBvGYMS',
                     type:'text/javascript'
                 }),
+                rawIndex: Object.freeze({
+                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/index.js',
+                    integrity:'sha384-IPc84Xt0caNODxmuJ0QRTalkSnpgUi4vcKJKA0qQZ3XTYl1q30DZgEtq2iHXFZcL',
+                    type:'text/javascript'
+                }),
+                rawWorker: Object.freeze({
+                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/worker.js',
+                    integrity:'sha384-7JQfQ2BWV1nukA5F91bEBWv2NWw8SEqG8F6i3GTZyi++2KR2V7FhpXt+dviu21xy',
+                    type:'text/javascript'
+                }),
+                rawLib: Object.freeze({
+                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.js',
+                    integrity:'sha384-T8EoHnvoSgGVvZD4H9LA9IZqIWyac+pSzS22Q768TIC7l1e6Y4ZDL4RrSZzPi21D',
+                    type:'text/javascript'
+                }),
+                rawWasm: Object.freeze({
+                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.wasm',
+                    integrity:'sha384-Bb2q2WPqAGNUd9bIiwHDZ8jTKdC5ESZvSkG+3fQLEvGHXV8pYBxY3okzxmDnaWW4',
+                    type:'application/wasm'
+                }),
                 avifEncoderModule: Object.freeze({
             url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.js',
             integrity:'sha384-CSCv5W4tWhwNEV016b7Cf+Z7a+XAf4Z8tY/79BEKL+PJSO96cZrxu+ryYFU+den3',
@@ -3465,6 +3485,8 @@ const OS = {
     _runtimeBlobPromises: new Map(),
     _pdfJsPromise: null,
     _pdfWorkerBlobUrl: null,
+    _libRawPromise: null,
+    _libRawBlobUrls: null,
     _avifEncoderPromise: null,
     _avifDecoderPromise: null,
     // Interactive image-filter previews use a separate low-resolution pipe.
@@ -3558,6 +3580,55 @@ const OS = {
     },
     _loadSvgToPdf() {
         return this._executeVerifiedRuntimeScript('svg2pdf', 'svg2pdf');
+    },
+    async _loadLibRaw() {
+        if (!this._libRawPromise) {
+            this._libRawPromise = (async () => {
+                const [indexAsset, workerAsset, libAsset, wasmAsset] = await Promise.all([
+                    this._fetchVerifiedRuntimeAsset('rawIndex'),
+                    this._fetchVerifiedRuntimeAsset('rawWorker'),
+                    this._fetchVerifiedRuntimeAsset('rawLib'),
+                    this._fetchVerifiedRuntimeAsset('rawWasm')
+                ]);
+                const decoder = new TextDecoder();
+                const wasmUrl = URL.createObjectURL(new Blob([wasmAsset.bytes], { type:wasmAsset.asset.type }));
+                const libUrl = URL.createObjectURL(new Blob([
+                    decoder.decode(libAsset.bytes).replace(
+                        /new URL\(\s*["']libraw\.wasm["']\s*,\s*import\.meta\.url\)\.href/g,
+                        JSON.stringify(wasmUrl)
+                    )
+                ], { type:libAsset.asset.type }));
+                const workerUrl = URL.createObjectURL(new Blob([
+                    decoder.decode(workerAsset.bytes).replace(
+                        /new URL\(\s*["'](?:\.\/)?libraw\.js["']\s*,\s*import\.meta\.url\)/g,
+                        JSON.stringify(libUrl)
+                    )
+                ], { type:workerAsset.asset.type }));
+                const indexUrl = URL.createObjectURL(new Blob([
+                    decoder.decode(indexAsset.bytes).replace(
+                        /new URL\(\s*["']\.\/worker\.js["']\s*,\s*import\.meta\.url\)/g,
+                        JSON.stringify(workerUrl)
+                    )
+                ], { type:indexAsset.asset.type }));
+                try {
+                    const module = await import(indexUrl);
+                    if (typeof module?.default !== 'function') throw new Error('Verified LibRaw did not expose its decoder');
+                    this._libRawBlobUrls = { wasmUrl, libUrl, workerUrl };
+                    return module.default;
+                } catch (error) {
+                    URL.revokeObjectURL(workerUrl);
+                    URL.revokeObjectURL(libUrl);
+                    URL.revokeObjectURL(wasmUrl);
+                    throw error;
+                } finally {
+                    URL.revokeObjectURL(indexUrl);
+                }
+            })().catch(error => {
+                this._libRawPromise = null;
+                throw error;
+            });
+        }
+        return this._libRawPromise;
     },
     async _loadPdfJs() {
         if (!this._pdfJsPromise) {
@@ -4160,6 +4231,7 @@ const OS = {
     _lastSaveError: null,
     _psdInterchange: null,
     _lastPSDImportReport: null,
+    _lastImportRaw: null,
     _lastPSDExportReport: null,
     history: [], historyIdx: -1, maxHistory: 60,
     // Entry count alone does not bound memory: _replaceActiveImage turns each
@@ -4471,6 +4543,7 @@ const OS = {
         this._projectFileHandle = null;
         this._psdInterchange = null;
         this._lastPSDImportReport = null;
+        this._lastImportRaw = null;
         this._lastPSDExportReport = null;
         this.canvasW = 0;
         this.canvasH = 0;
@@ -5643,7 +5716,7 @@ const OS = {
         if (window.showOpenFilePicker) {
             try {
                 const [handle] = await window.showOpenFilePicker({
-                    types: [{ description: 'Images and PDF', accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.gif','.bmp','.svg'], 'application/pdf': ['.pdf'] } }]
+                    types: [{ description: 'Images, PDF, and RAW', accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.gif','.bmp','.svg'], 'application/pdf': ['.pdf'], 'application/octet-stream': ['.cr2','.cr3','.nef','.arw','.dng','.raf','.rw2','.orf','.srw','.pef','.raw'] } }]
                 });
                 const file = await handle.getFile();
                 this._handleFileLoad(file);
@@ -5769,6 +5842,81 @@ const OS = {
         ctx.drawImage(source, 0, 0);
         return out;
     },
+    _isRAWFile(file) {
+        const name = String(file?.name || '').toLowerCase();
+        return ['.3fr','.arw','.cr2','.cr3','.dcr','.dng','.erf','.gpr','.iiq','.kdc','.mef','.mos','.mrw','.nef','.nrw','.orf','.pef','.raf','.raw','.r3d','.rw2','.rwl','.sr2','.srf','.srw','.x3f'].some(extension => name.endsWith(extension));
+    },
+    async _loadRAWFile(file) {
+        if (!file) return false;
+        let raw = null;
+        try {
+            if (!this._isRAWFile(file)) throw new Error('Unsupported RAW file');
+            if (file.size > this._importLimits.maxImageBytes) throw new Error('RAW file exceeds 100 MB limit');
+            const generation = this._documentGeneration;
+            const LibRaw = await this._loadLibRaw();
+            raw = new LibRaw();
+            await raw.open(new Uint8Array(await file.arrayBuffer()), {
+                halfSize:false,
+                useCameraWb:true,
+                useCameraMatrix:3,
+                outputColor:1,
+                outputBps:8,
+                userQual:3,
+                useFujiRotate:-1
+            });
+            const metadata = await raw.metadata(true);
+            const decoded = await raw.imageData();
+            const width = Math.round(Number(decoded?.width || metadata?.width || 0));
+            const height = Math.round(Number(decoded?.height || metadata?.height || 0));
+            const colors = Math.max(1, Math.round(Number(decoded?.colors || 3)));
+            const bits = Math.max(8, Math.round(Number(decoded?.bits || 8)));
+            const source = decoded?.data;
+            this._validateDecodedImage({ width, height });
+            if (!ArrayBuffer.isView(source) || source.length < width * height * colors) throw new Error('LibRaw returned incomplete pixel data');
+            const rgba = new Uint8ClampedArray(width * height * 4);
+            const toByte = value => bits > 8 ? Math.max(0, Math.min(255, Math.round(Number(value) / 257))) : Math.max(0, Math.min(255, Number(value) || 0));
+            for (let pixel = 0; pixel < width * height; pixel += 1) {
+                const sourceOffset = pixel * colors;
+                const targetOffset = pixel * 4;
+                const red = toByte(source[sourceOffset]);
+                const green = toByte(source[sourceOffset + Math.min(1, colors - 1)]);
+                const blue = toByte(source[sourceOffset + Math.min(2, colors - 1)]);
+                rgba[targetOffset] = red;
+                rgba[targetOffset + 1] = green;
+                rgba[targetOffset + 2] = blue;
+                rgba[targetOffset + 3] = colors > 3 ? toByte(source[sourceOffset + 3]) : 255;
+            }
+            if (this._documentGeneration !== generation) {
+                this.toast('RAW import discarded because the document changed', 'info');
+                return false;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext('2d', { alpha:true, willReadFrequently:false });
+            if (!context) throw new Error('Could not create the RAW preview canvas');
+            context.putImageData(new ImageData(rgba, width, height), 0, 0);
+            const image = await fabric.Image.fromURL(canvas.toDataURL('image/png'));
+            this._lastImportRaw = {
+                make:this._safeText(metadata?.camera_make || '', 120),
+                model:this._safeText(metadata?.camera_model || '', 120),
+                width,
+                height,
+                iso:Number(metadata?.iso_speed) || 0,
+                timestamp:metadata?.timestamp instanceof Date ? metadata.timestamp.toISOString() : null
+            };
+            return await this._addDecodedImageToCanvas(image, {
+                name:file.name,
+                mode:'open',
+                openAction:'Opening a RAW photo'
+            });
+        } catch (error) {
+            this.toast(`RAW import failed: ${error.message}`, 'error');
+            return false;
+        } finally {
+            try { raw?.dispose?.(); } catch {}
+        }
+    },
     _isPDFFile(file) {
         return String(file?.type || '').toLowerCase() === 'application/pdf'
             || String(file?.name || '').toLowerCase().endsWith('.pdf');
@@ -5872,6 +6020,10 @@ const OS = {
         }
     },
     _handleFileLoad(file) {
+        if (this._isRAWFile(file)) {
+            void this._loadRAWFile(file);
+            return;
+        }
         if (this._isPDFFile(file)) {
             void this._loadPDFFile(file);
             return;
@@ -6159,6 +6311,10 @@ const OS = {
         }
         if (name.endsWith('.openshop') || name.endsWith('.json')) {
             void this._confirmDiscardUnsaved('Opening a project').then(ok => ok && this._loadProjectFile(file));
+            return;
+        }
+        if (this._isRAWFile(file)) {
+            void this._loadRAWFile(file);
             return;
         }
         if (this._isPDFFile(file)) {

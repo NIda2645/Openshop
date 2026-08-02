@@ -11,7 +11,6 @@ testing gates.
 ## Planned Features
 
 ### Format & I/O
-- Raw camera file reader (via libraw wasm) with demosaic preview
 - `.openshop` project export round-trip that preserves guides, color profiles, and AI masks
   Research note (2026-07-29): Treat the canonical document-state item below as the P0 prerequisite; add schema migrations and document/session separation before expanding fields.
 

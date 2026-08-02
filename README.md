@@ -54,6 +54,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **SVG** | Yes (editable shapes, text, and groups — not rasterized) | Yes |
 | **Vector PDF** | — | Yes (real path operators when no raster layer is visible) |
 | **PDF** | Yes (page per layer) | Yes |
+| **RAW** | Yes (LibRaw/WASM demosaic preview) | — |
 | **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text) | Yes (same supported semantics; explicit raster fallbacks) |
 | **GIF** | Yes (animated, frame-based) | Yes (animated, frame-based) |
 | **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
