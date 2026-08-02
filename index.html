@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-S7htH4JLu1TnP2MftzrozDtKzKK9FLfOoiVSeWTQf0k=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-uk/q0AWfToPueSyY8kPr6LQWERRLMo+vN4OljIkcZpk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -9627,6 +9627,156 @@ self.onmessage = function(event) {
     pasteObj() { this._pasteSelection(); },
 
     // ====================== HISTORY ======================
+    _toolCatalog() {
+        if (this._toolCatalogCache) return this._toolCatalogCache;
+        const rows = [
+            ['tool.marquee.rect','Marquee','Rectangular Marquee Tool','M','selection','selection-state','marquee-rect'],
+            ['tool.marquee.ellipse','Marquee','Elliptical Marquee Tool','M','selection','selection-state','marquee-ellipse'],
+            ['tool.marquee.single-row','Marquee','Single Row Marquee Tool','','selection','selection-state','marquee-row'],
+            ['tool.marquee.single-column','Marquee','Single Column Marquee Tool','','selection','selection-state','marquee-column'],
+            ['tool.move','Move','Move Tool','V','layers or selections','document-mutation','select'],
+            ['tool.lasso.free','Lasso','Lasso Tool','L','selection','selection-state','lasso'],
+            ['tool.lasso.polygonal','Lasso','Polygonal Lasso Tool','L','selection','selection-state','lasso-polygonal'],
+            ['tool.lasso.magnetic','Lasso','Magnetic Lasso Tool','L','selection','selection-state','lasso-magnetic'],
+            ['tool.selection.quick','Selection','Quick Selection Tool','W','selection','selection-state','quick-selection'],
+            ['tool.selection.magic-wand','Selection','Magic Wand Tool','W','selection','selection-state','magic-wand'],
+            ['tool.crop','Crop','Crop Tool','C','document pixels','document-mutation','crop'],
+            ['tool.crop.perspective','Crop','Perspective Crop Tool','C','document pixels','document-mutation','perspective-crop'],
+            ['tool.crop.slice','Crop','Slice Tool','C','document pixels','document-mutation','slice'],
+            ['tool.crop.slice-select','Crop','Slice Select Tool','C','document pixels','selection-state','slice-select'],
+            ['tool.sampling.eyedropper','Sampling','Eyedropper Tool','I','document pixels','workspace-state','eyedropper'],
+            ['tool.sampling.color-sampler','Sampling','Color Sampler Tool','I','document pixels','workspace-state','color-sampler'],
+            ['tool.sampling.ruler','Sampling','Ruler Tool','I','document pixels','workspace-state','measure'],
+            ['tool.sampling.note','Sampling','Note Tool','I','document pixels','document-mutation','note'],
+            ['tool.healing.spot','Healing','Spot Healing Brush Tool','J','document pixels','document-mutation','spot-healing'],
+            ['tool.healing.brush','Healing','Healing Brush Tool','J','document pixels','document-mutation','healing'],
+            ['tool.healing.patch','Healing','Patch Tool','J','document pixels','document-mutation','patch'],
+            ['tool.healing.content-aware-move','Healing','Content-Aware Move Tool','J','document pixels','document-mutation','content-aware-move'],
+            ['tool.healing.red-eye','Healing','Red Eye Tool','J','document pixels','document-mutation','red-eye'],
+            ['tool.clone.stamp','Clone','Clone Stamp Tool','S','document pixels','document-mutation','clone'],
+            ['tool.clone.pattern','Clone','Pattern Stamp Tool','S','document pixels','document-mutation','pattern-stamp'],
+            ['tool.history.brush','History','History Brush Tool','Y','document pixels','document-mutation','history-brush'],
+            ['tool.history.art','History','Art History Brush Tool','Y','document pixels','document-mutation','art-history-brush'],
+            ['tool.eraser','Eraser','Eraser Tool','E','document pixels','document-mutation','eraser'],
+            ['tool.eraser.background','Eraser','Background Eraser Tool','E','document pixels','document-mutation','background-eraser'],
+            ['tool.eraser.magic','Eraser','Magic Eraser Tool','E','document pixels','document-mutation','magic-eraser'],
+            ['tool.fill.gradient','Fill','Gradient Tool','G','document pixels','document-mutation','gradient'],
+            ['tool.fill.bucket','Fill','Paint Bucket Tool','G','document pixels','document-mutation','fill'],
+            ['tool.blur','Blur','Blur Tool','R','document pixels','document-mutation','blur'],
+            ['tool.blur.sharpen','Blur','Sharpen Tool','R','document pixels','document-mutation','sharpen'],
+            ['tool.blur.smudge','Blur','Smudge Tool','R','document pixels','document-mutation','smudge'],
+            ['tool.tone.dodge','Tone','Dodge Tool','O','document pixels','document-mutation','dodge'],
+            ['tool.tone.burn','Tone','Burn Tool','O','document pixels','document-mutation','burn'],
+            ['tool.tone.sponge','Tone','Sponge Tool','O','document pixels','document-mutation','sponge'],
+            ['tool.pen','Pen','Pen Tool','P','path','document-mutation','pen'],
+            ['tool.pen.freeform','Pen','Freeform Pen Tool','P','path','document-mutation','freeform-pen'],
+            ['tool.pen.add-anchor','Pen','Add Anchor Point Tool','P','path','document-mutation','add-anchor'],
+            ['tool.pen.delete-anchor','Pen','Delete Anchor Point Tool','P','path','document-mutation','delete-anchor'],
+            ['tool.pen.convert-point','Pen','Convert Point Tool','P','path','document-mutation','convert-point'],
+            ['tool.type.horizontal','Type','Horizontal Type Tool','T','text or selection','document-mutation','text'],
+            ['tool.type.vertical','Type','Vertical Type Tool','T','text or selection','document-mutation','vertical-text'],
+            ['tool.type.horizontal-mask','Type','Horizontal Type Mask Tool','T','text or selection','selection-state','horizontal-text-mask'],
+            ['tool.type.vertical-mask','Type','Vertical Type Mask Tool','T','text or selection','selection-state','vertical-text-mask'],
+            ['tool.path-selection.path','Path Selection','Path Selection Tool','A','document pixels','document-mutation','path-selection'],
+            ['tool.path-selection.direct','Path Selection','Direct Selection Tool','A','document pixels','document-mutation','direct-selection'],
+            ['tool.shape.rectangle','Shape','Rectangle Tool','U','shape layer or path','document-mutation','rect'],
+            ['tool.shape.rounded-rectangle','Shape','Rounded Rectangle Tool','U','shape layer or path','document-mutation','rounded-rect'],
+            ['tool.shape.ellipse','Shape','Ellipse Tool','U','shape layer or path','document-mutation','circle'],
+            ['tool.shape.polygon','Shape','Polygon Tool','U','shape layer or path','document-mutation','polygon'],
+            ['tool.shape.line','Shape','Line Tool','U','shape layer or path','document-mutation','line'],
+            ['tool.shape.custom','Shape','Custom Shape Tool','U','shape layer or path','document-mutation','custom-shape'],
+            ['tool.navigation.hand','Navigation','Hand Tool','H','viewport','viewport-state','pan'],
+            ['tool.navigation.rotate','Navigation','Rotate View Tool','R','viewport','viewport-state','rotate-view'],
+            ['tool.navigation.zoom','Navigation','Zoom Tool','Z','viewport','viewport-state','zoom'],
+            ['mode.quick-mask','Mode','Quick Mask Mode','','document state','selection-state','quick-mask'],
+            ['mode.screen','Mode','Screen Mode','','application state','application-state','screen-mode']
+        ];
+        this._toolCatalogCache = rows.map(([id, family, label, shortcut, output, sideEffect, toolState]) => ({
+            id,
+            kind: 'tool',
+            family,
+            label,
+            shortcut,
+            labelKey: label,
+            optionsContext: family.toLowerCase().replace(/\s+/g, '-'),
+            prerequisite: output === 'application state' ? 'none' : 'open document',
+            requiresDocument: output !== 'application state',
+            output,
+            undoPolicy: sideEffect === 'viewport-state' || sideEffect === 'application-state' ? 'none' : 'gesture',
+            sideEffect,
+            auditStatus: 'VISUALLY_INSPECTED',
+            toolState,
+            visible: true
+        }));
+        return this._toolCatalogCache;
+    },
+    _toolCommandDefinitions() {
+        return this._toolCatalog().map(tool => [tool.id, {
+            ...tool,
+            validate: args => {
+                if (args && Object.keys(args).length) throw new Error('Tool commands do not accept arguments');
+                return {};
+            },
+            execute: () => {
+                if (tool.id === 'mode.quick-mask') return this.toggleQuickMaskMode();
+                if (tool.id === 'mode.screen') return this.toggleFullscreen();
+                this.setTool(tool.toolState);
+                return true;
+            }
+        }]);
+    },
+    listRegisteredTools({ documentOpen = this._hasDocumentStateForEditing() } = {}) {
+        return this._toolCatalog().map(tool => ({
+            ...tool,
+            label: this._t(tool.labelKey),
+            enabled: !tool.requiresDocument || Boolean(documentOpen),
+            blocked: Boolean(tool.requiresDocument && !documentOpen),
+            selected: tool.toolState === this.state.tool,
+            checked: tool.id === 'mode.quick-mask' ? Boolean(this._quickMaskMode) : false
+        }));
+    },
+    getCommandState(id, { documentOpen = this._hasDocumentStateForEditing() } = {}) {
+        const definition = this._getCommandRegistry().get(id);
+        if (!definition) return null;
+        const requiresDocument = definition.kind === 'tool'
+            ? Boolean(definition.requiresDocument)
+            : definition.requiresDocument !== false;
+        const enabled = !requiresDocument || Boolean(documentOpen);
+        const isTool = definition.kind === 'tool';
+        return {
+            id,
+            kind: definition.kind || 'command',
+            label: this._t(definition.labelKey || definition.label || id),
+            shortcut: definition.shortcut || '',
+            family: definition.family || null,
+            optionsContext: definition.optionsContext || null,
+            prerequisite: definition.prerequisite || (requiresDocument ? 'open document' : 'none'),
+            output: definition.output || null,
+            undoPolicy: definition.undoPolicy || null,
+            sideEffect: definition.sideEffect || null,
+            visible: definition.visible !== false,
+            enabled,
+            blocked: !enabled,
+            selected: isTool && definition.toolState === this.state.tool,
+            checked: id === 'mode.quick-mask' ? Boolean(this._quickMaskMode) : false
+        };
+    },
+    cycleToolGroup(group, { reverse = false } = {}) {
+        const members = this._toolCatalog().filter(tool => tool.family === group);
+        if (!members.length) return null;
+        const current = members.findIndex(tool => tool.toolState === this.state.tool);
+        const offset = reverse ? -1 : 1;
+        const nextIndex = (current < 0 ? 0 : current + offset + members.length) % members.length;
+        const next = members[nextIndex];
+        this.setTool(next.toolState);
+        return next.id;
+    },
+    toggleQuickMaskMode() {
+        if (!this._hasActiveDocument()) return false;
+        this._quickMaskMode = !this._quickMaskMode;
+        this._announceAccessibility?.(this._quickMaskMode ? 'Quick Mask Mode enabled' : 'Quick Mask Mode disabled');
+        return this._quickMaskMode;
+    },
     _getCommandRegistry() {
         if (this._commandRegistry) return this._commandRegistry;
         const objectById = id => {
@@ -9895,6 +10045,7 @@ self.onmessage = function(event) {
                 }
             }]
         ];
+        this._toolCommandDefinitions().forEach(definition => definitions.push(definition));
         this._commandRegistry = new Map(definitions);
         return this._commandRegistry;
     },
@@ -9912,7 +10063,8 @@ self.onmessage = function(event) {
         return this._normalizeCommand({ schemaVersion:this._commandSchemaVersion, id, args });
     },
     _commandLabel(command) {
-        return this._getCommandRegistry().get(command?.id)?.label || command?.id || 'Edit';
+        const definition = this._getCommandRegistry().get(command?.id);
+        return definition ? this._t(definition.labelKey || definition.label || command?.id) : command?.id || 'Edit';
     },
     _initializeHistory(label = 'Document Baseline') {
         this.history = [];

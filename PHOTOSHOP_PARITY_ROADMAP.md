@@ -162,7 +162,7 @@ future work under PS-060.
 ### PS-004 — Build a typed command and tool registry
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: PS-002
 
 Create one registry for menu commands, keyboard shortcuts, toolbar tools, tool groups,
@@ -177,6 +177,27 @@ Acceptance criteria:
   or blocked in the blank state.
 - A shortcut can cycle a grouped tool without duplicating command logic.
 - Tool and menu labels can be localized without changing command IDs.
+
+Implementation notes:
+
+- Extended the existing versioned command map with all 60 audited tool and mode
+  entries using stable IDs, family membership, shortcut, options context,
+  prerequisite, output, undo policy, side-effect class, and audit status metadata.
+- Added registry queries for visible, enabled, blocked, checked, and selected
+  state, including the blank-state policy that keeps Screen Mode available while
+  blocking document-dependent tools and layer commands.
+- Added one grouped-tool cycling path and localized registry labels so display text
+  can change without changing command IDs or replay payloads.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (102 unit tests, including
+`tests/command-registry.test.js`); hosted Chromium browser acceptance passed for
+blank-state enablement, 60-entry coverage, grouped cycling, and accessible pressed
+state; `tools/security.mjs --check` passed.
+
+Remaining limitations: the registry is complete for the audited inventory, but
+several entries still resolve to selection/state placeholders until their concrete
+tool implementations land in PS-030 through PS-037. Menu surfaces have not yet
+been migrated wholesale to registry-backed command items under PS-016 and PS-040.
 
 ## Phase 1 — Photoshop shell and interaction model
 
