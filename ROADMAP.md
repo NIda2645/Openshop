@@ -11,9 +11,6 @@ testing gates.
 ## Planned Features
 
 ### Format & I/O
-- `.openshop` project export round-trip that preserves guides, color profiles, and AI masks
-  Research note (2026-07-29): Treat the canonical document-state item below as the P0 prerequisite; add schema migrations and document/session separation before expanding fields.
-
 ### Editor Core
 - Adjustment layers (non-destructive Levels / Curves / HSL) stackable above pixel layers
   Research note (2026-07-29): Store typed operation ID, schema version, parameters, cache key, and an explicit Apply/Merge path so old projects remain reproducible.

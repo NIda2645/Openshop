@@ -1270,6 +1270,20 @@ describe('OpenShop core object', () => {
     expect(state.layers).toHaveLength(1);
     expect(state.layers[0].objectIds).toHaveLength(2);
 
+    OS._colorProfile = {
+      name: 'Display P3',
+      sourceKind: 'embedded-icc',
+      iccData: 'data:application/vnd.openshop.icc;base64,AAECAwQ='
+    };
+    OS._selectionMask = { w: 2, h: 2, mask: new Uint8Array([255, 0, 0, 255]) };
+    expect(OS._recordAIMask({ label: 'Subject', source: 'ai-segment' })).toBe(true);
+    const metadataRoundTrip = JSON.parse(JSON.stringify(OS._captureDocumentState())).metadata;
+    expect(metadataRoundTrip.colorProfile).toEqual(OS._colorProfile);
+    expect(metadataRoundTrip.aiMasks).toHaveLength(1);
+    expect(metadataRoundTrip.aiMasks[0]).toMatchObject({ label:'Subject', sourceKind:'ai-segment' });
+    expect(OS._normalizeAIMasks(metadataRoundTrip.aiMasks, { validate:true })[0].mask.data)
+      .toBe(metadataRoundTrip.aiMasks[0].mask.data);
+
     const clicks = [];
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
       clicks.push({ download: this.download });

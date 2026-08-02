@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-KSDyVoK8jLHw1eN9lgRGlDGE1qQY3vYrHXrk7JHF/SQ=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-9P9RtbrZQvquWSIVjuyGIZNxgp3A/7XP9dM3g0dvUbY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4232,6 +4232,13 @@ const OS = {
     _psdInterchange: null,
     _lastPSDImportReport: null,
     _lastImportRaw: null,
+    // Keep profile bytes opaque: the editor does not convert pixels yet, but
+    // a project round-trip must not silently discard the source profile.
+    _colorProfile: { name:'sRGB', source:'assumed', iccData:null },
+    // AI selections are pixel masks, but retaining their provenance makes
+    // them recoverable after a project is reopened instead of collapsing them
+    // into an unlabelled transient selection.
+    _aiMasks: [],
     _lastPSDExportReport: null,
     history: [], historyIdx: -1, maxHistory: 60,
     // Entry count alone does not bound memory: _replaceActiveImage turns each
@@ -4284,7 +4291,9 @@ const OS = {
         maxAnimationFrames: 300,
         maxDecodedAnimationBytes: 512 * 1024 * 1024,
         maxPdfPages: 512,
-        maxDecodedPdfBytes: 512 * 1024 * 1024
+        maxDecodedPdfBytes: 512 * 1024 * 1024,
+        maxColorProfileBytes: 4 * 1024 * 1024,
+        maxAIMasks: 32
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -4544,6 +4553,8 @@ const OS = {
         this._psdInterchange = null;
         this._lastPSDImportReport = null;
         this._lastImportRaw = null;
+        this._colorProfile = { name:'sRGB', source:'assumed', iccData:null };
+        this._aiMasks = [];
         this._lastPSDExportReport = null;
         this.canvasW = 0;
         this.canvasH = 0;
@@ -4913,6 +4924,8 @@ const OS = {
         this._psdInterchange = null;
         this._lastPSDImportReport = null;
         this._lastPSDExportReport = null;
+        this._colorProfile = { name:'sRGB', source:'assumed', iccData:null };
+        this._aiMasks = [];
         this.canvasW = w; this.canvasH = h; this.layers = []; this.canvas.clear();
         this.canvas.setBackgroundColor(null, this.canvas.renderAll.bind(this.canvas));
         const boundary = this._createCheckerBoundary(w, h);
@@ -5246,6 +5259,78 @@ const OS = {
         else for (let i = 0; i < pixelCount; i++) mask[i] = binary.charCodeAt(i) & 0xff;
         return { w, h, mask };
     },
+    _encodeProjectBytes(bytes, mime) {
+        const view = bytes instanceof Uint8Array
+            ? bytes
+            : bytes instanceof ArrayBuffer
+                ? new Uint8Array(bytes)
+                : ArrayBuffer.isView(bytes)
+                    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+                    : null;
+        if (!view || view.byteLength > this._importLimits.maxColorProfileBytes) return null;
+        let binary = '';
+        for (let offset = 0; offset < view.length; offset += 0x8000) {
+            binary += String.fromCharCode(...view.subarray(offset, offset + 0x8000));
+        }
+        return `data:${mime};base64,${btoa(binary)}`;
+    },
+    _normalizeColorProfile(profile) {
+        const value = profile && typeof profile === 'object' ? profile : {};
+        const prefix = 'data:application/vnd.openshop.icc;base64,';
+        let iccData = null;
+        const raw = value.iccData ?? value.data;
+        if (typeof raw === 'string' && raw.startsWith(prefix) && raw.length <= Math.ceil(this._importLimits.maxColorProfileBytes * 4 / 3) + prefix.length + 8) {
+            try {
+                const binary = atob(raw.slice(prefix.length));
+                if (binary.length <= this._importLimits.maxColorProfileBytes) iccData = raw;
+            } catch (_) {
+                iccData = null;
+            }
+        } else if (raw instanceof Uint8Array || raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
+            iccData = this._encodeProjectBytes(raw, 'application/vnd.openshop.icc');
+        }
+        return {
+            name: this._safeText(value.name || (iccData ? 'Embedded ICC profile' : 'sRGB'), 120),
+            sourceKind: this._safeText(value.sourceKind || value.source || (iccData ? 'embedded' : 'assumed'), 40),
+            iccData
+        };
+    },
+    _normalizeAIMask(entry, { validate = false } = {}) {
+        if (!entry || typeof entry !== 'object' || !entry.mask) return null;
+        const mask = validate ? this._encodeSelectionMask(this._decodeSelectionMask(entry.mask)) : entry.mask;
+        if (!mask || typeof mask.data !== 'string' || !mask.data.startsWith('data:application/vnd.openshop.selection;base64,')) return null;
+        return {
+            id: this._coerceDocumentId(entry.id, 'ai-mask'),
+            label: this._safeText(entry.label || 'AI mask', 120),
+            sourceKind: this._safeText(entry.sourceKind || entry.source || 'ai-segment', 40),
+            mask
+        };
+    },
+    _normalizeAIMasks(entries, { validate = false } = {}) {
+        if (!Array.isArray(entries)) return [];
+        const masks = [];
+        const ids = new Set();
+        for (const entry of entries.slice(0, this._importLimits.maxAIMasks)) {
+            const mask = this._normalizeAIMask(entry, { validate });
+            if (!mask || ids.has(mask.id)) continue;
+            ids.add(mask.id);
+            masks.push(mask);
+        }
+        return masks;
+    },
+    _recordAIMask({ label = 'AI mask', source = 'ai-segment', mask = this._selectionMask } = {}) {
+        const encoded = this._encodeSelectionMask(mask);
+        if (!encoded) return false;
+        const entry = this._normalizeAIMask({
+            id: this._newDocumentId('ai-mask'),
+            label,
+            source,
+            mask: encoded
+        });
+        if (!entry) return false;
+        this._aiMasks = [...this._normalizeAIMasks(this._aiMasks), entry].slice(-this._importLimits.maxAIMasks);
+        return true;
+    },
     _captureDocumentState() {
         if (!this._hasDocumentStateForEditing()) throw new Error('No active document');
         if (!this.canvas?.getObjects || !this.canvas?.toJSON) throw new Error('Document renderer is unavailable');
@@ -5338,6 +5423,10 @@ const OS = {
                 delays: this._normalizeAnimationDelays(this._animDelays, this._animFrames.length),
                 activeFrameIndex: Math.max(0, Math.min(this._animIdx || 0, Math.max(0, this._animFrames.length - 1)))
             },
+            metadata: {
+                colorProfile: this._normalizeColorProfile(this._colorProfile),
+                aiMasks: this._normalizeAIMasks(this._aiMasks)
+            },
             interchange: {
                 psd: this._normalizePSDInterchange(this._psdInterchange)
             },
@@ -5427,6 +5516,10 @@ const OS = {
             guides: Array.isArray(meta.guides) ? meta.guides : [],
             selection: meta.selection || { bounds:null, mask:null },
             animation: meta.animation || { frames:[], activeFrameIndex:0 },
+            metadata: meta.metadata || {
+                colorProfile: meta.colorProfile,
+                aiMasks: meta.aiMasks || []
+            },
             workspace: meta.workspace || { tool:this.state.tool, zoom:this.zoom, viewportTransform:this.canvas.viewportTransform?.slice(0, 6) }
         };
     },
@@ -5554,6 +5647,8 @@ const OS = {
         this._docName = this._safeText(state.document?.name || 'Untitled', 100);
         this._restoreGuidesState(state.guides);
         this._restoreSelectionState(state.selection);
+        this._colorProfile = this._normalizeColorProfile(state.metadata?.colorProfile);
+        this._aiMasks = this._normalizeAIMasks(state.metadata?.aiMasks, { validate:true });
         this._stopAnimationPlayback();
         this._animFrames = Array.isArray(state.animation?.frames)
             ? state.animation.frames.filter(frame => typeof frame === 'string' && frame.startsWith('data:image/'))
@@ -7460,6 +7555,18 @@ self.onmessage = function(event) {
             leafCount
         };
     },
+    _extractPSDColorProfile(psd) {
+        const resources = psd?.imageResources || {};
+        const raw = resources.icc || resources.iccProfile || resources.colorProfile;
+        if (raw instanceof Uint8Array || raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
+            return this._normalizeColorProfile({
+                name: resources.colorProfileName || 'Embedded ICC profile',
+                source: 'psd',
+                iccData: raw
+            });
+        }
+        return { name:'sRGB', source:'assumed', iccData:null };
+    },
     _showPSDCompatibilityReport(report, title = 'PSD compatibility report') {
         const warnings = Array.isArray(report?.warnings) ? report.warnings.filter(Boolean) : [];
         if (!warnings.length) return null;
@@ -7636,6 +7743,7 @@ self.onmessage = function(event) {
             objects,
             decodedLayerCount:Math.max(0, layers.length - 1),
             psdInterchange:this._normalizePSDInterchange({ groups:report.groups, warnings:report.warnings }),
+            colorProfile:this._extractPSDColorProfile(psd),
             report
         };
     },
@@ -7671,7 +7779,9 @@ self.onmessage = function(event) {
             persistenceState:this._persistenceState,
             savedSnapshot:this._savedSnapshot,
             psdInterchange:this._psdInterchange,
-            lastPSDImportReport:this._lastPSDImportReport
+            lastPSDImportReport:this._lastPSDImportReport,
+            colorProfile:this._colorProfile,
+            aiMasks:this._aiMasks
         };
         try {
             this._assertComputeJobCurrent(job);
@@ -7690,6 +7800,8 @@ self.onmessage = function(event) {
             this._savedSnapshot = null;
             this._psdInterchange = prepared.psdInterchange;
             this._lastPSDImportReport = prepared.report;
+            this._colorProfile = this._normalizeColorProfile(prepared.colorProfile);
+            this._aiMasks = [];
             this.guides = [];
             this._selectionMask = null;
             this._selectionBounds = null;
@@ -7730,6 +7842,8 @@ self.onmessage = function(event) {
             this._savedSnapshot = previous.savedSnapshot;
             this._psdInterchange = previous.psdInterchange;
             this._lastPSDImportReport = previous.lastPSDImportReport;
+            this._colorProfile = previous.colorProfile;
+            this._aiMasks = previous.aiMasks;
             if (previous.activeObject) this.canvas.setActiveObject(previous.activeObject);
             this.canvas.renderAll();
             this._setPersistenceState(previous.persistenceState);
@@ -20064,6 +20178,7 @@ self.onmessage = async function(e) {
             const count = await this._applySegmentSelection(hit.target, segment, hit.imageW, hit.imageH, job);
             if (!count) { this.toast('Segment mask was empty', 'info'); return false; }
             const label = segment.label ? ': ' + segment.label : '';
+            this._recordAIMask({ label: segment.label || 'AI segment', source: 'ai-segment' });
             this.toast('Selected segment' + label + ' (' + count.toLocaleString() + ' px)', 'success');
             return true;
         } catch(e) {
