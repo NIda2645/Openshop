@@ -60,7 +60,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **GIF** | Yes (animated, frame-based) | Yes (animated, frame-based) |
 | **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
 
-Batch export to multiple formats in one click. Export Settings previews PNG/WebP/AVIF alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
+Batch processing accepts raster images plus an `openshop-command-sequence` JSON action recipe, remaps recorded object and layer IDs to each imported image, and emits one ZIP with the selected PNG, JPEG, or WebP output. Relative folder paths are retained and the open document is restored after the run. The same menu also exports the current canvas to multiple formats in one click. Export Settings previews PNG/WebP/AVIF alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
 
 ### AI Features (Client-Side, via Transformers.js 4.2)
 
@@ -88,6 +88,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | **Command Palette** | `Ctrl+K` to search and run any command |
 | **Sandboxed Plugin API** | Register immutable JavaScript source in an opaque-origin `iframe` with explicit `commands`, `document:read`, `selection:read`, and `ui:toast` capabilities; plugin commands use the versioned `postMessage` protocol and can be disposed cleanly |
 | **Action Recorder** | Records validated, versioned edit commands and replays mixed actions atomically; a failed step rolls back the whole action |
+| **Batch Processor** | Select a folder of raster images, apply a saved versioned action recipe to each image, and download a relative-path-preserving ZIP; the open document is restored after processing |
 | **Context Menus** | Right-click for contextual actions |
 | **Rulers & Guides** | Draggable guides with snapping and pixel grid at high zoom |
 | **Grid Overlay** | Toggleable composition grid |

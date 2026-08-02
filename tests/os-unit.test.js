@@ -198,6 +198,46 @@ describe('OpenShop core object', () => {
     expect(() => OS._makeCommand('_privateMethod', {})).toThrow('Unknown command');
   });
 
+  it('validates batch recipes and writes unique UTF-8 ZIP entries', async () => {
+    const OS = loadOpenShop();
+    const command = OS._makeCommand('canvas.resize', { width: 320, height: 240 });
+    expect(OS._parseBatchRecipe({
+      kind: 'openshop-command-sequence', schemaVersion: 1, commands: [command]
+    })).toEqual([command]);
+    expect(() => OS._parseBatchRecipe({
+      kind: 'openshop-command-sequence', schemaVersion: 1, commands: []
+    })).toThrow('empty');
+
+    const parts = [];
+    const ZipBlob = class {
+      constructor(values, options = {}) {
+        this.parts = values;
+        this.type = options.type || '';
+        this.size = values.reduce((total, value) => total + value.length, 0);
+      }
+    };
+    vi.stubGlobal('Blob', ZipBlob);
+    const zip = OS._zipBatchEntries([
+      { name: 'folder/é.png', bytes: new TextEncoder().encode('first') },
+      { name: 'folder/second.png', bytes: new TextEncoder().encode('second') }
+    ]);
+    zip.parts.forEach(part => parts.push(part));
+    const bytes = parts.reduce((all, part) => {
+      const merged = new Uint8Array(all.length + part.length);
+      merged.set(all); merged.set(part, all.length); return merged;
+    }, new Uint8Array());
+    vi.unstubAllGlobals();
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toContain('folder/é.png');
+    expect(decoded).toContain('folder/second.png');
+    expect(decoded).toContain('first');
+    expect(decoded).toContain('second');
+    expect(bytes[0]).toBe(0x50);
+    expect(bytes[1]).toBe(0x4b);
+    expect(bytes[2]).toBe(0x03);
+    expect(bytes[3]).toBe(0x04);
+  });
+
   it('registers only capability-scoped sandbox plugins and disposes their resources', () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);

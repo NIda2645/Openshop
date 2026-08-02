@@ -26,8 +26,6 @@ testing gates.
 - **Photopea has shipped nothing since 5.6 (Sep 2024)** — verified 2026-07-31, blog dormant ~22 months. The free incumbent has stalled; its users' loudest complaints (ads eating canvas width, anti-adblock lockout, COPPA-driven school bans) are all things OpenShop already avoids by construction and never advertises.
 
 ## Nice-to-Haves
-- Batch processor (drop a folder, apply an action recipe, zip the output)
-  Research note (2026-07-29): Depends on the versioned command/history item below; current label-based macro recording does not replay normal edits.
 - Collaborative session via WebRTC data channel (single doc, no server)
 - Swatches/brushes/gradients import from .ase / .abr / .grd
 - Mobile-first toolbar layout toggle with pressure-sensitive stylus support

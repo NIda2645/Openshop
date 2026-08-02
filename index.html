@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-yXDRqfRZja4dFWY6Mh8dhg1rXlPAmg+9rhS3IYjHhRA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-DY4AG+aNEh6f80IlqlJpcWsUdaxZSjG6nADDLPUU89I=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4332,7 +4332,10 @@ const OS = {
         maxColorProfileBytes: 4 * 1024 * 1024,
         maxAIMasks: 32,
         maxLayerMaskBytes: 8 * 1024 * 1024,
-        maxSmartObjectBytes: 8 * 1024 * 1024
+        maxSmartObjectBytes: 8 * 1024 * 1024,
+        maxBatchFiles: 500,
+        maxBatchInputBytes: 1024 * 1024 * 1024,
+        maxBatchOutputBytes: 2 * 1024 * 1024 * 1024
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -7008,15 +7011,57 @@ const OS = {
         }
     },
     batchExport() {
-        const fmts = ['png','jpeg','webp','avif','svg','pdf'];
         const o = document.createElement('div'); o.className = 'modal-overlay';
-        o.innerHTML = `<div class="modal"><h3>Batch Export</h3>
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Export canvas to multiple formats at once.</p>
+        o.innerHTML = `<div class="modal"><h3>Batch Processor</h3>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Drop a folder of images, apply a saved action recipe, and download one ZIP.</p>
+            <div class="modal-row"><label style="width:110px">Images</label><input id="batch-files" type="file" accept="image/*" multiple></div>
+            <div class="modal-row"><label style="width:110px">Action recipe</label><input id="batch-recipe" type="file" accept=".json,application/json"></div>
+            <div class="modal-row"><label style="width:110px">Output</label><select id="batch-format"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></div>
+            <p id="batch-help" style="font-size:11px;color:var(--text-secondary);margin:8px 0 0">PNG keeps transparency. Use the folder picker to preserve relative paths in the ZIP.</p>
+            <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
+            <button class="btn" data-batch-current>Export current canvas formats...</button>
+            <button class="btn btn-primary" data-modal-action>Process folder</button></div></div>`;
+        const files = o.querySelector('#batch-files');
+        files.webkitdirectory = true;
+        files.directory = true;
+        o.querySelector('[data-modal-close]').addEventListener('click', () => o.remove());
+        o.querySelector('[data-batch-current]').addEventListener('click', () => this._batchExportFormats(o));
+        o.querySelector('[data-modal-action]').addEventListener('click', async () => {
+            const selected = [...(files.files || [])];
+            const recipeFile = o.querySelector('#batch-recipe').files?.[0];
+            if (!selected.length) { this.toast('Choose an image folder first', 'info'); return; }
+            if (!recipeFile) { this.toast('Choose an action recipe JSON file first', 'info'); return; }
+            try {
+                this._assertJsonFileBudget(recipeFile, 'Batch recipe');
+                const recipe = JSON.parse(await recipeFile.text());
+                const format = o.querySelector('#batch-format').value;
+                o.remove();
+                const result = await this.runBatch(selected, recipe, { format });
+                if (result.blob) {
+                    const base = this._safeText(recipeFile.name.replace(/\.[^.]+$/, ''), 60).replace(/[^a-zA-Z0-9_-]/g, '_') || 'openshop-batch';
+                    this._downloadBlob(result.blob, `${base}.zip`);
+                    this.toast(`Processed ${result.processed.length} image${result.processed.length === 1 ? '' : 's'} into a ZIP`, result.failed.length ? 'warning' : 'success');
+                } else {
+                    this.toast('Batch processing produced no files', 'error');
+                }
+            } catch (error) {
+                this.toast(`Batch processing failed: ${error.message}`, 'error');
+            }
+        });
+        document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
+    },
+    _batchExportFormats(o) {
+        o?.remove();
+        const fmts = ['png','jpeg','webp','avif','svg','pdf'];
+        const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+        overlay.innerHTML = `<div class="modal"><h3>Export Current Canvas</h3>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Export the current canvas to multiple formats at once.</p>
             ${fmts.map(f => `<div class="modal-row"><label style="width:60px">${f.toUpperCase()}</label><label><input type="checkbox" id="batch-${f}" checked> Export</label></div>`).join('')}
             <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
             <button class="btn btn-primary" data-modal-action>Export All</button></div></div>`;
-        o.querySelector('[data-modal-action]').addEventListener('click', () => this.doBatchExport(o));
-        document.body.appendChild(o); requestAnimationFrame(() => o.classList.add('show'));
+        overlay.querySelector('[data-modal-close]').addEventListener('click', () => overlay.remove());
+        overlay.querySelector('[data-modal-action]').addEventListener('click', () => this.doBatchExport(overlay));
+        document.body.appendChild(overlay); requestAnimationFrame(() => overlay.classList.add('show'));
     },
     async doBatchExport(o) {
         const formats = ['png','jpeg','webp','avif','svg','pdf'].filter(f => o.querySelector('#batch-'+f).checked);
@@ -7038,6 +7083,167 @@ const OS = {
         if (done === formats.length) this.toast(`Exported ${done} format${done === 1 ? '' : 's'}`, 'success');
         else this.toast(`Exported ${done} of ${formats.length} formats — see console for failures`, 'error');
         return done === formats.length;
+    },
+    _parseBatchRecipe(payload) {
+        const commands = this._parseMacroPayload(payload);
+        if (!commands.length) throw new Error('Batch recipe is empty');
+        return commands;
+    },
+    _batchTargetObject() {
+        let object = this.canvas?.getActiveObject?.();
+        if (!object || object.name === '__boundary__' || object.excludeFromExport) {
+            object = this.canvas?.getObjects?.().find(candidate => candidate.type === 'image' && candidate.name !== '__boundary__' && !candidate.excludeFromExport);
+        }
+        if (!object) throw new Error('Batch recipes need an editable image target');
+        const layerIndex = this.layers.findIndex(layer => layer.objects?.includes(object));
+        if (layerIndex >= 0) this.activeLayerIdx = layerIndex;
+        this.canvas.setActiveObject(object);
+        return object;
+    },
+    _remapBatchCommands(commands) {
+        const target = this._batchTargetObject();
+        const objectId = this._ensureObjectId(target);
+        const activeLayer = this.layers[this.activeLayerIdx] || this.layers.find(layer => !layer.locked);
+        if (!activeLayer?.id) throw new Error('Batch document has no editable layer');
+        const layerId = activeLayer.id;
+        const layerMap = new Map();
+        const mappedLayer = id => layerMap.get(String(id || '')) || layerId;
+        return commands.map(command => {
+            const args = { ...(command.args || {}) };
+            if (Object.prototype.hasOwnProperty.call(args, 'objectId')) args.objectId = objectId;
+            if (command.id === 'layer.add') {
+                const originalId = String(args.layerId || '');
+                const replacement = this._newDocumentId('layer');
+                if (originalId) layerMap.set(originalId, replacement);
+                args.layerId = replacement;
+                if (args.afterLayerId) args.afterLayerId = mappedLayer(args.afterLayerId);
+            } else {
+                if (Object.prototype.hasOwnProperty.call(args, 'layerId')) args.layerId = mappedLayer(args.layerId);
+                if (Object.prototype.hasOwnProperty.call(args, 'afterLayerId')) args.afterLayerId = mappedLayer(args.afterLayerId);
+            }
+            return this._normalizeCommand({ ...command, args }, { allowSequence:false });
+        });
+    },
+    async _loadBatchImageFile(file) {
+        if (!file || !String(file.type || '').toLowerCase().startsWith('image/')) throw new Error('Batch input is not an image');
+        if (this._isSVGFile(file) || this._isAvifFile(file) || this._isRAWFile(file)) throw new Error('Batch processor currently accepts raster images only');
+        this._validateImageFile(file);
+        const url = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = event => resolve(event.target.result);
+            reader.onerror = () => reject(new Error('Could not read the batch image'));
+            reader.readAsDataURL(file);
+        });
+        const image = await fabric.Image.fromURL(url);
+        this._validateDecodedImage(image);
+        this.createNewDocument(image.width, image.height, { resetProject:true });
+        this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
+        image.set({ left:0, top:0, selectable:true, name:this._safeText(file.name, 120), _openShopObjectId:this._newDocumentId('object') });
+        this.canvas.add(image);
+        this.layers[this.activeLayerIdx].objects.push(image);
+        this.canvas.setActiveObject(image);
+        this.canvas.renderAll();
+        this.zoomFit();
+        this.saveHistory('Batch Image');
+        this.updateLayersPanel();
+        return image;
+    },
+    _batchEntryName(file, format, used) {
+        const raw = String(file.webkitRelativePath || file.name || 'image').replace(/\\/g, '/');
+        const segments = raw.split('/').map(segment => segment.replace(/[^a-zA-Z0-9._-]/g, '_')).filter(Boolean);
+        if (!segments.length) segments.push('image');
+        segments[segments.length - 1] = segments[segments.length - 1].replace(/\.[^.]+$/, '') || 'image';
+        let name = `${segments.join('/')}.${format === 'jpeg' ? 'jpg' : format}`;
+        let suffix = 2;
+        while (used.has(name)) name = `${segments.slice(0, -1).join('/')}${segments.length > 1 ? '/' : ''}${segments.at(-1)}-${suffix++}.${format === 'jpeg' ? 'jpg' : format}`;
+        used.add(name);
+        return name;
+    },
+    _zipBatchEntries(entries) {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const central = [];
+        const crcTable = this._batchCRC32Table || (this._batchCRC32Table = Array.from({ length:256 }, (_, index) => {
+            let value = index;
+            for (let bit = 0; bit < 8; bit++) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+            return value >>> 0;
+        }));
+        const crc32 = bytes => {
+            let value = 0xffffffff;
+            for (const byte of bytes) value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
+            return (value ^ 0xffffffff) >>> 0;
+        };
+        const write16 = (view, offset, value) => view.setUint16(offset, value, true);
+        const write32 = (view, offset, value) => view.setUint32(offset, value >>> 0, true);
+        let offset = 0;
+        const now = new Date();
+        const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+        const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+        for (const entry of entries) {
+            const name = encoder.encode(entry.name);
+            const data = entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(entry.bytes);
+            const checksum = crc32(data);
+            const local = new Uint8Array(30 + name.length + data.length);
+            const localView = new DataView(local.buffer);
+            write32(localView, 0, 0x04034b50); write16(localView, 4, 20); write16(localView, 6, 0x0800);
+            write16(localView, 8, 0); write16(localView, 10, dosTime); write16(localView, 12, dosDate);
+            write32(localView, 14, checksum); write32(localView, 18, data.length); write32(localView, 22, data.length);
+            write16(localView, 26, name.length); write16(localView, 28, 0);
+            local.set(name, 30); local.set(data, 30 + name.length); parts.push(local);
+            const record = new Uint8Array(46 + name.length); const recordView = new DataView(record.buffer);
+            write32(recordView, 0, 0x02014b50); write16(recordView, 4, 20); write16(recordView, 6, 20); write16(recordView, 8, 0x0800);
+            write16(recordView, 10, 0); write16(recordView, 12, dosTime); write16(recordView, 14, dosDate);
+            write32(recordView, 16, checksum); write32(recordView, 20, data.length); write32(recordView, 24, data.length);
+            write16(recordView, 28, name.length); write16(recordView, 30, 0); write16(recordView, 32, 0);
+            write16(recordView, 34, 0); write16(recordView, 36, 0); write32(recordView, 38, 0); write32(recordView, 42, offset);
+            record.set(name, 46); central.push(record); offset += local.length;
+        }
+        const centralSize = central.reduce((total, value) => total + value.length, 0);
+        const end = new Uint8Array(22); const endView = new DataView(end.buffer);
+        write32(endView, 0, 0x06054b50); write16(endView, 8, entries.length); write16(endView, 10, entries.length);
+        write32(endView, 12, centralSize); write32(endView, 16, offset); parts.push(...central, end);
+        return new Blob(parts, { type:'application/zip' });
+    },
+    async runBatch(files, recipe, { format = 'png', quality = 0.92, onProgress = null } = {}) {
+        if (this._batchRunning) throw new Error('A batch is already running');
+        const inputs = [...(files || [])].filter(file => file?.name);
+        if (!inputs.length) throw new Error('No batch images were selected');
+        if (inputs.length > this._importLimits.maxBatchFiles) throw new Error(`Batch exceeds the ${this._importLimits.maxBatchFiles}-file limit`);
+        const totalBytes = inputs.reduce((total, file) => total + Number(file.size || 0), 0);
+        if (totalBytes > this._importLimits.maxBatchInputBytes) throw new Error('Batch inputs exceed the 1 GB size limit');
+        format = String(format || 'png').toLowerCase();
+        if (!['png','jpeg','webp'].includes(format)) throw new Error('Batch output must be PNG, JPEG, or WebP');
+        const commands = this._parseBatchRecipe(recipe);
+        const rollback = this._captureRollbackState();
+        const result = { blob:null, processed:[], failed:[], format, recipeCommands:commands.length };
+        this._batchRunning = true;
+        try {
+            const entries = []; const usedNames = new Set(); let outputBytes = 0;
+            for (let index = 0; index < inputs.length; index++) {
+                const file = inputs[index];
+                try {
+                    await this._loadBatchImageFile(file);
+                    const remapped = this._remapBatchCommands(commands);
+                    const success = await this._executeCommand(this._makeCommand('macro.sequence', { commands:remapped }), { label:`Batch recipe (${commands.length} steps)`, recordMacro:false });
+                    if (!success) throw new Error('Recipe could not be applied');
+                    const captured = this._captureExportRaster({ format, quality, transparent:format !== 'jpeg', matte:'#ffffff' });
+                    const bytes = new Uint8Array(await this._dataUrlToBlob(captured.dataUrl).arrayBuffer());
+                    outputBytes += bytes.length;
+                    if (outputBytes > this._importLimits.maxBatchOutputBytes) throw new Error('Batch output exceeds the 2 GB size limit');
+                    entries.push({ name:this._batchEntryName(file, format, usedNames), bytes });
+                    result.processed.push(file.name);
+                } catch (error) {
+                    result.failed.push({ name:file.name, error:error.message });
+                }
+                onProgress?.({ index:index + 1, total:inputs.length, file:file.name, processed:result.processed.length, failed:result.failed.length });
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            if (entries.length) result.blob = this._zipBatchEntries(entries);
+            return result;
+        } finally {
+            this._batchRunning = false;
+            if (rollback) await this._restoreRollbackState(rollback);
+        }
     },
     _projectFileHandle: null,
     async saveProject() {
