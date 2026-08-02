@@ -12,7 +12,6 @@ testing gates.
 
 ### Format & I/O
 ### Editor Core
-- Smart objects: re-editable embedded source so edits don't resample
 - Vector shapes stored as paths (Bezier handles on the canvas), not rasterized until export
 - Text on path + basic OpenType feature toggles (ligatures, small caps, tabular)
 

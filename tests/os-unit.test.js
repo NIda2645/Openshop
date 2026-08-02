@@ -1346,6 +1346,15 @@ describe('OpenShop core object', () => {
     expect(() => OS._normalizeLayerMask({ mask: { encoding:'coverage-v1', width:2, height:2, data:'data:application/vnd.openshop.selection;base64,AA==' } }, { validate:true })).toThrow(/truncated/);
   });
 
+  it('normalizes embedded Smart Object sources and rejects remote payloads', () => {
+    const OS = loadOpenShop();
+    const source = 'data:image/png;base64,AAAA';
+    expect(OS._normalizeSmartObject({ source, sourceName:'Photo.png', sourceWidth:1200, sourceHeight:800, revision:3 })).toEqual({
+      version:1, kind:'image', source, sourceName:'Photo.png', sourceWidth:1200, sourceHeight:800, revision:3
+    });
+    expect(() => OS._normalizeSmartObject({ source:'https://example.test/photo.png' }, { validate:true })).toThrow(/invalid/);
+  });
+
   it('registers one installed-app launch consumer and routes supported files', async () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);

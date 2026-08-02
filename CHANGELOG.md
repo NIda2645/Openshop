@@ -11,6 +11,7 @@ All notable changes to Openshop will be documented in this file.
 - Preserve opaque ICC profile data and AI segment masks, including their labels and sources, in `.openshop` project round-trips.
 - Add non-destructive Levels, Curves, and HSL adjustment layers with versioned parameters, editable stack previews, and an explicit Apply Stack path.
 - Add independent raster layer masks with bounded project storage, non-destructive feather and density controls, and an explicit remove path.
+- Add re-editable embedded Smart Objects with source replacement that preserves the placed object transform and keeps the original source in the `.openshop` project.
 
 ## [v0.27.0] - 2026-08-01
 

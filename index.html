@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5CkSUQ6Yhf1zU+3XLQQa+pYmIZN9FpjX0+vGMKolwi8=' 'sha256-bNQAXo+9NyS4UhoQI6r7UO33XMCJEmpZYHFj0huzCzA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-DhhM/AONPrbTu2h/wi7o+Lxoz0BD4W0Sk5uKjZXNOjg=' 'sha256-kQtnoZ3YRrdjSM73F/FmzIWkN/XZUg2telqdNcn6PBM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -20,7 +20,7 @@ const applyFabricCompat = () => {
 
     api.FabricObject.ownDefaults.originX = 'left';
     api.FabricObject.ownDefaults.originY = 'top';
-    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers', '_openShopLayerMask', '_openShopMaskBaseSrc'];
+    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers', '_openShopLayerMask', '_openShopMaskBaseSrc', '_openShopSmartObject'];
     api.Image.filters = api.filters;
 
     const reportAsyncError = error => {
@@ -2751,6 +2751,12 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
                      <button class="btn" id="apply-adjustment-layers" type="button">Apply Stack</button>
                  </div>
                  <div style="height:1px;background:var(--border);margin:10px 0"></div>
+                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Smart Object</div>
+                 <div class="adj-btns">
+                     <button class="btn btn-primary" id="convert-smart-object" type="button">Convert</button>
+                     <button class="btn" id="edit-smart-object" type="button">Edit Source</button>
+                 </div>
+                 <div style="height:1px;background:var(--border);margin:10px 0"></div>
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:6px">Text Effects</div>
                 <div class="text-fx-row"><label>Shadow X</label><input type="range" id="tfx-sx" min="-20" max="20" value="2" data-os-input="input-020"></div>
                 <div class="text-fx-row"><label>Shadow Y</label><input type="range" id="tfx-sy" min="-20" max="20" value="2" data-os-input="input-020"></div>
@@ -4224,7 +4230,7 @@ const OS = {
         return Boolean(id) && (id === this._documentId || this._documentIdAliases.includes(id));
     },
     _idSequence: 0,
-    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers', '_openShopLayerMask', '_openShopMaskBaseSrc'],
+    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers', '_openShopLayerMask', '_openShopMaskBaseSrc', '_openShopSmartObject'],
     _isDirty: false,
     _persistenceState: 'clean',
     _documentRevision: 0,
@@ -4301,7 +4307,8 @@ const OS = {
         maxDecodedPdfBytes: 512 * 1024 * 1024,
         maxColorProfileBytes: 4 * 1024 * 1024,
         maxAIMasks: 32,
-        maxLayerMaskBytes: 8 * 1024 * 1024
+        maxLayerMaskBytes: 8 * 1024 * 1024,
+        maxSmartObjectBytes: 8 * 1024 * 1024
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -4680,6 +4687,8 @@ const OS = {
             void this.addAdjustmentLayer(type).then(success => { if (success) this.showAdjustmentLayerDialog(); });
         });
         document.getElementById('apply-adjustment-layers')?.addEventListener('click', () => { void this.applyAdjustmentLayers(); });
+        document.getElementById('convert-smart-object')?.addEventListener('click', () => { void this.convertToSmartObject(); });
+        document.getElementById('edit-smart-object')?.addEventListener('click', () => { this.showSmartObjectDialog(); });
         const ca = document.getElementById('canvas-area');
         ca.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
         ca.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); this.handleDrop(e); });
@@ -5827,6 +5836,7 @@ const OS = {
                 object._openShopLayerMask = this._normalizeLayerMask(object._openShopLayerMask, { validate:true });
                 object._hasMask = true;
             }
+            if (object._openShopSmartObject) object._openShopSmartObject = this._normalizeSmartObject(object._openShopSmartObject, { validate:true });
             objectsById.set(id, object);
         });
 
@@ -8711,11 +8721,12 @@ self.onmessage = function(event) {
                 ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
                 : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
             const hasMask = l.objects.some(o => o._hasMask);
+            const hasSmartObject = l.objects.some(o => o._openShopSmartObject);
             const isBg = l.objects.some(o => o.name === '__boundary__');
             const thumbStyle = isBg ? 'layer-thumb-checker' : '';
             const layerType = l.kind === 'adjustment'
                 ? `${this._adjustmentLayerName(l.adjustment?.type)} adjustment`
-                : `${l.objects.filter(o=>o.name!=='__boundary__').length} obj${hasMask?' &middot; M':''}`;
+                : `${l.objects.filter(o=>o.name!=='__boundary__').length} obj${hasMask?' &middot; M':''}${hasSmartObject?' &middot; SO':''}`;
             d.innerHTML = `<div class="layer-drag-handle" title="Drag to reorder">&#9776;</div>
                 <button class="layer-vis ${l.visible?'':'hidden'}" title="${l.visible?'Hide layer':'Show layer'}" aria-label="${l.visible?'Hide layer':'Show layer'}" aria-pressed="${l.visible?'false':'true'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${eyeSvg}</svg></button>
                 <button class="layer-lock ${l.locked?'locked':''}" title="${l.locked?'Unlock layer':'Lock layer'}" aria-label="${l.locked?'Unlock layer':'Lock layer'}">${lockSvg}</button>
@@ -8725,6 +8736,11 @@ self.onmessage = function(event) {
             d.querySelector('.layer-lock').addEventListener('click', e => { e.stopPropagation(); this.toggleLayerLock(i); });
             d.querySelector('.layer-name').addEventListener('dblclick', function() {
                 if (l.kind === 'adjustment') OS.showAdjustmentLayerDialog(i);
+                else if (l.objects.some(o => o._openShopSmartObject)) {
+                    OS.selectLayer(i);
+                    OS.canvas.setActiveObject(l.objects.find(o => o._openShopSmartObject));
+                    OS.showSmartObjectDialog();
+                }
                 else OS.startRenameLayer(this, i);
             });
             // The container claims role="listbox" but had no options in it, so
@@ -15229,6 +15245,10 @@ self.onmessage = async function(event) {
         await this._commitImageData(info, 'Auto Enhance', { success:'Auto enhance applied' });
     },
     async _replaceActiveImage(active, dataUrl, histName, editGuard = null) {
+        if (active?._openShopSmartObject) {
+            this.toast('Edit the Smart Object source instead of applying a destructive pixel edit', 'info');
+            return false;
+        }
         if (!this._guardObjectEdit(active)) return false;
         const guard = editGuard || {
             generation:this._documentGeneration,
@@ -15710,6 +15730,103 @@ self.onmessage = async function(event) {
         this.canvas.renderAll(); this.saveHistory('Remove Mask'); this.updateLayersPanel();
         this.toast('Mask removed', 'info');
         return true;
+    },
+
+    // ====================== SMART OBJECTS ======================
+    _normalizeSmartObject(value, { validate = false } = {}) {
+        const source = value && typeof value === 'object' ? value : {};
+        const data = typeof source.source === 'string' ? source.source : '';
+        if (!/^data:image\/(?:png|jpeg|webp|gif|bmp);base64,/i.test(data) || data.length > this._importLimits.maxSmartObjectBytes) {
+            if (validate) throw new Error('Smart Object source is invalid or exceeds import limits');
+            return null;
+        }
+        const number = (candidate, fallback) => {
+            const n = Math.round(Number(candidate));
+            return Number.isFinite(n) ? Math.max(1, Math.min(this._importLimits.maxImageDimension, n)) : fallback;
+        };
+        return {
+            version:1,
+            kind:'image',
+            source:data,
+            sourceName:this._safeText(source.sourceName || 'Embedded source', 120),
+            sourceWidth:number(source.sourceWidth, 1),
+            sourceHeight:number(source.sourceHeight, 1),
+            revision:Math.max(1, Math.min(1000000, Math.round(Number(source.revision) || 1)))
+        };
+    },
+    async _replaceSmartObjectSource(object, dataUrl, sourceName = 'Embedded source') {
+        if (!object?._openShopSmartObject || object.type !== 'image') return false;
+        const smart = this._normalizeSmartObject({ ...object._openShopSmartObject, source:dataUrl, sourceName, revision:(object._openShopSmartObject.revision || 1) + 1 }, { validate:true });
+        const replacement = await fabric.Image.fromURL(dataUrl);
+        const oldWidth = Math.max(1, object.getScaledWidth?.() || Math.abs(object.width * object.scaleX));
+        const oldHeight = Math.max(1, object.getScaledHeight?.() || Math.abs(object.height * object.scaleY));
+        const width = Math.max(1, replacement.width || replacement.getElement?.().naturalWidth || 1);
+        const height = Math.max(1, replacement.height || replacement.getElement?.().naturalHeight || 1);
+        const saved = {
+            left:object.left, top:object.top, angle:object.angle, flipX:object.flipX, flipY:object.flipY,
+            skewX:object.skewX, skewY:object.skewY, originX:object.originX, originY:object.originY,
+            opacity:object.opacity, visible:object.visible, selectable:object.selectable, evented:object.evented
+        };
+        object.setElement?.(replacement.getElement());
+        if (!object.setElement) object._element = replacement.getElement();
+        object.width = width; object.height = height;
+        object.scaleX = oldWidth / width; object.scaleY = oldHeight / height;
+        object.set(saved); object._openShopSmartObject = { ...smart, sourceWidth:width, sourceHeight:height };
+        if (object._openShopLayerMask) object._openShopMaskBaseSrc = dataUrl;
+        object.dirty = true; object.setCoords?.();
+        if (object._openShopLayerMask) await this._rebuildLayerMasks();
+        this.canvas.renderAll(); this.saveHistory('Edit Smart Object Source'); this.updateLayersPanel();
+        return true;
+    },
+    async convertToSmartObject() {
+        const active = this.canvas.getActiveObject();
+        if (!active) { this.toast('Select an image layer first', 'info'); return false; }
+        if (active.type !== 'image') { this.toast('Smart Objects currently require an image layer', 'info'); return false; }
+        if (active._openShopSmartObject) { this.showSmartObjectDialog(); return true; }
+        try {
+            const element = active.getElement();
+            const source = this._imageToDataURL(active);
+            active._openShopSmartObject = this._normalizeSmartObject({
+                source, sourceName:active.name || 'Embedded source',
+                sourceWidth:element.naturalWidth || element.width, sourceHeight:element.naturalHeight || element.height
+            }, { validate:true });
+            this.saveHistory('Convert to Smart Object'); this.updateLayersPanel();
+            this.toast('Converted to Smart Object; source is embedded locally', 'success');
+            this.showSmartObjectDialog();
+            return true;
+        } catch (error) {
+            this.toast(`Smart Object conversion failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
+    showSmartObjectDialog() {
+        const active = this.canvas.getActiveObject();
+        const smart = this._normalizeSmartObject(active?._openShopSmartObject);
+        if (!active || !smart) return false;
+        document.querySelector('.smart-object-dialog')?.remove();
+        const overlay = document.createElement('div'); overlay.className = 'modal-overlay smart-object-dialog show';
+        overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', 'Smart Object source');
+        const modal = document.createElement('div'); modal.className = 'modal';
+        const title = document.createElement('h3'); title.textContent = 'Smart Object Source'; modal.appendChild(title);
+        const description = document.createElement('p'); description.textContent = `${smart.sourceName} · revision ${smart.revision} · ${smart.sourceWidth} × ${smart.sourceHeight}px`; description.style.cssText = 'font-size:11px;color:var(--text-muted);margin:0 0 14px'; modal.appendChild(description);
+        const file = document.createElement('input'); file.type = 'file'; file.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp'; file.style.display = 'none'; modal.appendChild(file);
+        const buttons = document.createElement('div'); buttons.className = 'modal-btns';
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'btn'; close.textContent = 'Close';
+        const replace = document.createElement('button'); replace.type = 'button'; replace.className = 'btn btn-primary'; replace.textContent = 'Replace Source';
+        buttons.append(close, replace); modal.appendChild(buttons); overlay.appendChild(modal); document.body.appendChild(overlay);
+        const dismiss = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+        const onKey = event => { if (event.key === 'Escape') dismiss(); };
+        close.addEventListener('click', dismiss); overlay.addEventListener('click', event => { if (event.target === overlay) dismiss(); }); document.addEventListener('keydown', onKey);
+        replace.addEventListener('click', () => file.click());
+        file.addEventListener('change', () => {
+            const selected = file.files?.[0];
+            if (!selected) return;
+            if (!selected.type.startsWith('image/') || selected.size > this._importLimits.maxImageBytes) { this.toast('Choose an image within the import limit', 'error'); return; }
+            const reader = new FileReader();
+            reader.onload = () => void this._replaceSmartObjectSource(active, String(reader.result), selected.name).then(success => { if (success) dismiss(); }).catch(error => this.toast(`Smart Object source failed: ${error.message}`, 'error'));
+            reader.readAsDataURL(selected);
+        });
+        return overlay;
     },
 
     // ====================== PEN / BEZIER TOOL ======================
