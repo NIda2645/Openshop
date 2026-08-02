@@ -1676,6 +1676,95 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('drags gradient stops on canvas and colours text decorations @cross-browser', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const gradient = await page.evaluate(async () => {
+    OS.state.gradType = 'linear';
+    OS.drawGradient({ x: 20, y: 20 }, { x: 220, y: 140 });
+    const rect = OS.canvas.getObjects().at(-1);
+    OS.canvas.setActiveObject(rect);
+    const before = Object.keys(rect.controls).sort();
+    const lazyBefore = OS._runtimeAssetPromises.has('fabricExtensions');
+    const attached = await OS.editGradientStops();
+    const controls = Object.keys(rect.controls);
+
+    // Driving one handle has to move the gradient itself, not the rectangle.
+    const handle = rect.controls[controls.find(name => !before.includes(name))];
+    const geometryBefore = { left: rect.left, top: rect.top, coords: { ...rect.fill.coords } };
+    const pointer = new fabric.Point(rect.left + 160, rect.top + 30);
+    handle.actionHandler(
+      { clientX: 0, clientY: 0 },
+      { target: rect, action: 'gradient', corner: '', originX: 'left', originY: 'top', scenePoint: pointer, pointer },
+      pointer.x,
+      pointer.y
+    );
+
+    const radial = new fabric.Rect({ left: 0, top: 0, width: 40, height: 40, fill: new fabric.Gradient({ type: 'radial', coords: { x1: 20, y1: 20, r1: 0, x2: 20, y2: 20, r2: 20 }, colorStops: [{ offset: 0, color: '#fff' }, { offset: 1, color: '#000' }] }) });
+    OS.canvas.add(radial);
+    OS.canvas.setActiveObject(radial);
+    const radialRefused = await OS.editGradientStops();
+
+    OS.canvas.setActiveObject(rect);
+    return {
+      lazyBefore,
+      lazyAfter: OS._runtimeAssetPromises.has('fabricExtensions'),
+      verified: OS._runtimeAssets.fabricExtensions.integrity.startsWith('sha384-'),
+      attached,
+      newControls: controls.filter(name => !before.includes(name)).length,
+      moved: rect.left === geometryBefore.left && rect.top === geometryBefore.top,
+      coordsChanged: JSON.stringify(rect.fill.coords) !== JSON.stringify(geometryBefore.coords),
+      radialRefused,
+      // Deselecting must hand the object its ordinary transform handles back.
+      restored: (OS.exitGradientStops(), Object.keys(rect.controls).sort().join()) === before.join()
+    };
+  });
+  expect(gradient.lazyBefore).toBe(false);
+  expect(gradient.lazyAfter).toBe(true);
+  expect(gradient.verified).toBe(true);
+  expect(gradient.attached).toBe(true);
+  expect(gradient.newControls).toBeGreaterThan(0);
+  expect(gradient.moved).toBe(true);
+  expect(gradient.coordsChanged).toBe(true);
+  expect(gradient.radialRefused).toBe(false);
+  expect(gradient.restored).toBe(true);
+
+  const text = await page.evaluate(() => {
+    OS.canvas.discardActiveObject();
+    const node = new fabric.IText('Decorated', { left: 10, top: 10, fontSize: 24, fill: '#ffffff' });
+    OS.canvas.add(node);
+    OS.canvas.setActiveObject(node);
+    OS.setTextDecoration('underline', true);
+    OS.setTextDecoration('linethrough', true);
+    OS.setTextDecoration('textDecorationColor', '#ff0055');
+    OS.setTextDecoration('textDecorationThickness', 250);
+    OS.setTextDecoration('textDecorationThickness', 0);
+    const clamped = node.textDecorationThickness;
+    OS.setTextDecoration('textDecorationColor', 'javascript:alert(1)');
+    return {
+      underline: node.underline,
+      overline: node.overline,
+      linethrough: node.linethrough,
+      colour: node.textDecorationColor,
+      clamped,
+      // A new text object has to pick the same settings up.
+      inherited: OS._textDecorationProps()
+    };
+  });
+  expect(text).toMatchObject({
+    underline: true,
+    overline: false,
+    linethrough: true,
+    colour: '#ff0055',
+    clamped: 10
+  });
+  expect(text.inherited).toMatchObject({ underline: true, linethrough: true, textDecorationColor: '#ff0055' });
+  expect(pageErrors).toEqual([]);
+});
+
 test('reports what it sent and can refuse every uncached download @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -5687,7 +5776,7 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
   // units, and the single-letter typographic controls, which are the same in
   // every locale.
   const sameEverywhere = new Set([
-    'PNG', 'JPEG', 'WebP', 'AVIF', 'SVG', 'PDF', 'PSD (Photoshop)', 'AI', '100%', 'B', 'I', 'W', 'x', 'H'
+    'PNG', 'JPEG', 'WebP', 'AVIF', 'SVG', 'PDF', 'PSD (Photoshop)', 'AI', '100%', 'B', 'I', 'U', 'O', 'S', 'W', 'x', 'H'
   ]);
   const domSet = new Set(result.domKeys);
   const missingInChrome = result.missingInChinese

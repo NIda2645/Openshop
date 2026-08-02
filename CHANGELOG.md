@@ -10,6 +10,8 @@ All notable changes to Openshop will be documented in this file.
 - Lock the contributor web harness to localhost Host and Origin values, serve only the six files its browser tests need, and return bounded 4xx responses for malformed paths, invalid JSON, and oversized control bodies instead of exposing repository contents or terminating the process
 
 ### Added
+- Drag gradient stops on the canvas. Fabric's interactive gradient handles ship in a second UMD bundle rather than the pinned main one, so it is fetched and SHA-384 verified on demand like every other lazy runtime asset and only when the gradient tool asks for it; radial gradients say so instead of half-working, since upstream provides no radial equivalent
+- Underline, overline, and line-through for text, each with its own colour and thickness rather than borrowing the fill. New text inherits the current settings and an existing selection is restyled in place
 - Report outbound network use where a hosted competitor shows a credit meter. A ledger installed ahead of the first fetch in the document records every request the page makes — including the three pinned startup libraries — and the status bar reads `Nothing sent` until one happens. Network Activity lists them grouped by host and purpose, and a persisted strict offline mode refuses anything not already cached while naming the individual capabilities that costs. Strict mode stands itself down rather than leave a cold `file://` start with no interface to switch it off
 
 ### Changed

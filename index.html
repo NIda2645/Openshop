@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-JpbZsy/kO9Ux73dJ+hfFeX3JIBfUgGB3NjuQLsS0qpQ=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-TWfAWpzxTmHE2mXKRfgEUQvd7OwgE4ng0qPLyTks0vw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2431,12 +2431,18 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <label>Color</label><input type="color" id="text-color" value="#ffffff" data-os-change="change-009">
         <label><input type="checkbox" id="text-bold" data-os-change="change-010"> B</label>
         <label><input type="checkbox" id="text-italic" data-os-change="change-011"> I</label>
+        <label><input type="checkbox" id="text-underline" data-os-change="change-038"> U</label>
+        <label><input type="checkbox" id="text-overline" data-os-change="change-039"> O</label>
+        <label><input type="checkbox" id="text-linethrough" data-os-change="change-040"> S</label>
+        <label>Stroke</label><input type="color" id="text-decoration-color" value="#ffffff" data-os-change="change-041">
+        <label>Width</label><input type="number" id="text-decoration-thickness" value="100" min="10" max="500" step="10" data-os-change="change-042">
     </div>
     <div class="opt-group" id="opt-gradient" style="display:none">
         <label>From</label><input type="color" id="grad-from" value="#6c8cff" data-os-change="change-012">
         <label>To</label><input type="color" id="grad-to" value="#000000" data-os-change="change-013">
         <label>Type</label>
         <select id="grad-type" data-os-change="change-014"><option value="linear">Linear</option><option value="radial">Radial</option></select>
+        <button type="button" class="btn" id="grad-edit-stops" data-os-click="click-221">Edit Stops</button>
     </div>
     <div class="opt-group" id="opt-pattern" style="display:none">
         <label>Pattern</label>
@@ -3131,7 +3137,8 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-216": function(event) { OS._curvesPreset('darken') },
         "click-217": function(event) { OS._curvesPreset('contrast') },
         "click-218": function(event) { OS._curvesPreset('invert') },
-        "click-220": function(event) { OS.showNetworkActivity() }
+        "click-220": function(event) { OS.showNetworkActivity() },
+        "click-221": function(event) { OS.editGradientStops() }
     }),
     change: Object.freeze({
         "change-001": function(event) { OS.setBrushPreset(this.value) },
@@ -3170,7 +3177,12 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "change-034": function(event) { OS.handleFileOpen(event) },
         "change-035": function(event) { OS.handlePSDOpen(event) },
         "change-036": function(event) { OS.handleProjectOpen(event) },
-        "change-037": function(event) { OS._updateGMPreview() }
+        "change-037": function(event) { OS._updateGMPreview() },
+        "change-038": function(event) { OS.setTextDecoration('underline', this.checked) },
+        "change-039": function(event) { OS.setTextDecoration('overline', this.checked) },
+        "change-040": function(event) { OS.setTextDecoration('linethrough', this.checked) },
+        "change-041": function(event) { OS.setTextDecoration('textDecorationColor', this.value) },
+        "change-042": function(event) { OS.setTextDecoration('textDecorationThickness', this.value) }
     }),
     input: Object.freeze({
         "input-001": function(event) { OS.setBrushSize(this.value) },
@@ -3289,6 +3301,14 @@ const OS = {
             integrity:'sha384-WXzHutwoBnplk2hri8J5IvzXrMqwzK8SJSgK71upLLSvawD7CtQd7Ylgs5nMkpuh',
             type:'application/wasm'
         }),
+        // Fabric ships its interactive control extensions as a second UMD
+        // bundle, not inside dist/index.min.js, so they cost their own pinned
+        // fetch. It is 21 KB and only the gradient tool needs it.
+        fabricExtensions: Object.freeze({
+            url:'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist-extensions/fabric-extensions.min.js',
+            integrity:'sha384-6rc+3DCy0kNV0pFM9+GP1741c0pd6ZL++m828n3irFmgRIFqnLdegK6IK7FP1w7K',
+            type:'application/javascript'
+        }),
         transformers: Object.freeze({
             url:'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
             integrity:'sha384-3TA7bWonh/FGdhkvnr9EMFCoFqikJ5aJQEV8RlUgOmBFIF9z3W+h67aRdQPRxN9d',
@@ -3374,6 +3394,36 @@ const OS = {
             this._runtimeBlobPromises.set(name, pending);
         }
         return this._runtimeBlobPromises.get(name);
+    },
+    _verifiedScriptPromises: new Map(),
+    // Runs a verified UMD bundle in the page. The lazy assets that back a
+    // worker are handed to the worker as source; these attach themselves to a
+    // global instead, so they need a real script element — from a blob: URL,
+    // which is the only executable origin script-src allows.
+    async _executeVerifiedRuntimeScript(name, globalName) {
+        if (globalThis[globalName]) return globalThis[globalName];
+        if (!this._verifiedScriptPromises.has(name)) {
+            const pending = (async () => {
+                const url = await this._verifiedRuntimeBlobUrl(name);
+                await new Promise((resolve, reject) => {
+                    const element = document.createElement('script');
+                    element.src = url;
+                    element.onload = () => resolve(true);
+                    element.onerror = () => reject(new Error(`${name} failed to execute`));
+                    (document.head || document.documentElement).appendChild(element);
+                });
+                if (!globalThis[globalName]) throw new Error(`${name} did not publish ${globalName}`);
+                return globalThis[globalName];
+            })().catch(error => {
+                this._verifiedScriptPromises.delete(name);
+                throw error;
+            });
+            this._verifiedScriptPromises.set(name, pending);
+        }
+        return this._verifiedScriptPromises.get(name);
+    },
+    _loadFabricExtensions() {
+        return this._executeVerifiedRuntimeScript('fabricExtensions', 'fabricExtensions');
     },
     async _loadAvifEncoder() {
         if (!this._avifEncoderPromise) {
@@ -3988,6 +4038,8 @@ const OS = {
         brushSize: 8, brushOpacity: 100, brushPreset: 'round',
         shapeFill: '#6c8cff', shapeStroke: '#ffffff', shapeStrokeWidth: 2, shapeFilled: true,
         textFont: 'DM Sans', textSize: 24, textColor: '#ffffff', textBold: false, textItalic: false,
+    textUnderline: false, textOverline: false, textLinethrough: false,
+    textDecorationColor: '#ffffff', textDecorationThickness: 100,
         gradFrom: '#6c8cff', gradTo: '#000000', gradType: 'linear',
         patternType: 'checkerboard', patternScale: 20, patternColor: '#6c8cff',
         cloneSize: 20, sprayDensity: 30, sprayWidth: 30, healingSize: 15,
@@ -4036,7 +4088,8 @@ const OS = {
             this.drawRulers();
         });
         this.canvas.on('selection:created', () => this.updateStatus());
-        this.canvas.on('selection:cleared', () => this.updateStatus());
+        this.canvas.on('selection:cleared', () => { this.exitGradientStops(); this.updateStatus(); });
+        this.canvas.on('selection:updated', () => this.exitGradientStops());
         this.canvas.on('mouse:wheel', opt => this.onMouseWheel(opt));
         // Every zoom and pan path ends in a render, so re-place the screen-space
         // selection box here rather than chasing each caller.
@@ -7597,7 +7650,7 @@ self.onmessage = function(event) {
         if (tool==='clone'&&opt.e.altKey) { this._cloneSource={x:ptr.x,y:ptr.y}; this._cloneOffset=null; this.toast(this._t('Clone source set'),'info'); return; }
         if (tool==='clone'&&this._cloneSource) { this._cloneStart(ptr, opt.e); return; }
         if (tool==='text') {
-            const text = this._applyDirectionToObject(new fabric.IText('Type here', { left:ptr.x, top:ptr.y, fontFamily:this.state.textFont, fontSize:this.state.textSize, fill:this.state.textColor, editable:true, fontWeight:this.state.textBold?'bold':'normal', fontStyle:this.state.textItalic?'italic':'normal' }));
+            const text = this._applyDirectionToObject(new fabric.IText('Type here', { left:ptr.x, top:ptr.y, fontFamily:this.state.textFont, fontSize:this.state.textSize, fill:this.state.textColor, editable:true, fontWeight:this.state.textBold?'bold':'normal', fontStyle:this.state.textItalic?'italic':'normal', ...this._textDecorationProps() }));
             this._addObjectAsLayer(text, this._objectLayerName(text, 'Text'));
             this.canvas.setActiveObject(text); text.enterEditing(); this.saveHistory('Add Text'); this.updateLayersPanel(); return;
         }
@@ -8500,6 +8553,50 @@ self.onmessage = function(event) {
         return true;
     },
 
+    // Fabric publishes draggable gradient handles in its extensions bundle,
+    // but only for linear gradients — a radial gradient has no equivalent
+    // upstream control set, so the tool says so rather than half-working.
+    _gradientControlTarget: null,
+    async editGradientStops(target = null) {
+        const object = target || this.canvas?.getActiveObject();
+        if (!object) { this.toast(this._t('Select a gradient-filled object first'), 'info'); return false; }
+        if (this._gradientControlTarget === object) { this.exitGradientStops(); return true; }
+        const fill = object.fill;
+        if (!fill || typeof fill !== 'object' || fill.type !== 'linear') {
+            this.toast(fill?.type === 'radial'
+                ? this._t('On-canvas stops are available for linear gradients only')
+                : this._t('That object has no linear gradient fill'), 'info');
+            return false;
+        }
+        this.exitGradientStops();
+        let extensions;
+        try {
+            extensions = await this._loadFabricExtensions();
+        } catch (error) {
+            this.toast(`Gradient handles unavailable: ${error.message}`, 'error');
+            return false;
+        }
+        if (!this.canvas || !object.canvas) return false;
+        object._osRestoreControls = object.controls;
+        object.controls = extensions.createLinearGradientControls(fill);
+        object.setCoords();
+        this._gradientControlTarget = object;
+        this.canvas.setActiveObject(object);
+        this.canvas.requestRenderAll();
+        this.toast(this._t('Drag the handles to move the gradient stops'), 'info');
+        return true;
+    },
+    exitGradientStops() {
+        const object = this._gradientControlTarget;
+        this._gradientControlTarget = null;
+        if (!object) return false;
+        if (object._osRestoreControls) object.controls = object._osRestoreControls;
+        delete object._osRestoreControls;
+        object.setCoords?.();
+        this.canvas?.requestRenderAll();
+        return true;
+    },
+
     // ====================== PATTERN FILL ======================
     drawPattern(from, to) {
         if (!this._guardActiveLayerEdit()) return false;
@@ -8670,6 +8767,12 @@ self.onmessage = function(event) {
         const dataUrl = this._captureCanvasRaster({ left:x, top:y, width, height });
         return this._replaceDocumentWithRaster(dataUrl, rasterWidth, rasterHeight, 'Cropped');
     },
+    // Deliberately not Fabric's `enterCropMode` from the extensions bundle.
+    // That crops one image object non-destructively, whereas this crops the
+    // document — every layer, the artboard and the recorded command — and
+    // upstream describes its own helper as "a basic example for demos... your
+    // project may need persistent crop state, in that case make your own
+    // function". Two different features that happen to share a name.
     async applyCrop() {
         if(!this._cropRegion) return;
         if (!await this._confirmDocumentStateLoss('Crop')) return false;
@@ -13010,6 +13113,58 @@ self.onmessage = async function(event) {
     },
 
     // ====================== TEXT EFFECTS ======================
+    _isTextObject(object) {
+        return Boolean(object) && (object.type === 'i-text' || object.type === 'text' || object.type === 'textbox');
+    },
+    _activeTextObjects() {
+        const active = this.canvas?.getActiveObject();
+        if (!active) return [];
+        if (typeof active.getObjects === 'function' && !this._isTextObject(active)) {
+            return active.getObjects().filter(object => this._isTextObject(object));
+        }
+        return this._isTextObject(active) ? [active] : [];
+    },
+    _textDecorationProps() {
+        return {
+            underline:Boolean(this.state.textUnderline),
+            overline:Boolean(this.state.textOverline),
+            linethrough:Boolean(this.state.textLinethrough),
+            textDecorationColor:this.state.textDecorationColor,
+            textDecorationThickness:Number(this.state.textDecorationThickness) || 100
+        };
+    },
+    // Fabric 7 draws underline, overline and line-through in their own colour
+    // and thickness rather than borrowing the fill, so both are exposed here.
+    setTextDecoration(key, value) {
+        const stateKeys = {
+            underline:'textUnderline',
+            overline:'textOverline',
+            linethrough:'textLinethrough',
+            textDecorationColor:'textDecorationColor',
+            textDecorationThickness:'textDecorationThickness'
+        };
+        const stateKey = stateKeys[key];
+        if (!stateKey) return false;
+        let applied;
+        if (key === 'textDecorationThickness') {
+            // The value is a percentage of the font size. Zero draws nothing at
+            // all, which reads as the toggle above it being broken, so it is
+            // clamped to the minimum rather than treated as "unset".
+            const requested = Number(value);
+            applied = Number.isFinite(requested) ? Math.min(500, Math.max(10, Math.round(requested))) : 100;
+        } else if (key === 'textDecorationColor') {
+            applied = /^#[0-9a-fA-F]{6}$/.test(String(value)) ? String(value).toLowerCase() : this.state.textDecorationColor;
+        } else {
+            applied = Boolean(value);
+        }
+        this.state[stateKey] = applied;
+        const targets = this._activeTextObjects();
+        if (!targets.length) return true;
+        targets.forEach(object => object.set(key, applied));
+        this.canvas.requestRenderAll();
+        this.saveHistory('Text Decoration');
+        return true;
+    },
     applyTextFx() {
         const active = this.canvas.getActiveObject();
         if (!active || (active.type !== 'i-text' && active.type !== 'text' && active.type !== 'textbox')) return;
@@ -14773,6 +14928,7 @@ self.onmessage = async function(e) {
             {label:'Theme: Midnight',cat:'View',fn:()=>this.setTheme('midnight')},
             {label:'Theme: OLED',cat:'View',fn:()=>this.setTheme('oled')},
             {label:'Toggle Panels',cat:'View',fn:()=>this.togglePanels(),key:'Tab'},
+            {label:'Edit Gradient Stops',cat:'Edit',fn:()=>this.editGradientStops()},
             {label:'Network Activity',cat:'Help',fn:()=>this.showNetworkActivity()},
             {label:'Toggle Strict Offline Mode',cat:'Help',fn:()=>this.setStrictOffline(!this._network()?.strict)},
             {label:'Export Diagnostics',cat:'Help',fn:()=>this.exportDiagnostics()},

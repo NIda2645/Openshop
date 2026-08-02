@@ -36,6 +36,8 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |
 | **Undo/Redo** | 60-step versioned transaction history with named entries, exact destructive-edit rollback, and a visual history panel |
 | **Free Transform** | Resize, rotate, skew, perspective, and warp on any object |
+| **Text Styling** | Bold, italic, underline, overline, and line-through, with the decoration line's own colour and thickness rather than the fill's |
+| **Gradient Stops** | Linear gradients expose draggable start and end handles on the canvas; the tool says so rather than half-working on radial gradients, which have no upstream control set |
 | **Auto-Save** | Dirty project revisions are written to browser recovery storage every 30 seconds and cleared only after the storage path acknowledges the write |
 
 ### File I/O
@@ -141,6 +143,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | Library | Purpose |
 |---------|---------|
 | [Fabric.js 7.4.0](https://fabricjs.com/) | Canvas rendering, object manipulation, serialization |
+| [Fabric.js 7.4.0 extensions](https://github.com/fabricjs/fabric.js/tree/master/extensions) | On-canvas linear gradient stop handles (loaded on demand) |
 | [ag-psd 31.0.2](https://github.com/Agamnentzar/ag-psd) | Photoshop PSD file import and export |
 | [jsPDF 4.2.1](https://github.com/parallax/jsPDF) | PDF document generation |
 | [Transformers.js 4.2](https://huggingface.co/docs/transformers.js) | Client-side AI inference via WebGPU/WASM (loaded on demand) |
