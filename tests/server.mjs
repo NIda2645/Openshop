@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.OPENSHOP_TEST_PORT || 4173);
 const origin = `http://127.0.0.1:${port}`;
-const productionRevision = '0.26.0-r4';
+const productionRevision = '0.27.0-r1';
 const CONTROL_BODY_LIMIT = 16 * 1024;
 const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 const allowedControlOrigins = new Set([origin, `http://localhost:${port}`]);

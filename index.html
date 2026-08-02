@@ -9,8 +9,8 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-TLe8HcYCd88z3yzyWTsDgOROx29IK97AvuW92bF2HTw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
-<title>OpenShop v0.26.0 — Online Image Editor</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-lhk+Yz9tQNSshSnJx/6POQdq/gU9eDqz+jeNmjLHU/U=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
 // Promise-based v7 API while each call site is migrated independently.
@@ -2035,10 +2035,10 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 
 <!-- ===== TOP MENU ===== -->
 <div id="topbar">
-    <div class="logo" aria-label="OpenShop version 0.26.0">
+    <div class="logo" aria-label="OpenShop version 0.27.0">
         <span class="logo-mark">OS</span>
         <span class="logo-word">OpenShop</span>
-        <span class="logo-version">v0.26</span>
+        <span class="logo-version">v0.27</span>
     </div>
     <div class="menu-bar" role="menubar" aria-label="Main menu">
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
@@ -2571,7 +2571,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 <div id="welcome-overlay" role="dialog" aria-modal="true" aria-label="Welcome to OpenShop">
     <div class="welcome-inner">
         <section class="welcome-hero">
-            <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.26</small></div>
+            <div class="welcome-brand"><span class="welcome-mark">OS</span><span>OpenShop</span><small>v0.27</small></div>
             <div class="welcome-kicker"><span></span> Local creative studio</div>
             <h1>Edit boldly.<br><em>Stay local.</em></h1>
             <p>A full image workspace that opens in one file. Your canvas, layers, and exports stay on this device.</p>
@@ -2916,7 +2916,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 
 <script>
 // ================================================================
-//  OpenShop v0.26.0 — Core Engine (Phase 10: Pro Toolbar)
+//  OpenShop v0.27.0 — Core Engine (Phase 10: Pro Toolbar)
 // ================================================================
 // Static controls declare opaque action IDs; executable behavior lives only in this reviewed registry.
 const OS_EVENT_HANDLERS = Object.freeze({
@@ -3960,7 +3960,7 @@ const OS = {
     // while the app was 0.24.0 — and any future compatibility gate keyed on
     // appVersion would have misread them. The release-metadata test pins this
     // to package.json along with every other version string.
-    version: '0.26.0',
+    version: '0.27.0',
     // Canvas pixels are CSS pixels, so 96 is the honest default. A document
     // created in millimetres or inches carries whatever it was created at, and
     // the PSD and PDF exporters declare that rather than assuming 96.
@@ -4380,7 +4380,7 @@ const OS = {
         if (label) label.textContent = labels[this._persistenceState];
         const dirtyPrefix = this._isDirty ? '* ' : '';
         const stateSuffix = this._persistenceState === 'saving' ? ' (Saving)' : this._persistenceState === 'error' ? ' (Save failed)' : '';
-        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.26.0`;
+        document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.27.0`;
     },
     _markDocumentDirty() {
         this._documentRevision += 1;
