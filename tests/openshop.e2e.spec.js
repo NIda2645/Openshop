@@ -4287,6 +4287,38 @@ test('imports every frame from a real animated GIF fixture without ImageDecoder 
   expect(result.decodedWithoutImageDecoder).toBe(true);
 });
 
+test('imports every PDF page as an editable layer @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'pt', format:[120, 80], compress:true });
+    pdf.setFillColor(220, 40, 70);
+    pdf.rect(0, 0, 120, 80, 'F');
+    pdf.addPage([120, 80]);
+    pdf.setFillColor(40, 110, 220);
+    pdf.rect(0, 0, 120, 80, 'F');
+    const bytes = pdf.output('arraybuffer');
+    const opened = await OS._loadPDFFile(new File([bytes], 'two-page.pdf', { type:'application/pdf' }));
+    return {
+      opened,
+      size:[OS.canvasW, OS.canvasH],
+      layers:OS.layers.map(layer => ({ name:layer.name, objects:layer.objects.filter(object => object.name !== '__boundary__').length })),
+      pageNames:OS.canvas.getObjects().filter(object => /^Page \d+$/.test(object.name || '')).map(object => object.name)
+    };
+  });
+
+  expect(result.opened).toBe(true);
+  expect(result.size).toEqual([80, 120]);
+  expect(result.layers).toEqual([
+    { name:'Background', objects:0 },
+    { name:'Page 1', objects:1 },
+    { name:'Page 2', objects:1 }
+  ]);
+  expect(result.pageNames).toEqual(['Page 1', 'Page 2']);
+});
+
 test('exports a smaller, more accurate animated GIF than the legacy encoder', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

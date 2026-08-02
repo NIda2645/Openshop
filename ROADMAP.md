@@ -11,7 +11,6 @@ testing gates.
 ## Planned Features
 
 ### Format & I/O
-- PDF multi-page import (page-per-layer or page-picker)
 - APNG / animated WebP import with per-frame timing; the shipped GIF path must first pass the stateful timeline acceptance below
   Research note (2026-07-31): `ImageDecoder` (WebCodecs) decodes animated GIF/WebP/AVIF/APNG frame-by-frame with real timing — `track.frameCount`, `track.repetitionCount`, `VideoFrame.duration` in **microseconds**. Chrome 94+, Firefox 133+, **Safari does not support it at all**, so a JS decoder is still required as the fallback (`modern-gif` reads GIF and is MIT/maintained). There is no GIF/APNG/animated-WebP *encoder* anywhere on the platform — `VideoEncoder` emits video codecs only — so export stays JS/WASM permanently.
 - Raw camera file reader (via libraw wasm) with demosaic preview

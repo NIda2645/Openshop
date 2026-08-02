@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-FBKpaCPkUu06mZJlfErwJnDoD2t+QDuY7sDS6kybhko=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-nolbrt0J7MrDljx2JMd9eiFsRUpvtIwE0cMEDORXd5I=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2928,7 +2928,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 <div id="dropzone-overlay">
     <div class="dropzone-ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
     <div class="dropzone-text">Drop files here</div>
-    <div class="dropzone-sub">PNG, JPEG, WebP, SVG, GIF, PSD, .openshop</div>
+    <div class="dropzone-sub">PNG, JPEG, WebP, SVG, GIF, PDF, PSD, .openshop</div>
 </div>
 <!-- ===== ANNOTATION CONTAINER ===== -->
 <div id="sticky-container" style="position:absolute;inset:0;pointer-events:none;z-index:99"></div>
@@ -2995,7 +2995,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <div class="ba-label after">After</div>
     </div>
 </div>
-<input type="file" id="file-input" accept="image/*" style="display:none" data-os-change="change-034">
+<input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none" data-os-change="change-034">
 <input type="file" id="psd-input" accept=".psd" style="display:none" data-os-change="change-035">
 <input type="file" id="project-input" accept=".openshop,.json,application/vnd.openshop+json,application/json" style="display:none" data-os-change="change-036">
 
@@ -3381,7 +3381,17 @@ const OS = {
             integrity:'sha384-/AE2XoJ6rgtq/wlcIHqFn5/zSGrXTfrwuH5NQ2BjgflUjtjIJAz9/C0JSldf8Hr+',
             type:'application/javascript'
         }),
-        avifEncoderModule: Object.freeze({
+                pdfModule: Object.freeze({
+                    url:'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.min.mjs',
+                    integrity:'sha384-Lu/+LFD+sBPeBR+46Ob8a/rd6aBbHktYM/B5wIPKkThU1sW5cY7EyGNX/LV5mv4A',
+                    type:'text/javascript'
+                }),
+                pdfWorker: Object.freeze({
+                    url:'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs',
+                    integrity:'sha384-lS/cXbzefVJPqzSsLi430d1UtgZaucPKENmu9LpJTCLiIsjid1N/bYxkzDBvGYMS',
+                    type:'text/javascript'
+                }),
+                avifEncoderModule: Object.freeze({
             url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.js',
             integrity:'sha384-CSCv5W4tWhwNEV016b7Cf+Z7a+XAf4Z8tY/79BEKL+PJSO96cZrxu+ryYFU+den3',
             type:'application/javascript'
@@ -3453,6 +3463,8 @@ const OS = {
     }),
     _runtimeAssetPromises: new Map(),
     _runtimeBlobPromises: new Map(),
+    _pdfJsPromise: null,
+    _pdfWorkerBlobUrl: null,
     _avifEncoderPromise: null,
     _avifDecoderPromise: null,
     // Interactive image-filter previews use a separate low-resolution pipe.
@@ -3546,6 +3558,37 @@ const OS = {
     },
     _loadSvgToPdf() {
         return this._executeVerifiedRuntimeScript('svg2pdf', 'svg2pdf');
+    },
+    async _loadPdfJs() {
+        if (!this._pdfJsPromise) {
+            this._pdfJsPromise = (async () => {
+                const [moduleAsset, workerAsset] = await Promise.all([
+                    this._fetchVerifiedRuntimeAsset('pdfModule'),
+                    this._fetchVerifiedRuntimeAsset('pdfWorker')
+                ]);
+                const moduleUrl = URL.createObjectURL(new Blob([moduleAsset.bytes], { type:moduleAsset.asset.type }));
+                const workerUrl = URL.createObjectURL(new Blob([workerAsset.bytes], { type:workerAsset.asset.type }));
+                try {
+                    const pdfjs = await import(moduleUrl);
+                    if (typeof pdfjs?.getDocument !== 'function' || !pdfjs.GlobalWorkerOptions) {
+                        throw new Error('Verified PDF.js did not expose its parser');
+                    }
+                    this._pdfWorkerBlobUrl = workerUrl;
+                    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+                    return pdfjs;
+                } catch (error) {
+                    URL.revokeObjectURL(workerUrl);
+                    throw error;
+                } finally {
+                    URL.revokeObjectURL(moduleUrl);
+                }
+            })().catch(error => {
+                this._pdfJsPromise = null;
+                this._pdfWorkerBlobUrl = null;
+                throw error;
+            });
+        }
+        return this._pdfJsPromise;
     },
     async _loadAvifEncoder() {
         if (!this._avifEncoderPromise) {
@@ -4165,7 +4208,9 @@ const OS = {
         maxPresets: 200,
         maxTextLength: 10000,
         maxGifFrames: 300,
-        maxDecodedGifBytes: 512 * 1024 * 1024
+        maxDecodedGifBytes: 512 * 1024 * 1024,
+        maxPdfPages: 512,
+        maxDecodedPdfBytes: 512 * 1024 * 1024
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -5592,7 +5637,7 @@ const OS = {
         if (window.showOpenFilePicker) {
             try {
                 const [handle] = await window.showOpenFilePicker({
-                    types: [{ description: 'Images', accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.gif','.bmp','.svg'] } }]
+                    types: [{ description: 'Images and PDF', accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.gif','.bmp','.svg'], 'application/pdf': ['.pdf'] } }]
                 });
                 const file = await handle.getFile();
                 this._handleFileLoad(file);
@@ -5718,7 +5763,113 @@ const OS = {
         ctx.drawImage(source, 0, 0);
         return out;
     },
+    _isPDFFile(file) {
+        return String(file?.type || '').toLowerCase() === 'application/pdf'
+            || String(file?.name || '').toLowerCase().endsWith('.pdf');
+    },
+    async _loadPDFFile(file) {
+        if (!file) return false;
+        let loadingTask = null;
+        let pdf = null;
+        try {
+            if (!this._isPDFFile(file)) throw new Error('Unsupported PDF file');
+            if (file.size > this._importLimits.maxImageBytes) throw new Error('PDF file exceeds 100 MB limit');
+            const generation = this._documentGeneration;
+            const pdfjs = await this._loadPdfJs();
+            const buffer = await file.arrayBuffer();
+            loadingTask = pdfjs.getDocument({
+                data:new Uint8Array(buffer),
+                isEvalSupported:false,
+                useWorkerFetch:false,
+                stopAtErrors:true,
+                maxImageSize:this._importLimits.maxImagePixels
+            });
+            pdf = await loadingTask.promise;
+            const pageCount = Number(pdf.numPages || 0);
+            const maxPages = Math.min(this._importLimits.maxPdfPages, this._importLimits.maxProjectLayers - 1);
+            if (pageCount < 1) throw new Error('PDF contains no pages');
+            if (pageCount > maxPages) throw new Error(`PDF has ${pageCount} pages, over the ${maxPages}-page import limit`);
+
+            const firstPage = await pdf.getPage(1);
+            const firstViewport = firstPage.getViewport({ scale:1 });
+            const canvasW = Math.ceil(firstViewport.width);
+            const canvasH = Math.ceil(firstViewport.height);
+            this._validateDecodedImage({ width:canvasW, height:canvasH });
+            if (canvasW * canvasH * 4 * pageCount > this._importLimits.maxDecodedPdfBytes) {
+                throw new Error('PDF exceeds the decoded size budget for page import');
+            }
+            if (!await this._confirmDiscardUnsaved('Opening a PDF')) return false;
+
+            this.toast(`Rendering ${pageCount} PDF page${pageCount === 1 ? '' : 's'}...`, 'info');
+            const renderedPages = [];
+            for (let index = 0; index < pageCount; index += 1) {
+                if (this._documentGeneration !== generation) {
+                    this.toast('PDF import discarded because the document changed', 'info');
+                    return false;
+                }
+                const page = index === 0 ? firstPage : await pdf.getPage(index + 1);
+                const viewport = page.getViewport({ scale:1 });
+                const scale = Math.min(1, canvasW / Math.max(1, viewport.width), canvasH / Math.max(1, viewport.height));
+                const pageViewport = page.getViewport({ scale });
+                const pageCanvas = document.createElement('canvas');
+                pageCanvas.width = Math.max(1, Math.ceil(pageViewport.width));
+                pageCanvas.height = Math.max(1, Math.ceil(pageViewport.height));
+                const pageContext = pageCanvas.getContext('2d', { alpha:true, willReadFrequently:false });
+                if (!pageContext) throw new Error('Could not create the PDF page canvas');
+                await page.render({ canvasContext:pageContext, viewport:pageViewport, intent:'display' }).promise;
+                const documentCanvas = document.createElement('canvas');
+                documentCanvas.width = canvasW;
+                documentCanvas.height = canvasH;
+                const documentContext = documentCanvas.getContext('2d', { alpha:true, willReadFrequently:false });
+                if (!documentContext) throw new Error('Could not create the PDF document canvas');
+                documentContext.drawImage(
+                    pageCanvas,
+                    Math.round((canvasW - pageCanvas.width) / 2),
+                    Math.round((canvasH - pageCanvas.height) / 2)
+                );
+                renderedPages.push(documentCanvas.toDataURL('image/png'));
+                page.cleanup?.();
+                pageCanvas.width = 1;
+                pageCanvas.height = 1;
+                documentCanvas.width = 1;
+                documentCanvas.height = 1;
+            }
+            if (this._documentGeneration !== generation) {
+                this.toast('PDF import discarded because the document changed', 'info');
+                return false;
+            }
+
+            this.createNewDocument(canvasW, canvasH, { resetProject:true });
+            this._docName = this._safeText(String(file.name || 'Untitled').replace(/\.[^.]+$/, ''), 100) || 'Untitled';
+            this.layers[1].name = 'Page 1';
+            for (let index = 0; index < renderedPages.length; index += 1) {
+                const image = await fabric.Image.fromURL(renderedPages[index]);
+                image.set({ left:0, top:0, selectable:true, name:`Page ${index + 1}` });
+                this.canvas.add(image);
+                if (index === 0) this.layers[1].objects.push(image);
+                else this._addObjectAsLayer(image, `Page ${index + 1}`);
+            }
+            this.canvas.renderAll();
+            this.zoomFit();
+            this._lastImportExif = null;
+            this.saveHistory('Open PDF');
+            this.updateLayersPanel();
+            this.trackRecentFile(this._docName, canvasW, canvasH);
+            this.toast(`Opened ${pageCount} PDF page${pageCount === 1 ? '' : 's'} as layers`, 'success');
+            return true;
+        } catch (error) {
+            this.toast(`PDF import failed: ${error.message}`, 'error');
+            return false;
+        } finally {
+            try { await loadingTask?.destroy?.(); } catch {}
+            try { await pdf?.cleanup?.(); } catch {}
+        }
+    },
     _handleFileLoad(file) {
+        if (this._isPDFFile(file)) {
+            void this._loadPDFFile(file);
+            return;
+        }
         try { this._validateImageFile(file); } catch(e) { this.toast(e.message, 'error'); return; }
         // _docName is set by _addDecodedImageToCanvas once the decode succeeds;
         // setting it here renamed the open document even when the file failed.
@@ -5920,6 +6071,10 @@ const OS = {
         }
         if (name.endsWith('.openshop') || name.endsWith('.json')) {
             void this._confirmDiscardUnsaved('Opening a project').then(ok => ok && this._loadProjectFile(file));
+            return;
+        }
+        if (this._isPDFFile(file)) {
+            void this._loadPDFFile(file);
             return;
         }
         try { this._validateImageFile(file); } catch(err) { this.toast(err.message, 'error'); return; }

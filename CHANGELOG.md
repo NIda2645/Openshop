@@ -2,6 +2,11 @@
 
 All notable changes to Openshop will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Import PDF documents entirely in the browser, rendering each page as its own editable layer with bounded page count, dimensions, and decoded memory use.
+
 ## [v0.27.0] - 2026-08-01
 
 ### Security
