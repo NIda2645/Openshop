@@ -176,6 +176,46 @@ test('exposes clean, dirty, saving, and saved project states @cross-browser', as
   expect(await unloadPrevented()).toBe(false);
 });
 
+test('renders imported ABR tips as bounded raster layers @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const asset = {
+      id:'abr-e2e', name:'Raster Tip', sourceFormat:'ABR', version:6, size:12,
+      spacing:50, opacity:80, scatter:15, pressureSize:true, pressureOpacity:true,
+      tip:{ width:2, height:2, alpha:[0,255,255,0] }, unsupportedFeatures:[]
+    };
+    OS._importedBrushes = [asset];
+    OS.state.fgColor = '#ff3366';
+    OS.state.brushSize = 12;
+    OS.canvas.isDrawingMode = true;
+    OS.setBrushPreset(asset.id);
+    const brush = OS.canvas.freeDrawingBrush;
+    const raster = OS._renderABRStroke([
+      { x:40, y:40, pressure:0.2 }, { x:100, y:40, pressure:0.9 }
+    ], asset);
+    await OS._commitABRStroke([
+      { x:40, y:40, pressure:0.2 }, { x:100, y:40, pressure:0.9 }
+    ], asset);
+    return {
+      isStampBrush: brush._openShopABRStamp === true,
+      stampCount: raster.stampCount,
+      hasPixels: Array.from(raster.rgba).some((value, index) => index % 4 === 3 && value > 0),
+      layerName: OS.layers.at(-1)?.name,
+      objectMarker: OS.canvas.getObjects().at(-1)?._openShopABRStamp?.assetId
+    };
+  });
+
+  expect(result).toMatchObject({
+    isStampBrush:true,
+    hasPixels:true,
+    layerName:'ABR: Raster Tip',
+    objectMarker:'abr-e2e'
+  });
+  expect(result.stampCount).toBeGreaterThan(1);
+});
+
 test('applies a one-click pixel filter to an active image layer @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-ijW+7h7q739a5ehx2eU3BTaO9Z26FRIEniYOwd3Uk/Y=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-DdlLGR8neN+8wpny5ZdYPWMY5i+V7t46jLbN0Y1kocE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4348,6 +4348,7 @@ const OS = {
     _cmdIdx: 0,
     _savedPalette: [],
     _importedBrushes: [],
+    _lastABRImportReport: { accepted:0, unsupported:[] },
     _gradientPresets: [],
     _stickyNotes: [],
     _rulerUnit: 'px',
@@ -4372,6 +4373,9 @@ const OS = {
         maxPaletteColors: 256,
         maxPresets: 200,
         maxAssetBytes: 64 * 1024 * 1024,
+        maxABRTipBytes: 512 * 1024,
+        maxABRTipPixels: 128 * 128,
+        maxABRStrokePixels: 2048 * 2048,
         maxGradientStops: 256,
         maxTextLength: 10000,
         maxGifFrames: 300,
@@ -10385,23 +10389,151 @@ self.onmessage = function(event) {
         const hex=this.state.tool==='eraser'?'#000000':this.state.fgColor;
         this.canvas.freeDrawingBrush.color=this.state.brushOpacity<100?this._hexToRgba(hex,this.state.brushOpacity):hex;
     },
+    _abrPressureFromEvent(event) {
+        const type = String(event?.pointerType || '').toLowerCase();
+        const pressure = Number(event?.pressure);
+        return type === 'pen' && Number.isFinite(pressure) ? Math.max(0, Math.min(1, pressure)) : 1;
+    },
+    _abrStrokeSamples(points, asset) {
+        const source = (Array.isArray(points) ? points : []).map(point => ({
+            x:Number(point?.x), y:Number(point?.y), pressure:Math.max(0, Math.min(1, Number.isFinite(Number(point?.pressure)) ? Number(point.pressure) : 1))
+        })).filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)).slice(0, 2048);
+        if (!source.length) return [];
+        const baseSize = Math.max(1, Math.min(2048, Number(this.state.brushSize) || Number(asset?.size) || 32));
+        const spacing = Math.max(1, Math.min(500, Number(asset?.spacing) || 25)) / 100;
+        const samples = [source[0]];
+        for (let index = 1; index < source.length && samples.length < 4096; index += 1) {
+            const from = source[index - 1];
+            const to = source[index];
+            const distance = Math.hypot(to.x - from.x, to.y - from.y);
+            const steps = Math.max(1, Math.ceil(distance / Math.max(1, baseSize * spacing)));
+            for (let step = 1; step <= steps && samples.length < 4096; step += 1) {
+                const ratio = step / steps;
+                samples.push({
+                    x:from.x + (to.x - from.x) * ratio,
+                    y:from.y + (to.y - from.y) * ratio,
+                    pressure:from.pressure + (to.pressure - from.pressure) * ratio
+                });
+            }
+        }
+        return samples;
+    },
+    _abrStrokeColor() {
+        const match = String(this.state.fgColor || '').match(/^#([0-9a-f]{6})$/i);
+        if (!match) return [0, 0, 0];
+        return [parseInt(match[1].slice(0, 2), 16), parseInt(match[1].slice(2, 4), 16), parseInt(match[1].slice(4, 6), 16)];
+    },
+    _renderABRStroke(points, asset) {
+        const samples = this._abrStrokeSamples(points, asset);
+        if (!samples.length) return { error:'ABR stroke contained no usable points' };
+        const baseSize = Math.max(1, Math.min(2048, Number(this.state.brushSize) || Number(asset?.size) || 32));
+        const scatter = Math.max(0, Math.min(100, Number(asset?.scatter) || 0)) / 100;
+        const radius = baseSize * (0.5 + scatter);
+        const minX = Math.floor(Math.min(...samples.map(point => point.x)) - radius - 1);
+        const minY = Math.floor(Math.min(...samples.map(point => point.y)) - radius - 1);
+        const maxX = Math.ceil(Math.max(...samples.map(point => point.x)) + radius + 1);
+        const maxY = Math.ceil(Math.max(...samples.map(point => point.y)) + radius + 1);
+        const width = Math.max(1, maxX - minX + 1);
+        const height = Math.max(1, maxY - minY + 1);
+        if (width * height > this._importLimits.maxABRStrokePixels) {
+            return { error:`ABR stroke exceeds the ${Math.round(Math.sqrt(this._importLimits.maxABRStrokePixels))}px raster budget` };
+        }
+        const rgba = new Uint8ClampedArray(width * height * 4);
+        const color = this._abrStrokeColor();
+        const tip = this._sanitizeABRTip(asset?.tip);
+        const tipWidth = tip?.width || 1;
+        const tipHeight = tip?.height || 1;
+        const tipAlpha = tip?.alpha || [255];
+        const spacingOpacity = Math.max(0, Math.min(100, Number(asset?.opacity) || 100)) / 100;
+        const pressureSize = asset?.pressureSize !== false;
+        const pressureOpacity = asset?.pressureOpacity === true;
+        const scatterSeed = String(asset?.id || 'abr').length * 17;
+        const blend = (x, y, sourceAlpha) => {
+            if (x < 0 || y < 0 || x >= width || y >= height || sourceAlpha <= 0) return;
+            const offset = (y * width + x) * 4;
+            const source = sourceAlpha / 255;
+            const destination = rgba[offset + 3] / 255;
+            const output = source + destination * (1 - source);
+            if (output <= 0) return;
+            rgba[offset] = Math.round((color[0] * source + rgba[offset] * destination * (1 - source)) / output);
+            rgba[offset + 1] = Math.round((color[1] * source + rgba[offset + 1] * destination * (1 - source)) / output);
+            rgba[offset + 2] = Math.round((color[2] * source + rgba[offset + 2] * destination * (1 - source)) / output);
+            rgba[offset + 3] = Math.round(output * 255);
+        };
+        samples.forEach((point, index) => {
+            const pressureScale = pressureSize ? 0.25 + point.pressure * 0.75 : 1;
+            const size = Math.max(1, baseSize * pressureScale);
+            const random = Math.sin((point.x + scatterSeed) * 12.9898 + (point.y + index) * 78.233) * 43758.5453;
+            const unit = random - Math.floor(random);
+            const random2 = Math.sin((point.x + index) * 4.123 + (point.y + scatterSeed) * 31.731) * 24634.6345;
+            const unit2 = random2 - Math.floor(random2);
+            const scatterX = (unit - 0.5) * size * scatter;
+            const scatterY = (unit2 - 0.5) * size * scatter;
+            const centerX = point.x + scatterX - minX;
+            const centerY = point.y + scatterY - minY;
+            const opacity = spacingOpacity * (pressureOpacity ? 0.25 + point.pressure * 0.75 : 1);
+            for (let tipY = 0; tipY < tipHeight; tipY += 1) {
+                for (let tipX = 0; tipX < tipWidth; tipX += 1) {
+                    const alpha = tip ? tipAlpha[tipY * tipWidth + tipX] : 255;
+                    if (!alpha) continue;
+                    const dx = ((tipX + 0.5) / tipWidth - 0.5) * size;
+                    const dy = ((tipY + 0.5) / tipHeight - 0.5) * size;
+                    blend(Math.round(centerX + dx), Math.round(centerY + dy), Math.round(alpha * opacity));
+                }
+            }
+        });
+        const surface = document.createElement('canvas');
+        surface.width = width;
+        surface.height = height;
+        const context = surface.getContext('2d', { alpha:true, willReadFrequently:false });
+        if (!context) return { error:'Could not create the ABR raster surface' };
+        context.putImageData(new ImageData(rgba, width, height), 0, 0);
+        return { width, height, left:minX, top:minY, rgba, dataUrl:surface.toDataURL('image/png'), stampCount:samples.length };
+    },
+    _createABRStampBrush(canvas, asset) {
+        const owner = this;
+        const brush = new fabric.PencilBrush(canvas);
+        brush._openShopBrushAsset = asset;
+        brush._openShopABRStamp = true;
+        brush._openShopPoints = [];
+        brush.onMouseDown = function(pointer, event) {
+            this._openShopPoints = [{ x:Number(pointer?.x) || 0, y:Number(pointer?.y) || 0, pressure:owner._abrPressureFromEvent(event) }];
+        };
+        brush.onMouseMove = function(pointer, event) {
+            if (!this._openShopPoints.length) return;
+            this._openShopPoints.push({ x:Number(pointer?.x) || 0, y:Number(pointer?.y) || 0, pressure:owner._abrPressureFromEvent(event) });
+        };
+        brush.onMouseUp = function() {
+            const points = this._openShopPoints.slice();
+            this._openShopPoints = [];
+            void owner._commitABRStroke(points, asset);
+            return true;
+        };
+        return brush;
+    },
+    async _commitABRStroke(points, asset) {
+        const raster = this._renderABRStroke(points, asset);
+        if (raster.error) { this.toast(raster.error, 'error'); return false; }
+        try {
+            const image = await fabric.Image.fromURL(raster.dataUrl);
+            image.set({ left:raster.left, top:raster.top, originX:'left', originY:'top', selectable:true, name:`ABR: ${asset.name}` });
+            image._openShopABRStamp = { assetId:asset.id, stampCount:raster.stampCount, width:raster.width, height:raster.height };
+            this._addObjectAsLayer(image, `ABR: ${asset.name}`);
+            this.canvas.renderAll();
+            this.saveHistory('ABR Brush Stroke');
+            this.updateLayersPanel();
+            return true;
+        } catch (error) {
+            this.toast(`ABR raster stroke failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
     setBrushPreset(preset) {
         this.state.brushPreset = preset;
         const c = this.canvas; if (!c.isDrawingMode) return;
         const imported = this._importedBrushes.find(brush => brush.id === preset);
         if (imported) {
-            // ABR raster tips and dynamics do not have a direct Fabric brush
-            // equivalent. Keep the imported preset selectable and retain its
-            // metadata on the adapter until a native stamp brush is available.
-            c.freeDrawingBrush = new fabric.PencilBrush(c);
-            c.freeDrawingBrush._openShopBrushAsset = imported;
-            if (imported.softness > 0) {
-                c.freeDrawingBrush.shadow = new fabric.Shadow({
-                    blur: imported.softness,
-                    color: this.state.fgColor,
-                    affectStroke: true
-                });
-            }
+            c.freeDrawingBrush = this._createABRStampBrush(c, imported);
         } else switch(preset) {
             case 'round': c.freeDrawingBrush = new fabric.PencilBrush(c); break;
             case 'soft':
@@ -20646,17 +20778,63 @@ self.onmessage = async function(e) {
             colorStops
         };
     },
+    _sanitizeABRTip(tip) {
+        if (!tip || typeof tip !== 'object') return null;
+        const maxPixels = this._importLimits.maxABRTipPixels;
+        const width = Math.max(1, Math.min(128, Math.floor(Number(tip.width) || 0)));
+        const height = Math.max(1, Math.min(128, Math.floor(Number(tip.height) || 0)));
+        const pixels = width * height;
+        if (!width || !height || pixels > maxPixels || !Array.isArray(tip.alpha) || tip.alpha.length < pixels) return null;
+        return {
+            width, height,
+            alpha: tip.alpha.slice(0, pixels).map(value => Math.max(0, Math.min(255, Math.round(Number(value) || 0)))),
+            format: this._safeText(tip.format || 'raw-grayscale', 40) || 'raw-grayscale'
+        };
+    },
+    _abrTipFromPayload(payload) {
+        const bytes = payload instanceof Uint8Array ? payload : new Uint8Array();
+        const maxPixels = this._importLimits.maxABRTipPixels;
+        let width = 0;
+        let height = 0;
+        let start = 0;
+        let format = 'raw-grayscale';
+        if (bytes.length >= 8 && bytes[0] === 0x41 && bytes[1] === 0x42 && bytes[2] === 0x52 && bytes[3] === 0x54) {
+            width = bytes[4] * 256 + bytes[5];
+            height = bytes[6] * 256 + bytes[7];
+            start = 8;
+            format = 'ABRT-grayscale';
+        }
+        const available = Math.max(1, Math.min(maxPixels, bytes.length - start));
+        if (!width || !height || width * height > maxPixels || width * height > available) {
+            const pixels = available;
+            width = Math.max(1, Math.min(128, Math.floor(Math.sqrt(pixels))));
+            height = Math.max(1, Math.min(128, Math.ceil(pixels / width)));
+        }
+        const alpha = Array.from({ length: width * height }, (_, index) => bytes[start + index] ?? 0);
+        if (!bytes.length) alpha.fill(255);
+        return { width, height, alpha, format };
+    },
     _sanitizeImportedBrushes(brushes) {
         return (Array.isArray(brushes) ? brushes : []).slice(0, this._importLimits.maxPresets).map((brush, index) => {
             if (!brush || typeof brush !== 'object') return null;
             const id = this._safeText(brush.id || `abr-${index + 1}`, 80).replace(/[^a-zA-Z0-9_-]/g, '-');
+            const tip = this._sanitizeABRTip(brush.tip);
+            const unsupportedFeatures = [...new Set((Array.isArray(brush.unsupportedFeatures) ? brush.unsupportedFeatures : [])
+                .map(feature => this._safeText(feature, 100)).filter(Boolean))].slice(0, 12);
             return {
                 id: id || `abr-${index + 1}`,
                 name: this._safeText(brush.name || `ABR Brush ${index + 1}`, 120) || `ABR Brush ${index + 1}`,
                 sourceFormat: 'ABR',
                 version: Math.max(1, Math.min(6, Number(brush.version) || 1)),
                 size: Math.max(1, Math.min(8192, Number(brush.size) || 32)),
-                softness: Math.max(0, Math.min(32, Number(brush.softness) || 0))
+                softness: Math.max(0, Math.min(32, Number(brush.softness) || 0)),
+                tip,
+                spacing: Math.max(1, Math.min(500, Number(brush.spacing) || 25)),
+                opacity: Math.max(0, Math.min(100, Number(brush.opacity) || 100)),
+                scatter: Math.max(0, Math.min(100, Number(brush.scatter) || 0)),
+                pressureSize: brush.pressureSize !== false,
+                pressureOpacity: brush.pressureOpacity === true,
+                unsupportedFeatures
             };
         }).filter(Boolean);
     },
@@ -20712,9 +20890,13 @@ self.onmessage = async function(e) {
         const existing = new Set(this._importedBrushes.map(brush => brush.id));
         this._importedBrushes = [...this._importedBrushes, ...safe.filter(brush => !existing.has(brush.id))]
             .slice(-this._importLimits.maxPresets);
+        const unsupported = [...new Set(safe.flatMap(brush => brush.unsupportedFeatures || []))];
+        this._lastABRImportReport = { accepted:safe.length, unsupported };
         this._persistImportedAssets();
         this._renderImportedBrushes();
-        this.toast(`Imported ${safe.length} brushes`, 'success');
+        this.toast(unsupported.length
+            ? `Imported ${safe.length} brushes; unsupported ABR features: ${unsupported.join(', ')}`
+            : `Imported ${safe.length} brushes`, unsupported.length ? 'warning' : 'success');
         return safe.length;
     },
     _commitImportedGradients(gradients) {
@@ -20767,14 +20949,26 @@ self.onmessage = async function(e) {
                 }
             }
             // Old ABR variants do not expose a stable name in the header.
-            // Keep every entry selectable and derive a bounded fallback size
-            // from its resource length for the native brush adapter.
+            // Keep every entry selectable and derive a bounded raster tip from
+            // the record. The native descriptor/compression variants remain
+            // explicitly reported instead of being presented as faithful.
+            const payloadStart = Math.max(8, cursor - recordBytes);
+            const payload = recordBytes && payloadStart + recordBytes <= view.byteLength
+                ? new Uint8Array(buffer, payloadStart, recordBytes) : new Uint8Array();
+            const tip = this._abrTipFromPayload(payload);
             const size = Math.max(1, Math.min(8192, Math.round(Math.sqrt(recordBytes || 1024))));
             brushes.push({
                 id: `abr-${base.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index + 1}`,
                 name: `${base} ${index + 1}`,
                 sourceFormat: 'ABR', version, size,
-                softness: version === 6 ? 2 : 0
+                softness: version === 6 ? 2 : 0,
+                tip,
+                spacing:25,
+                opacity:100,
+                scatter:0,
+                pressureSize:true,
+                pressureOpacity:false,
+                unsupportedFeatures: ['native ABR descriptors', 'native ABR sample compression', 'native ABR dynamics']
             });
         }
         return brushes;

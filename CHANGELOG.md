@@ -15,6 +15,7 @@ All notable changes to Openshop will be documented in this file.
 - Add a cross-engine mobile capability matrix with compact-workspace overflow, two-finger pinch, safe-area, orientation, visual-viewport, and pressure-variance coverage; physical-device support remains explicitly unclaimed.
 - Require sandboxed plugins to declare stable manifests, verify source SHA-256 provenance, obtain explicit consent, persist exact-version approvals, and retain deny-by-default capability boundaries.
 - Add cancellable, progress-reporting batch runs with raster-only format validation, partial-failure status, rollback-safe cancellation, and yielding ZIP assembly.
+- Render bounded ABR tip textures as deterministic raster-stamped layers with spacing, opacity, scatter, and pressure sizing; report unsupported native ABR features by name.
 
 ## [v0.28.0] - 2026-08-02
 

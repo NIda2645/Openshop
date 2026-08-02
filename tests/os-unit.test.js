@@ -1094,6 +1094,26 @@ describe('OpenShop core object', () => {
       { name: 'Ink Set 1', sourceFormat: 'ABR', version: 6 },
       { name: 'Ink Set 2', sourceFormat: 'ABR', version: 6 }
     ]);
+    const parsed = OS._parseAbrBrushes(abr, 'Ink Set.abr');
+    expect(parsed[0].tip).toMatchObject({ width:2, height:2, format:'raw-grayscale' });
+    expect(parsed[0].unsupportedFeatures).toEqual([
+      'native ABR descriptors', 'native ABR sample compression', 'native ABR dynamics'
+    ]);
+    expect(OS._abrStrokeSamples([
+      { x:0, y:0, pressure:0.2 }, { x:40, y:0, pressure:0.8 }
+    ], { size:10, spacing:50 })).toHaveLength(11);
+    expect(OS._renderABRStroke([
+      { x:0, y:0, pressure:0.2 }, { x:20, y:0, pressure:0.8 }
+    ], {
+      id:'abr-test', size:10, spacing:50, opacity:80, scatter:20,
+      pressureSize:true, pressureOpacity:true,
+      tip:{ width:2, height:2, alpha:[0,255,255,0] }
+    })).toMatchObject({ stampCount: expect.any(Number), width:expect.any(Number), height:expect.any(Number) });
+    expect(OS._renderABRStroke([
+      { x:0, y:0 }, { x:5000, y:5000 }
+    ], { size:100, spacing:1, tip:{ width:1, height:1, alpha:[255] } })).toMatchObject({
+      error: expect.stringMatching(/raster budget/)
+    });
 
     const grd = new ArrayBuffer(8 + 1 + 6 + 2 + (20 * 2) + 2 + 6);
     const view = new DataView(grd);
