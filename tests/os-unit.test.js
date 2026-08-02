@@ -943,6 +943,42 @@ describe('OpenShop core object', () => {
     ]);
   });
 
+  it('parses ASE-compatible asset palettes, ABR entries, and GRD v3 stops', () => {
+    const OS = loadOpenShop();
+    OS.toast = vi.fn();
+
+    const abr = new Uint8Array([
+      0x38, 0x42, 0x50, 0x53, 0x00, 0x06, 0x00, 0x02,
+      0x00, 0x00, 0x00, 0x04, 1, 2, 3, 4,
+      0x00, 0x00, 0x00, 0x08, 5, 6, 7, 8, 9, 10, 11, 12
+    ]).buffer;
+    expect(OS._parseAbrBrushes(abr, 'Ink Set.abr')).toMatchObject([
+      { name: 'Ink Set 1', sourceFormat: 'ABR', version: 6 },
+      { name: 'Ink Set 2', sourceFormat: 'ABR', version: 6 }
+    ]);
+
+    const grd = new ArrayBuffer(8 + 1 + 6 + 2 + (20 * 2) + 2 + 6);
+    const view = new DataView(grd);
+    new Uint8Array(grd).set([0x38, 0x42, 0x47, 0x52]);
+    view.setUint16(4, 3, false); view.setUint16(6, 1, false);
+    let cursor = 8;
+    view.setUint8(cursor++, 6); new Uint8Array(grd).set([83, 117, 110, 115, 101, 116], cursor); cursor += 6;
+    view.setUint16(cursor, 2, false); cursor += 2;
+    const color = (offset, r, g, b) => {
+      view.setInt32(cursor, offset, false); cursor += 4;
+      view.setInt32(cursor, 2048, false); cursor += 4;
+      view.setInt16(cursor, 0, false); cursor += 2;
+      [r, g, b, 0].forEach(value => { view.setInt16(cursor, value, false); cursor += 2; });
+      view.setInt16(cursor, 0, false); cursor += 2;
+    };
+    color(0, 255, 0, 0); color(4096, 0, 0, 255);
+    view.setUint16(cursor, 0, false); cursor += 2; cursor += 6;
+    expect(OS._parseGrdGradients(grd)).toEqual([{
+      name: 'Sunset', type: 'linear',
+      colorStops: [{ offset: 0, color: '#ff0000' }, { offset: 1, color: '#0000ff' }]
+    }]);
+  });
+
   it('shows recovery storage status and restores sanitized recovery data', async () => {
     const OS = loadOpenShop();
     const canvas = createCanvasMock();

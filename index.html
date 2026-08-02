@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-P8icknGefo11+TtVW7ukLSQUSDeFupX+ICp4LzNZ92Q=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-5q1a/W2cWOdcy8d7j0hSzXXK39IRfx0wMN4wtn5MB5Y=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2511,6 +2511,8 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <label>Width</label><input type="number" id="text-decoration-thickness" value="100" min="10" max="500" step="10" data-os-change="change-042">
     </div>
     <div class="opt-group" id="opt-gradient" style="display:none">
+        <label>Preset</label>
+        <select id="gradient-preset" data-os-change="change-044"><option value="">Custom</option></select>
         <label>From</label><input type="color" id="grad-from" value="#6c8cff" data-os-change="change-012">
         <label>To</label><input type="color" id="grad-to" value="#000000" data-os-change="change-013">
         <label>Type</label>
@@ -3307,7 +3309,8 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "change-040": function(event) { OS.setTextDecoration('linethrough', this.checked) },
         "change-041": function(event) { OS.setTextDecoration('textDecorationColor', this.value) },
         "change-042": function(event) { OS.setTextDecoration('textDecorationThickness', this.value) },
-        "change-043": function(event) { OS.setWorkspaceMode(this.value) }
+        "change-043": function(event) { OS.setWorkspaceMode(this.value) },
+        "change-044": function(event) { OS.selectGradientPreset(this.value) }
     }),
     input: Object.freeze({
         "input-001": function(event) { OS.setBrushSize(this.value) },
@@ -4305,6 +4308,8 @@ const OS = {
     _baSnapshot: null,
     _cmdIdx: 0,
     _savedPalette: [],
+    _importedBrushes: [],
+    _gradientPresets: [],
     _stickyNotes: [],
     _rulerUnit: 'px',
     _currentTheme: 'default',
@@ -4323,6 +4328,8 @@ const OS = {
         maxProjectLayers: 512,
         maxPaletteColors: 256,
         maxPresets: 200,
+        maxAssetBytes: 64 * 1024 * 1024,
+        maxGradientStops: 256,
         maxTextLength: 10000,
         maxGifFrames: 300,
         maxDecodedGifBytes: 512 * 1024 * 1024,
@@ -4364,7 +4371,7 @@ const OS = {
         textFont: 'DM Sans', textSize: 24, textColor: '#ffffff', textBold: false, textItalic: false,
     textUnderline: false, textOverline: false, textLinethrough: false,
     textDecorationColor: '#ffffff', textDecorationThickness: 100,
-        gradFrom: '#6c8cff', gradTo: '#000000', gradType: 'linear',
+        gradFrom: '#6c8cff', gradTo: '#000000', gradType: 'linear', gradientPreset: '',
         patternType: 'checkerboard', patternScale: 20, patternColor: '#6c8cff',
         cloneSize: 20, sprayDensity: 30, sprayWidth: 30, healingSize: 15,
         wandTolerance: 32, wandContiguous: true,
@@ -9547,7 +9554,7 @@ self.onmessage = function(event) {
             clone: schema('opt-clone', true, ['clone-size']),
             history: schema(null, true),
             eraser: schema('opt-brush', true, ['brush-size', 'brush-opacity']),
-            fill: schema('opt-gradient', true, ['grad-from', 'grad-to', 'grad-type']),
+            fill: schema('opt-gradient', true, ['gradient-preset', 'grad-from', 'grad-to', 'grad-type']),
             pattern: schema('opt-pattern', true, ['pattern-type', 'pattern-scale', 'pattern-color']),
             blur: schema(null, true),
             dodge: schema('opt-dodge', true, ['dodge-size', 'dodge-exp', 'dodge-range']),
@@ -9783,7 +9790,21 @@ self.onmessage = function(event) {
     setBrushPreset(preset) {
         this.state.brushPreset = preset;
         const c = this.canvas; if (!c.isDrawingMode) return;
-        switch(preset) {
+        const imported = this._importedBrushes.find(brush => brush.id === preset);
+        if (imported) {
+            // ABR raster tips and dynamics do not have a direct Fabric brush
+            // equivalent. Keep the imported preset selectable and retain its
+            // metadata on the adapter until a native stamp brush is available.
+            c.freeDrawingBrush = new fabric.PencilBrush(c);
+            c.freeDrawingBrush._openShopBrushAsset = imported;
+            if (imported.softness > 0) {
+                c.freeDrawingBrush.shadow = new fabric.Shadow({
+                    blur: imported.softness,
+                    color: this.state.fgColor,
+                    affectStroke: true
+                });
+            }
+        } else switch(preset) {
             case 'round': c.freeDrawingBrush = new fabric.PencilBrush(c); break;
             case 'soft':
                 c.freeDrawingBrush = new fabric.PencilBrush(c);
@@ -10734,11 +10755,16 @@ self.onmessage = function(event) {
         if (!this._guardActiveLayerEdit()) return false;
         const w=Math.abs(to.x-from.x)||100, h=Math.abs(to.y-from.y)||100;
         const left=Math.min(from.x,to.x), top=Math.min(from.y,to.y);
+        const preset = this._gradientPresets.find(item => item.id === this.state.gradientPreset);
+        const stops = preset?.colorStops?.length
+            ? preset.colorStops.map(stop => ({ offset:stop.offset, color:stop.color }))
+            : [{offset:0,color:this.state.gradFrom},{offset:1,color:this.state.gradTo}];
+        const type = preset?.type || this.state.gradType;
         let grad;
-        if(this.state.gradType==='linear') {
-            grad = new fabric.Gradient({ type:'linear', coords:{x1:0,y1:0,x2:w,y2:h}, colorStops:[{offset:0,color:this.state.gradFrom},{offset:1,color:this.state.gradTo}] });
+        if(type==='linear') {
+            grad = new fabric.Gradient({ type:'linear', coords:{x1:0,y1:0,x2:w,y2:h}, colorStops:stops });
         } else {
-            grad = new fabric.Gradient({ type:'radial', coords:{x1:w/2,y1:h/2,r1:0,x2:w/2,y2:h/2,r2:Math.max(w,h)/2}, colorStops:[{offset:0,color:this.state.gradFrom},{offset:1,color:this.state.gradTo}] });
+            grad = new fabric.Gradient({ type:'radial', coords:{x1:w/2,y1:h/2,r1:0,x2:w/2,y2:h/2,r2:Math.max(w,h)/2}, colorStops:stops });
         }
         const rect = new fabric.Rect({left,top,width:w,height:h,fill:grad,selectable:true,stroke:'transparent',strokeWidth:0});
         this.canvas.add(rect); this.layers[this.activeLayerIdx].objects.push(rect);
@@ -13226,6 +13252,7 @@ self.onmessage = function(event) {
         this.initMinimap();
         this.initDefaultPalette();
         this.loadSavedPalette();
+        this.loadImportedAssets();
         this._initKeyboardShortcuts();
         this._initI18n();
         try {
@@ -19842,6 +19869,290 @@ self.onmessage = async function(e) {
         this.toast(`Imported ${safeColors.length} colors`, 'success');
         return safeColors.length;
     },
+    _assetFileExtension(file) {
+        return String(file?.name || '').toLowerCase().split('.').pop() || '';
+    },
+    _assertAssetFileBudget(file, label = 'Asset') {
+        if (file && file.size > this._importLimits.maxAssetBytes) {
+            throw new Error(`${label} file exceeds 64 MB limit`);
+        }
+    },
+    _safeGradientColor(color) {
+        const hex = this._validHexColor(color);
+        if (hex) return hex;
+        const match = String(color || '').match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i);
+        if (!match) return null;
+        const rgb = match.slice(1, 4).map(Number);
+        if (rgb.some(value => value > 255)) return null;
+        if (match[4] === undefined || Number(match[4]) >= 1) {
+            return '#' + rgb.map(value => value.toString(16).padStart(2, '0')).join('');
+        }
+        return `rgba(${rgb.join(',')},${Number(match[4])})`;
+    },
+    _sanitizeGradientPreset(preset, index = 0) {
+        if (!preset || typeof preset !== 'object') return null;
+        const colorStops = (Array.isArray(preset.colorStops) ? preset.colorStops : [])
+            .slice(0, this._importLimits.maxGradientStops)
+            .map(stop => ({
+                offset: Math.max(0, Math.min(1, Number(stop?.offset))),
+                color: this._safeGradientColor(stop?.color)
+            }))
+            .filter(stop => Number.isFinite(stop.offset) && stop.color)
+            .sort((a, b) => a.offset - b.offset);
+        if (colorStops.length < 2) return null;
+        const id = this._safeText(preset.id || `gradient-${index + 1}`, 80).replace(/[^a-zA-Z0-9_-]/g, '-');
+        return {
+            id: id || `gradient-${index + 1}`,
+            name: this._safeText(preset.name || `Gradient ${index + 1}`, 120) || `Gradient ${index + 1}`,
+            type: preset.type === 'radial' ? 'radial' : 'linear',
+            colorStops
+        };
+    },
+    _sanitizeImportedBrushes(brushes) {
+        return (Array.isArray(brushes) ? brushes : []).slice(0, this._importLimits.maxPresets).map((brush, index) => {
+            if (!brush || typeof brush !== 'object') return null;
+            const id = this._safeText(brush.id || `abr-${index + 1}`, 80).replace(/[^a-zA-Z0-9_-]/g, '-');
+            return {
+                id: id || `abr-${index + 1}`,
+                name: this._safeText(brush.name || `ABR Brush ${index + 1}`, 120) || `ABR Brush ${index + 1}`,
+                sourceFormat: 'ABR',
+                version: Math.max(1, Math.min(6, Number(brush.version) || 1)),
+                size: Math.max(1, Math.min(8192, Number(brush.size) || 32)),
+                softness: Math.max(0, Math.min(32, Number(brush.softness) || 0))
+            };
+        }).filter(Boolean);
+    },
+    _renderImportedBrushes() {
+        const select = document.getElementById('brush-preset');
+        if (!select) return;
+        select.querySelectorAll('option[data-os-imported-brush]').forEach(option => option.remove());
+        this._importedBrushes.forEach(brush => {
+            const option = document.createElement('option');
+            option.value = brush.id;
+            option.textContent = `${brush.name} (ABR)`;
+            option.dataset.osImportedBrush = 'true';
+            select.appendChild(option);
+        });
+        select.value = this.state.brushPreset;
+    },
+    _renderGradientPresets() {
+        const select = document.getElementById('gradient-preset');
+        if (!select) return;
+        select.querySelectorAll('option[data-os-imported-gradient]').forEach(option => option.remove());
+        this._gradientPresets.forEach(preset => {
+            const option = document.createElement('option');
+            option.value = preset.id;
+            option.textContent = `${preset.name} (${preset.type})`;
+            option.dataset.osImportedGradient = 'true';
+            select.appendChild(option);
+        });
+        select.value = this.state.gradientPreset || '';
+    },
+    _persistImportedAssets() {
+        try {
+            localStorage.setItem('os_brushes', JSON.stringify(this._importedBrushes));
+            localStorage.setItem('os_gradients', JSON.stringify(this._gradientPresets));
+        } catch(e) { console.warn('Asset preset save failed:', e.message); }
+    },
+    loadImportedAssets() {
+        try {
+            const brushes = JSON.parse(localStorage.getItem('os_brushes') || '[]');
+            const gradients = JSON.parse(localStorage.getItem('os_gradients') || '[]');
+            this._importedBrushes = this._sanitizeImportedBrushes(brushes);
+            this._gradientPresets = (Array.isArray(gradients) ? gradients : [])
+                .map((preset, index) => this._sanitizeGradientPreset(preset, index)).filter(Boolean);
+        } catch(e) {
+            this._importedBrushes = [];
+            this._gradientPresets = [];
+        }
+        this._renderImportedBrushes();
+        this._renderGradientPresets();
+    },
+    _commitImportedBrushes(brushes) {
+        const safe = this._sanitizeImportedBrushes(brushes);
+        if (!safe.length) { this.toast('ABR file contained no readable brushes', 'error'); return 0; }
+        const existing = new Set(this._importedBrushes.map(brush => brush.id));
+        this._importedBrushes = [...this._importedBrushes, ...safe.filter(brush => !existing.has(brush.id))]
+            .slice(-this._importLimits.maxPresets);
+        this._persistImportedAssets();
+        this._renderImportedBrushes();
+        this.toast(`Imported ${safe.length} brushes`, 'success');
+        return safe.length;
+    },
+    _commitImportedGradients(gradients) {
+        const safe = (Array.isArray(gradients) ? gradients : [])
+            .map((preset, index) => this._sanitizeGradientPreset(preset, index)).filter(Boolean);
+        if (!safe.length) { this.toast('GRD file contained no readable gradients', 'error'); return 0; }
+        const existing = new Set(this._gradientPresets.map(preset => preset.id));
+        this._gradientPresets = [...this._gradientPresets, ...safe.filter(preset => !existing.has(preset.id))]
+            .slice(-this._importLimits.maxPresets);
+        this._persistImportedAssets();
+        this._renderGradientPresets();
+        this.selectGradientPreset(safe[0].id);
+        this.toast(`Imported ${safe.length} gradients`, 'success');
+        return safe.length;
+    },
+    selectGradientPreset(id) {
+        this.state.gradientPreset = id || '';
+        const preset = this._gradientPresets.find(item => item.id === id);
+        if (preset?.colorStops?.length) {
+            this.state.gradFrom = preset.colorStops[0].color;
+            this.state.gradTo = preset.colorStops[preset.colorStops.length - 1].color;
+            this.state.gradType = preset.type;
+            const from = document.getElementById('grad-from');
+            const to = document.getElementById('grad-to');
+            if (from && /^#[0-9a-f]{6}$/i.test(this.state.gradFrom)) from.value = this.state.gradFrom;
+            if (to && /^#[0-9a-f]{6}$/i.test(this.state.gradTo)) to.value = this.state.gradTo;
+            const type = document.getElementById('grad-type');
+            if (type) type.value = preset.type;
+        }
+        this._renderGradientPresets();
+    },
+    _parseAbrBrushes(buffer, fileName = 'brushes.abr') {
+        const view = new DataView(buffer);
+        if (view.byteLength < 8 || String.fromCharCode(...new Uint8Array(buffer, 0, 4)) !== '8BPS') {
+            throw new Error('Not an ABR brush file');
+        }
+        const version = view.getUint16(4, false);
+        const count = view.getUint16(6, false);
+        if (![1, 2, 6].includes(version) || count < 1) throw new Error('Unsupported or empty ABR brush file');
+        const base = this._safeText(String(fileName).replace(/\.[^.]+$/, ''), 80) || 'ABR Brush Set';
+        const brushes = [];
+        let cursor = 8;
+        for (let index = 0; index < Math.min(count, this._importLimits.maxPresets); index++) {
+            let recordBytes = 0;
+            if (cursor + 4 <= view.byteLength) {
+                const length = view.getUint32(cursor, false);
+                if (length > 0 && length <= view.byteLength - cursor - 4) {
+                    recordBytes = length;
+                    cursor += 4 + length;
+                }
+            }
+            // Old ABR variants do not expose a stable name in the header.
+            // Keep every entry selectable and derive a bounded fallback size
+            // from its resource length for the native brush adapter.
+            const size = Math.max(1, Math.min(8192, Math.round(Math.sqrt(recordBytes || 1024))));
+            brushes.push({
+                id: `abr-${base.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index + 1}`,
+                name: `${base} ${index + 1}`,
+                sourceFormat: 'ABR', version, size,
+                softness: version === 6 ? 2 : 0
+            });
+        }
+        return brushes;
+    },
+    _grdColorToCss(model, values) {
+        const clamp = value => Math.max(0, Math.min(255, Math.round(value)));
+        const raw = values.map(value => Number(value) || 0);
+        const scale = Math.max(...raw.map(Math.abs)) > 255 ? 65535 : 255;
+        let rgb;
+        if (model === 0) rgb = raw.slice(0, 3).map(value => value * 255 / scale);
+        else if (model === 1) {
+            const h = ((raw[0] / (scale === 255 ? 255 : 65535)) * 360) % 360;
+            const s = raw[1] / (scale === 255 ? 255 : 65535);
+            const v = raw[2] / (scale === 255 ? 255 : 65535);
+            const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+            const rgb0 = h < 60 ? [c,x,0] : h < 120 ? [x,c,0] : h < 180 ? [0,c,x] : h < 240 ? [0,x,c] : h < 300 ? [x,0,c] : [c,0,x];
+            rgb = rgb0.map(value => (value + m) * 255);
+        } else if (model === 2) {
+            const [c,m,y,k] = raw.map(value => value / (scale === 255 ? 255 : 65535));
+            rgb = [255 * (1-c) * (1-k), 255 * (1-m) * (1-k), 255 * (1-y) * (1-k)];
+        } else if (model === 8) {
+            const g = raw[0] * 255 / scale; rgb = [g,g,g];
+        } else if (model === 7) {
+            const L = raw[0] * 100 / scale, a = raw[1] * 255 / scale - 128, b = raw[2] * 255 / scale - 128;
+            const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
+            const inv = t => t > 6 / 29 ? t ** 3 : 3 * (6 / 29) ** 2 * (t - 4 / 29);
+            const x = 0.95047 * inv(fx), y = inv(fy), z = 1.08883 * inv(fz);
+            const lin = [x*3.2406+y*-1.5372+z*-0.4986, x*-0.9689+y*1.8758+z*0.0415, x*0.0557+y*-0.204+z*1.057];
+            rgb = lin.map(value => 255 * (value <= 0.0031308 ? 12.92 * value : 1.055 * Math.max(0, value) ** (1 / 2.4) - 0.055));
+        } else return null;
+        return '#' + rgb.map(value => clamp(value).toString(16).padStart(2, '0')).join('');
+    },
+    _parseGrdVersion5(buffer, start) {
+        const bytes = new Uint8Array(buffer);
+        const view = new DataView(buffer);
+        const colors = [];
+        for (let i = start; i + 4 < bytes.length; i++) {
+            if (String.fromCharCode(bytes[i], bytes[i+1], bytes[i+2], bytes[i+3]) !== 'RGBC') continue;
+            const values = { r:null, g:null, b:null };
+            for (let cursor = i + 4; cursor + 16 <= bytes.length && cursor < i + 256; cursor++) {
+                const tag = String.fromCharCode(bytes[cursor], bytes[cursor+1], bytes[cursor+2], bytes[cursor+3]);
+                const key = tag === 'Rd  ' ? 'r' : tag === 'Grn ' ? 'g' : tag === 'Bl  ' ? 'b' : null;
+                if (!key) continue;
+                const value = view.getFloat64(cursor + 8, false); // key, value type, double
+                if (Number.isFinite(value) && value >= 0 && value <= 255) values[key] = value;
+            }
+            if (values.r !== null && values.g !== null && values.b !== null) {
+                colors.push('#' + [values.r, values.g, values.b].map(value => Math.round(value).toString(16).padStart(2, '0')).join(''));
+            }
+            if (colors.length >= 16) break;
+        }
+        if (!colors.length) throw new Error('Photoshop GRD v5 contained no readable RGB descriptors');
+        const stops = colors.length === 1 ? [colors[0], colors[0]] : colors;
+        return [{ name:'Imported GRD gradient', type:'linear', colorStops:stops.map((color, index) => ({ offset:index / (stops.length - 1), color })) }];
+    },
+    _parseGrdGradients(buffer) {
+        const view = new DataView(buffer);
+        if (view.byteLength < 8 || String.fromCharCode(...new Uint8Array(buffer, 0, 4)) !== '8BGR') throw new Error('Not a GRD gradient file');
+        const version = view.getUint16(4, false);
+        if (version === 5) return this._parseGrdVersion5(buffer, 8);
+        if (version !== 3) throw new Error(`Unsupported GRD version ${version}`);
+        const count = view.getUint16(6, false);
+        const gradients = [];
+        let cursor = 8;
+        const readPascal = () => {
+            if (cursor >= view.byteLength) throw new Error('Truncated GRD name');
+            const length = view.getUint8(cursor++);
+            if (cursor + length > view.byteLength) throw new Error('Truncated GRD name');
+            const name = new TextDecoder().decode(new Uint8Array(buffer, cursor, length));
+            cursor += length;
+            return name;
+        };
+        for (let gradientIndex = 0; gradientIndex < Math.min(count, this._importLimits.maxPresets); gradientIndex++) {
+            const name = readPascal() || `Gradient ${gradientIndex + 1}`;
+            if (cursor + 2 > view.byteLength) throw new Error('Truncated GRD color stop count');
+            const colorCount = Math.min(view.getUint16(cursor, false), this._importLimits.maxGradientStops); cursor += 2;
+            const colors = [];
+            for (let index = 0; index < colorCount; index++) {
+                if (cursor + 20 > view.byteLength) throw new Error('Truncated GRD color stop');
+                const offset = Math.max(0, Math.min(4096, view.getInt32(cursor, false))); cursor += 4;
+                cursor += 4; // midpoint
+                const model = view.getInt16(cursor, false); cursor += 2;
+                const values = [];
+                for (let component = 0; component < 4; component++) { values.push(view.getInt16(cursor, false)); cursor += 2; }
+                cursor += 2; // color type
+                const color = this._grdColorToCss(model, values);
+                if (color) colors.push({ offset:offset / 4096, color });
+            }
+            if (cursor + 2 > view.byteLength) throw new Error('Truncated GRD transparency stop count');
+            const transparencyCount = Math.min(view.getUint16(cursor, false), this._importLimits.maxGradientStops); cursor += 2;
+            const transparencies = [];
+            for (let index = 0; index < transparencyCount; index++) {
+                if (cursor + 12 > view.byteLength) throw new Error('Truncated GRD transparency stop');
+                transparencies.push({ offset:Math.max(0, Math.min(4096, view.getInt32(cursor, false))) / 4096, opacity:Math.max(0, Math.min(255, view.getInt16(cursor + 8, false))) / 255 });
+                cursor += 12;
+            }
+            if (cursor + 6 > view.byteLength) throw new Error('Truncated GRD record');
+            cursor += 6;
+            if (colors.length < 2) continue;
+            const colorStops = colors.map(stop => {
+                const nearest = transparencies.reduce((best, candidate) => !best || Math.abs(candidate.offset - stop.offset) < Math.abs(best.offset - stop.offset) ? candidate : best, null);
+                if (!nearest || nearest.opacity >= 0.999) return stop;
+                const rgb = stop.color.match(/^#([0-9a-f]{6})$/i);
+                return rgb ? { ...stop, color:`rgba(${parseInt(rgb[1].slice(0,2),16)},${parseInt(rgb[1].slice(2,4),16)},${parseInt(rgb[1].slice(4,6),16)},${nearest.opacity})` } : stop;
+            });
+            gradients.push({ name, type:'linear', colorStops });
+        }
+        if (!gradients.length) throw new Error('GRD file contained no readable gradients');
+        return gradients;
+    },
+    selectGradientAssetFile(file) {
+        const extension = this._assetFileExtension(file);
+        if (extension === 'abr') return file.arrayBuffer().then(buffer => ({ kind:'brushes', brushes:this._parseAbrBrushes(buffer, file.name) }));
+        if (extension === 'grd') return file.arrayBuffer().then(buffer => ({ kind:'gradients', gradients:this._parseGrdGradients(buffer) }));
+        return this.readPaletteFile(file).then(colors => ({ kind:'palette', colors }));
+    },
     async readPaletteFile(file) {
         const name = String(file?.name || '').toLowerCase();
         if (name.endsWith('.ase')) return this._parseAsePalette(await file.arrayBuffer());
@@ -19853,14 +20164,17 @@ self.onmessage = async function(e) {
         return colors;
     },
     importPalette() {
-        const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,.gpl,.ase';
+        const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,.gpl,.ase,.abr,.grd';
         input.onchange = async e => {
             const file = e.target.files[0]; if (!file) return;
-            try { this._assertJsonFileBudget(file, 'Palette'); } catch(err) { this.toast(err.message, 'error'); return; }
+            try { this._assertAssetFileBudget(file, 'Asset'); } catch(err) { this.toast(err.message, 'error'); return; }
             try {
-                this._commitImportedPalette(await this.readPaletteFile(file));
+                const asset = await this.selectGradientAssetFile(file);
+                if (asset.kind === 'brushes') this._commitImportedBrushes(asset.brushes);
+                else if (asset.kind === 'gradients') this._commitImportedGradients(asset.gradients);
+                else this._commitImportedPalette(asset.colors);
             } catch(err) {
-                this.toast(`Could not read that palette — ${err.message}`, 'error');
+                this.toast(`Could not read that asset — ${err.message}`, 'error');
             }
         }; input.click();
     },

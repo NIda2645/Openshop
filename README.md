@@ -30,7 +30,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 |---------|-------------|
 | **Layer System** | Multi-layer canvas with canonical render/export stacking, non-destructive Levels, Curves, and HSL adjustment layers, independent raster masks with feather and density controls, re-editable embedded Smart Objects, editable vector paths with draggable anchors and Bezier controls, text-on-path with basic OpenType features, protected hidden or locked content, and undoable visibility, lock, opacity, blend, rename, and drag-reorder changes |
 | **34 Tools** | Move, Brush, Pencil, Eraser, Spray, Clone Stamp, Healing Brush, Dodge, Burn, Sponge, Smudge, Shapes (rect, ellipse, triangle, polygon, star, arrow, line), Pen, Text, Gradient, Pattern Fill, Flood Fill, Eyedropper, Crop, Measure, Sticky Notes, AI Segment Select, Pan, Zoom |
-| **Brush Engine** | Round, Soft, Flat, Scatter, Pixel presets with adjustable size, opacity, and flow |
+| **Brush Engine** | Round, Soft, Flat, Scatter, Pixel presets with adjustable size, opacity, and flow; bounded `.abr` brush-set import adds persistent selectable presets |
 | **Selection Tools** | Rectangular/Elliptical Marquee, Magic Wand (contiguous + global), Lasso, Color Range dialog with fuzziness, presets, and live preview |
 | **Selection Operations** | Select All, Deselect, Reselect, Inverse, Grow, Similar, Modify (Expand, Contract, Feather, Border, Smooth) |
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |
@@ -39,7 +39,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Free Transform** | Resize, rotate, skew, perspective, and warp on any object |
 | **Text Styling** | Bold, italic, underline, overline, and line-through, with the decoration line's own colour and thickness rather than the fill's |
 | **Trace to Vector** | Converts a raster layer into editable paths with colour-count, smoothing, and detail controls; the source layer is hidden, not destroyed |
-| **Gradient Stops** | Linear gradients expose draggable start and end handles on the canvas; the tool says so rather than half-working on radial gradients, which have no upstream control set |
+| **Gradient Stops** | Linear gradients expose draggable start and end handles on the canvas; imported `.grd` presets retain their stops and can be selected for linear or radial fills |
 | **Auto-Save** | Dirty project revisions are written to browser recovery storage every 30 seconds and cleared only after the storage path acknowledges the write |
 | **Accelerated Filters** | Parity-verified invert filtering uses a WebGPU compute worker, falls back to WebGL2 on OffscreenCanvas, and then the CPU worker; `OS.aiBackendReport().filterBackends` exposes measured backend and FPS samples |
 
@@ -59,8 +59,11 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **PSD** | Yes (pixel layers, nested groups, supported blends, opacity, visibility, basic text, and embedded ICC profile metadata) | Yes (same supported semantics; explicit raster fallbacks and `0x040F` ICC profile resource when a profile is present) |
 | **GIF** | Yes (animated, frame-based) | Yes (animated, frame-based) |
 | **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
+| **Palette and asset sets (`.ase`, `.gpl`, `.abr`, `.grd`, `.json`)** | Yes | `.json` palettes |
 
 Batch processing accepts raster images plus an `openshop-command-sequence` JSON action recipe, remaps recorded object and layer IDs to each imported image, and emits one ZIP with the selected PNG, JPEG, or WebP output. Relative folder paths are retained and the open document is restored after the run. The same menu also exports the current canvas to multiple formats in one click. Export Settings previews PNG/WebP/AVIF alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
+
+Use **Color → Swatches → Import** for ASE/GPL/JSON palettes, Photoshop ABR brush sets, or Photoshop GRD gradients. Imported brushes and gradients are bounded, sanitized, and retained in browser storage; ABR entries use the closest native stroke adapter while preserving their selectable preset metadata.
 
 Collaborative Session is available from the command palette. It uses WebRTC with no configured ICE relay: the offer creator selects **Create offer**, sends the generated JSON to the other peer, then applies the returned answer; the joining peer selects **Join with offer**, pastes the offer, and sends the generated answer back. State transfers are bounded and chunked, and received projects go through the normal document sanitizer before replacing the local canvas.
 

@@ -20,6 +20,7 @@ All notable changes to Openshop will be documented in this file.
 - Embed the retained ICC profile bytes in PSD exports as the standard `0x040F` ICC Untagged Profile resource and recover that resource on PSD import; pixel conversion remains intentionally out of scope.
 - Add a folder batch processor that applies versioned action recipes to raster images, remaps per-document targets safely, preserves relative paths, and downloads the results as a bounded ZIP without changing the user's open document.
 - Add no-server collaborative sessions over a local WebRTC data channel with manual offer/answer exchange, bounded chunked document sync, sanitized peer-state loading, and clean disconnect handling.
+- Import ASE/GPL/JSON palettes, Photoshop ABR brush sets, and Photoshop GRD v3/v5 gradients through one bounded, sanitized asset picker, with persistent selectable brush and gradient presets.
 
 ## [v0.27.0] - 2026-08-01
 
