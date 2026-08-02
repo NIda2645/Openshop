@@ -7,6 +7,7 @@ All notable changes to Openshop will be documented in this file.
 ### Added
 - Add a clean npm/Node release workflow that installs the lockfile, provisions Chromium/Firefox/WebKit, runs the full release gate, and preserves browser diagnostics as CI artifacts.
 - Drive the page loader, service-worker cache allowlist, security checker, and runtime package/license report from one canonical asset manifest; all 23 verified lazy assets are now cache-allowlisted.
+- Make the Layers and History panels keyboard-operable listboxes with active-descendant semantics, announced position/selection state, keyboard reorder/delete paths, and Chromium/Firefox/WebKit coverage.
 
 ## [v0.28.0] - 2026-08-02
 

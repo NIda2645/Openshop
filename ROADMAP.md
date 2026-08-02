@@ -62,13 +62,6 @@ testing gates.
 
 ### P1 — Trust, accessibility, and interoperability
 
-- [ ] P1 — Implement keyboard-complete Layers and History semantics
-  Why: The two dynamic `role=listbox` surfaces expose selection state but lack roving focus or `aria-activedescendant`, keyboard navigation, and an explicit active-item model, leaving a core workflow mouse-dependent.
-  Evidence: `index.html` `#layers-list`, `#history-list`, `updateLayersPanel()`, and `updateHistoryPanel()`; [WCAG 2.2](https://www.w3.org/TR/WCAG22/); [WAI-ARIA Authoring Practices](https://github.com/w3c/aria-practices); existing parity items PS-055 and PS-072.
-  Touches: `index.html`, unit tests, `tests/openshop.e2e.spec.js`, cross-browser Playwright projects.
-  Acceptance: Users can focus, move through, expand where applicable, select, reorder/delete where permitted, and activate layer/history entries with documented arrow/Home/End/Enter/Space behavior; focus and selected/disabled state are announced; Chromium, Firefox, and WebKit tests cover keyboard-only operation at desktop and mobile viewports.
-  Complexity: M
-
 - [ ] P1 — Add versioned document migrations and structured loss reports
   Why: The project has schema version 1 and rejects newer schemas, while PSD support is constrained by ag-psd and ICC data is retained without conversion; users need predictable upgrades and an explicit account of what did not round-trip.
   Evidence: `index.html` `_documentSchemaVersion`, `_historySchemaVersion`, `_commandSchemaVersion`, `_sanitizeProjectJSON()`; `README.md` OpenShop/ICC notes; [ag-psd format limitations](https://www.npmjs.com/package/ag-psd).

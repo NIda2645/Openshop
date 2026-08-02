@@ -98,6 +98,29 @@ test('loads the editor shell and supports core UI interactions @cross-browser', 
   expect(pageErrors).toEqual([]);
 });
 
+test('navigates Layers and History listboxes without a pointer @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const layers = page.locator('#layers-list');
+  await layers.focus();
+  await expect(layers).toHaveAttribute('aria-activedescendant', /openshop-layer-option-/);
+  const initialLayer = await page.evaluate(() => OS.activeLayerIdx);
+  await page.keyboard.press('ArrowDown');
+  expect(await page.evaluate(() => OS.activeLayerIdx)).not.toBe(initialLayer);
+  await page.keyboard.press('Home');
+  await expect(layers).toHaveAttribute('aria-activedescendant', 'openshop-layer-option-1');
+  await page.keyboard.press('Control+Alt+ArrowDown');
+  await expect(layers).toBeFocused();
+
+  const history = page.locator('#history-list');
+  await history.focus();
+  await expect(history).toHaveAttribute('aria-activedescendant', /openshop-history-option-/);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect(history.locator('[aria-selected="true"]')).toHaveCount(1);
+});
+
 test('exposes clean, dirty, saving, and saved project states @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();

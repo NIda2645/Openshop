@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-nPsmDxif3LqMefxW1begbTvtnq4ewokllGW3//Kjl04=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-ZqRXfUmr4aZqPoDGEuDSVoeWyEl49O+vvt+sCSo5Aro=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -485,6 +485,7 @@ html.os-native-popovers #context-menu[popover]{position-area:block-end span-inli
 
 /* Layers */
 #layers-list{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+#layers-list:focus-visible,#history-list:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .layer-item{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:6px;cursor:pointer;transition:var(--transition-chrome);border:1px solid transparent}
 .layer-item:hover{background:var(--bg-depth-3)}.layer-item.active{background:var(--accent-dim);border-color:var(--glass-border)}
 .layer-lock{background:none;border:none;padding:2px;cursor:pointer;color:var(--text-muted);opacity:.6;transition:var(--transition-chrome);flex-shrink:0}
@@ -9318,12 +9319,109 @@ self.onmessage = function(event) {
             return success;
         });
     },
+    _panelListboxOptions(list) {
+        return [...list.children].filter(child => child.getAttribute('role') === 'option');
+    },
+    _setPanelListboxActive(list, option, { focus = false } = {}) {
+        if (!list || !option) return false;
+        list.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView?.({ block:'nearest' });
+        if (focus) list.focus({ preventScroll:true });
+        return true;
+    },
+    _onPanelListboxKeydown(event, kind) {
+        const list = event.currentTarget;
+        if (event.target !== list && event.target.closest?.('button,input,textarea,select,a')) return;
+        const options = this._panelListboxOptions(list);
+        if (!options.length) return;
+        const currentId = list.getAttribute('aria-activedescendant');
+        let current = Math.max(0, options.findIndex(option => option.id === currentId));
+        const ctrl = event.ctrlKey || event.metaKey;
+
+        if (kind === 'layers' && ctrl && event.altKey && event.key.startsWith('Arrow')) {
+            const direction = event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0;
+            if (!direction) return;
+            event.preventDefault(); event.stopPropagation();
+            const from = this.activeLayerIdx;
+            const to = from + direction;
+            if (to < 0 || to >= this.layers.length) {
+                this.toast('Layer is already at the end of the stack', 'info');
+                return;
+            }
+            if (this._moveLayer(from, to)) {
+                const refreshed = document.getElementById('layers-list');
+                const option = refreshed?.querySelector(`[data-layer-index="${this.activeLayerIdx}"]`);
+                this._setPanelListboxActive(refreshed, option, { focus:true });
+            }
+            return;
+        }
+
+        let next = current;
+        if (event.key === 'ArrowDown') next = Math.min(options.length - 1, current + 1);
+        else if (event.key === 'ArrowUp') next = Math.max(0, current - 1);
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = options.length - 1;
+        else if (event.key === 'PageDown') next = Math.min(options.length - 1, current + 5);
+        else if (event.key === 'PageUp') next = Math.max(0, current - 5);
+        else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault(); event.stopPropagation();
+            const option = options[current];
+            if (kind === 'layers') {
+                const layerIndex = Number(option.dataset.layerIndex);
+                if (Number.isInteger(layerIndex)) this.selectLayer(layerIndex);
+                this._setPanelListboxActive(document.getElementById('layers-list'), document.getElementById(option.id), { focus:true });
+            } else {
+                const historyIndex = Number(option.dataset.historyIndex);
+                if (Number.isInteger(historyIndex)) {
+                    const snapshot = historyIndex < 0 ? this.history[0]?.beforeSnapshot || this._historyBaseSnapshot : null;
+                    void this._restoreHistory(historyIndex, snapshot);
+                }
+            }
+            return;
+        } else if (kind === 'layers' && (event.key === 'Delete' || event.key === 'Backspace')) {
+            event.preventDefault(); event.stopPropagation();
+            this.deleteLayer();
+            this._setPanelListboxActive(document.getElementById('layers-list'), document.getElementById(`openshop-layer-option-${this.activeLayerIdx}`), { focus:true });
+            return;
+        } else {
+            return;
+        }
+
+        event.preventDefault(); event.stopPropagation();
+        const option = options[next];
+        this._setPanelListboxActive(list, option, { focus:true });
+        if (kind === 'layers') {
+            const layerIndex = Number(option.dataset.layerIndex);
+            if (Number.isInteger(layerIndex)) {
+                this.selectLayer(layerIndex);
+                const refreshed = document.getElementById('layers-list');
+                this._setPanelListboxActive(refreshed, refreshed?.querySelector(`[data-layer-index="${layerIndex}"]`), { focus:true });
+            }
+        }
+    },
+    _initPanelListbox(list, kind, label) {
+        if (!list) return;
+        list.setAttribute('aria-orientation', 'vertical');
+        list.setAttribute('aria-label', label);
+        list.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown Home End Enter Space Delete Control+Alt+ArrowUp Control+Alt+ArrowDown');
+        list.tabIndex = 0;
+        if (list.dataset.keyboardReady !== 'true') {
+            list.addEventListener('keydown', event => this._onPanelListboxKeydown(event, kind));
+            list.dataset.keyboardReady = 'true';
+        }
+    },
     updateLayersPanel() {
         this._enforceLayerInvariants({ render:false });
-        const list = document.getElementById('layers-list'); list.replaceChildren();
+        const list = document.getElementById('layers-list');
+        this._initPanelListbox(list, 'layers', 'Layers');
+        list.replaceChildren();
+        list.removeAttribute('aria-activedescendant');
         for (let i = this.layers.length-1; i >= 0; i--) {
             const l = this.layers[i], d = document.createElement('div');
             d.className = 'layer-item'+(i===this.activeLayerIdx?' active':'');
+            d.id = `openshop-layer-option-${i}`;
+            d.dataset.layerIndex = String(i);
+            d.tabIndex = -1;
             const eyeSvg = l.visible
                 ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
                 : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
@@ -9361,11 +9459,14 @@ self.onmessage = function(event) {
             // neither list was navigable as a list by assistive technology.
             d.setAttribute('role', 'option');
             d.setAttribute('aria-selected', i === this.activeLayerIdx ? 'true' : 'false');
+            d.setAttribute('aria-posinset', String(this.layers.length - i));
+            d.setAttribute('aria-setsize', String(this.layers.length));
             d.setAttribute('aria-label', `${l.name}${l.visible === false ? ', hidden' : ''}${l.locked ? ', locked' : ''}`);
             d.addEventListener('click', () => this.selectLayer(i));
             this.initLayerDrag(d, i);
             list.appendChild(d);
         }
+        this._setPanelListboxActive(list, list.querySelector(`[data-layer-index="${this.activeLayerIdx}"]`));
         const al = this.layers[this.activeLayerIdx];
         if (al) {
             document.getElementById('layer-opacity').value = al.opacity;
@@ -12418,25 +12519,38 @@ self.onmessage = function(event) {
     updateHistoryPanel() {
         const list = document.getElementById('history-list');
         if (!list) return;
+        this._initPanelListbox(list, 'history', 'History');
         list.replaceChildren();
+        list.removeAttribute('aria-activedescendant');
         const baseline = document.createElement('div');
         baseline.className = 'history-item' + (this.historyIdx < 0 ? ' current' : '');
+        baseline.id = 'openshop-history-option-baseline';
+        baseline.dataset.historyIndex = '-1';
+        baseline.tabIndex = -1;
         baseline.textContent = this._historyBaseLabel;
         baseline.setAttribute('role', 'option');
         baseline.setAttribute('aria-selected', this.historyIdx < 0 ? 'true' : 'false');
+        baseline.setAttribute('aria-posinset', '1');
+        baseline.setAttribute('aria-setsize', String(this.history.length + 1));
         baseline.addEventListener('click', () => this._restoreHistory(-1, this.history[0]?.beforeSnapshot || this._historyBaseSnapshot));
         list.appendChild(baseline);
         this.history.forEach((entry, index) => {
             const item = document.createElement('div');
             item.className = 'history-item' + (index === this.historyIdx ? ' current' : '') + (index > this.historyIdx ? ' future' : '');
+            item.id = `openshop-history-option-${index}`;
+            item.dataset.historyIndex = String(index);
+            item.tabIndex = -1;
             item.textContent = entry.action;
             item.setAttribute('role', 'option');
             item.setAttribute('aria-selected', index === this.historyIdx ? 'true' : 'false');
+            item.setAttribute('aria-posinset', String(index + 2));
+            item.setAttribute('aria-setsize', String(this.history.length + 1));
             // Steps ahead of the cursor are still listed but are not current.
             if (index > this.historyIdx) item.setAttribute('aria-disabled', 'true');
             item.addEventListener('click', () => this._restoreHistory(index));
             list.appendChild(item);
         });
+        this._setPanelListboxActive(list, list.querySelector('[aria-selected="true"]') || baseline);
         list.scrollTop = list.scrollHeight;
     },
 
