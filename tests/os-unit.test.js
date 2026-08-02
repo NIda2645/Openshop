@@ -1332,6 +1332,20 @@ describe('OpenShop core object', () => {
     expect(curveCommand.args.adjustment.params.points).toEqual([[0, 0], [128, 220], [255, 255]]);
   });
 
+  it('keeps layer masks independent from alpha with bounded feather and density', () => {
+    const OS = loadOpenShop();
+    const encoded = OS._encodeSelectionMask({
+      w: 2, h: 2, mask: new Uint8Array([0, 255, 255, 0])
+    });
+    const mask = OS._normalizeLayerMask({
+      mask: encoded, feather: 500, density: -20
+    }, { validate:true });
+    expect(mask).toMatchObject({ version:1, enabled:true, feather:100, density:0 });
+    expect(mask.mask).toEqual(encoded);
+    expect([...OS._layerMaskCoverage(mask, 2, 2)]).toEqual([0, 255, 255, 0]);
+    expect(() => OS._normalizeLayerMask({ mask: { encoding:'coverage-v1', width:2, height:2, data:'data:application/vnd.openshop.selection;base64,AA==' } }, { validate:true })).toThrow(/truncated/);
+  });
+
   it('registers one installed-app launch consumer and routes supported files', async () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);

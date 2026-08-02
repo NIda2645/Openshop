@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-ByvbpROVEQ5uegxPe29FxBVo4wcYMCmNPAybEh8b8Us=' 'sha256-iVS0EYePtg9fjKywwuz5YLZxqa29i458RIVDAlPxSL8=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5CkSUQ6Yhf1zU+3XLQQa+pYmIZN9FpjX0+vGMKolwi8=' 'sha256-bNQAXo+9NyS4UhoQI6r7UO33XMCJEmpZYHFj0huzCzA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -20,7 +20,7 @@ const applyFabricCompat = () => {
 
     api.FabricObject.ownDefaults.originX = 'left';
     api.FabricObject.ownDefaults.originY = 'top';
-    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers'];
+    api.FabricObject.customProperties = ['name', 'excludeFromExport', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers', '_openShopLayerMask', '_openShopMaskBaseSrc'];
     api.Image.filters = api.filters;
 
     const reportAsyncError = error => {
@@ -3175,7 +3175,7 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-158": function(event) { OS.duplicateLayer() },
         "click-159": function(event) { OS.mergeDown() },
         "click-160": function(event) { OS.deleteLayer() },
-        "click-161": function(event) { OS.canvas.getActiveObject()&&OS.canvas.getActiveObject()._hasMask?OS.removeLayerMask():OS.addLayerMask() },
+        "click-161": function(event) { const active=OS.canvas.getActiveObject(); active?._openShopLayerMask?OS.showLayerMaskDialog():active?._hasMask?OS.removeLayerMask():OS.addLayerMask() },
         "click-162": function(event) { OS.applyAdjustments() },
         "click-163": function(event) { OS.resetAdjustments() },
         "click-164": function(event) { OS.applyTextFx() },
@@ -4224,7 +4224,7 @@ const OS = {
         return Boolean(id) && (id === this._documentId || this._documentIdAliases.includes(id));
     },
     _idSequence: 0,
-    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers'],
+    _fabricDocumentProperties: ['name', 'excludeFromExport', 'globalCompositeOperation', '_openShopObjectId', '_hasMask', '_isArrow', '_openShopAdjustmentBaseSrc', '_openShopAdjustmentLayers', '_openShopLayerMask', '_openShopMaskBaseSrc'],
     _isDirty: false,
     _persistenceState: 'clean',
     _documentRevision: 0,
@@ -4300,7 +4300,8 @@ const OS = {
         maxPdfPages: 512,
         maxDecodedPdfBytes: 512 * 1024 * 1024,
         maxColorProfileBytes: 4 * 1024 * 1024,
-        maxAIMasks: 32
+        maxAIMasks: 32,
+        maxLayerMaskBytes: 8 * 1024 * 1024
     },
     gridVisible: false, rulersVisible: false, snapEnabled: false, gridSize: 20,
     templates: [
@@ -5822,6 +5823,10 @@ const OS = {
         objects.forEach(object => {
             const id = this._ensureObjectId(object, usedObjectIds);
             if (object.clipPath) object._hasMask = true;
+            if (object._openShopLayerMask) {
+                object._openShopLayerMask = this._normalizeLayerMask(object._openShopLayerMask, { validate:true });
+                object._hasMask = true;
+            }
             objectsById.set(id, object);
         });
 
@@ -5884,6 +5889,7 @@ const OS = {
         this._colorProfile = this._normalizeColorProfile(state.metadata?.colorProfile);
         this._aiMasks = this._normalizeAIMasks(state.metadata?.aiMasks, { validate:true });
         await this._rebuildAdjustmentLayers();
+        await this._rebuildLayerMasks();
         this._stopAnimationPlayback();
         this._animFrames = Array.isArray(state.animation?.frames)
             ? state.animation.frames.filter(frame => typeof frame === 'string' && frame.startsWith('data:image/'))
@@ -15253,10 +15259,14 @@ self.onmessage = async function(event) {
                 name: active.name || histName
             });
             if (active._hasMask) newImg._hasMask = true;
+            if (active._openShopLayerMask) newImg._openShopLayerMask = this._normalizeLayerMask(active._openShopLayerMask);
+            if (active._openShopLayerMask) newImg._openShopMaskBaseSrc = dataUrl;
+            else if (active._openShopMaskBaseSrc) newImg._openShopMaskBaseSrc = active._openShopMaskBaseSrc;
             if (active.psd) newImg.psd = active.psd;
             const li = this.layers.findIndex(l => l.objects.includes(active));
             if (li >= 0) { const idx = this.layers[li].objects.indexOf(active); this.layers[li].objects[idx] = newImg; }
             this.canvas.remove(active); this.canvas.add(newImg); this.canvas.setActiveObject(newImg);
+            if (newImg._openShopLayerMask) await this._rebuildLayerMasks();
             this.canvas.renderAll(); this.saveHistory(histName); this.updateLayersPanel();
             return true;
         } catch (error) {
@@ -15506,29 +15516,200 @@ self.onmessage = async function(event) {
         overlay.remove(); this.toast('Skew applied', 'success');
     },
 
-    // ====================== LAYER MASKS (BASIC) ======================
-    addLayerMask() {
-        const active = this.canvas.getActiveObject();
-        if (!active) { this.toast('Select an object first', 'info'); return; }
-        // Create a circular clipPath as a basic mask
-        const rect = active.getBoundingRect();
-        const clipRect = new fabric.Rect({
-            originX: 'center', originY: 'center',
-            width: rect.width / (active.scaleX || 1) * 0.8,
-            height: rect.height / (active.scaleY || 1) * 0.8,
-        });
-        active.clipPath = clipRect;
-        active._hasMask = true;
-        this.canvas.renderAll(); this.saveHistory('Add Mask'); this.updateLayersPanel();
-        this.toast('Layer mask added (rectangular). Select object to adjust.', 'success');
+    // ====================== LAYER MASKS ======================
+    _normalizeLayerMask(value, { validate = false } = {}) {
+        const source = value && typeof value === 'object' ? value : {};
+        if (!source.mask || typeof source.mask !== 'object') return null;
+        let decoded;
+        try { decoded = this._decodeSelectionMask(source.mask); }
+        catch (error) { if (validate) throw error; return null; }
+        const encoded = this._encodeSelectionMask(decoded);
+        if (!encoded || encoded.data.length > this._importLimits.maxLayerMaskBytes) {
+            if (validate) throw new Error('Layer mask exceeds import limits');
+            return null;
+        }
+        const clamp = (candidate, fallback, min, max) => {
+            const number = Number(candidate);
+            return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+        };
+        return {
+            version:1,
+            enabled:source.enabled !== false,
+            feather:clamp(source.feather, 0, 0, 100),
+            density:clamp(source.density, 100, 0, 100),
+            mask:encoded
+        };
     },
-    removeLayerMask() {
+    _blurLayerMask(coverage, width, height, feather) {
+        const radius = Math.min(64, Math.max(0, Math.round(Math.max(width, height) * feather / 100 * 0.02)));
+        if (!radius) return coverage;
+        const horizontal = new Float32Array(coverage.length);
+        for (let y = 0; y < height; y++) {
+            let sum = 0;
+            for (let x = 0; x <= radius && x < width; x++) sum += coverage[y * width + x];
+            for (let x = 0; x < width; x++) {
+                const start = Math.max(0, x - radius), end = Math.min(width - 1, x + radius);
+                horizontal[y * width + x] = sum / (end - start + 1);
+                const add = x + radius + 1, remove = x - radius;
+                if (add < width) sum += coverage[y * width + add];
+                if (remove >= 0) sum -= coverage[y * width + remove];
+            }
+        }
+        const blurred = new Uint8Array(coverage.length);
+        for (let x = 0; x < width; x++) {
+            let sum = 0;
+            for (let y = 0; y <= radius && y < height; y++) sum += horizontal[y * width + x];
+            for (let y = 0; y < height; y++) {
+                const start = Math.max(0, y - radius), end = Math.min(height - 1, y + radius);
+                blurred[y * width + x] = Math.max(0, Math.min(255, Math.round(sum / (end - start + 1))));
+                const add = y + radius + 1, remove = y - radius;
+                if (add < height) sum += horizontal[add * width + x];
+                if (remove >= 0) sum -= horizontal[remove * width + x];
+            }
+        }
+        return blurred;
+    },
+    _layerMaskCoverage(mask, width, height) {
+        const decoded = this._decodeSelectionMask(mask.mask);
+        const coverage = new Uint8Array(width * height);
+        for (let y = 0; y < height; y++) {
+            const sourceY = Math.min(decoded.h - 1, Math.floor(y * decoded.h / height));
+            for (let x = 0; x < width; x++) {
+                const sourceX = Math.min(decoded.w - 1, Math.floor(x * decoded.w / width));
+                coverage[y * width + x] = decoded.mask[sourceY * decoded.w + sourceX];
+            }
+        }
+        return this._blurLayerMask(coverage, width, height, mask.feather);
+    },
+    async _restoreLayerMaskBase(object) {
+        if (!object?._openShopMaskBaseSrc || object.type !== 'image') return false;
+        const restored = await fabric.Image.fromURL(object._openShopMaskBaseSrc);
+        const width = object.width, height = object.height;
+        object.setElement?.(restored.getElement());
+        if (!object.setElement) object._element = restored.getElement();
+        object.width = width; object.height = height; object.filters = [];
+        object.dirty = true; object.setCoords?.();
+        return true;
+    },
+    async _rebuildLayerMasks() {
+        if (!this.canvas || !Array.isArray(this.layers)) return false;
+        const objects = this.layers.flatMap(layer => layer.objects || [])
+            .filter(object => object.type === 'image' && (object._openShopLayerMask || object._openShopMaskBaseSrc));
+        for (const object of objects) {
+            const mask = this._normalizeLayerMask(object._openShopLayerMask);
+            if (!mask || !mask.enabled) {
+                if (object._openShopMaskBaseSrc) await this._restoreLayerMaskBase(object);
+                if (!mask) delete object._openShopMaskBaseSrc;
+                if (!mask) object._hasMask = Boolean(object.clipPath);
+                continue;
+            }
+            if (!object._openShopMaskBaseSrc) object._openShopMaskBaseSrc = this._imageToDataURL(object);
+            const base = await fabric.Image.fromURL(object._openShopMaskBaseSrc);
+            const source = base.getElement();
+            const width = source.naturalWidth || source.width, height = source.naturalHeight || source.height;
+            const surface = document.createElement('canvas'); surface.width = width; surface.height = height;
+            const context = surface.getContext('2d');
+            if (!context) continue;
+            context.drawImage(source, 0, 0, width, height);
+            const pixels = context.getImageData(0, 0, width, height);
+            const coverage = this._layerMaskCoverage(mask, width, height);
+            const density = mask.density / 100;
+            for (let i = 0; i < coverage.length; i++) pixels.data[i * 4 + 3] = Math.round(pixels.data[i * 4 + 3] * (coverage[i] / 255) * density);
+            context.putImageData(pixels, 0, 0);
+            const objectWidth = object.width, objectHeight = object.height;
+            object.setElement?.(surface);
+            if (!object.setElement) object._element = surface;
+            object.width = objectWidth; object.height = objectHeight; object.filters = [];
+            object._openShopLayerMask = mask; object._hasMask = true; object.dirty = true; object.setCoords?.();
+        }
+        this.canvas.renderAll?.();
+        return true;
+    },
+    _newLayerMaskForObject(object) {
+        const element = object?.getElement?.();
+        const width = Math.max(1, Math.round(element?.naturalWidth || element?.width || object?.width || 1));
+        const height = Math.max(1, Math.round(element?.naturalHeight || element?.height || object?.height || 1));
+        const scale = Math.min(1, Math.sqrt(4 * 1000 * 1000 / (width * height)));
+        const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
+        const mask = new Uint8Array(w * h); mask.fill(255);
+        const left = Math.round(w * 0.1), right = Math.round(w * 0.9), top = Math.round(h * 0.1), bottom = Math.round(h * 0.9);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            if (x < left || x >= right || y < top || y >= bottom) mask[y * w + x] = 0;
+        }
+        return { version:1, enabled:true, feather:0, density:100, mask:this._encodeSelectionMask({ w, h, mask }) };
+    },
+    async addLayerMask() {
         const active = this.canvas.getActiveObject();
-        if (!active) return;
-        active.clipPath = null;
-        active._hasMask = false;
+        if (!active) { this.toast('Select an image layer first', 'info'); return false; }
+        if (active.type !== 'image') { this.toast('Layer masks require a pixel or image layer', 'info'); return false; }
+        if (active._openShopLayerMask) { this.showLayerMaskDialog(); return true; }
+        try {
+            active._openShopMaskBaseSrc = this._imageToDataURL(active);
+            active._openShopLayerMask = this._newLayerMaskForObject(active);
+            active._hasMask = true;
+            await this._rebuildLayerMasks();
+            this.canvas.renderAll(); this.saveHistory('Add Mask'); this.updateLayersPanel();
+            this.toast('Layer mask added', 'success');
+            this.showLayerMaskDialog();
+            return true;
+        } catch (error) {
+            delete active._openShopLayerMask; delete active._openShopMaskBaseSrc; active._hasMask = Boolean(active.clipPath);
+            this.toast(`Layer mask failed: ${error.message}`, 'error');
+            return false;
+        }
+    },
+    showLayerMaskDialog() {
+        const active = this.canvas.getActiveObject();
+        const mask = this._normalizeLayerMask(active?._openShopLayerMask);
+        if (!active || !mask) return false;
+        document.querySelector('.layer-mask-dialog')?.remove();
+        const overlay = document.createElement('div'); overlay.className = 'modal-overlay layer-mask-dialog show';
+        overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', 'Layer mask settings');
+        const modal = document.createElement('div'); modal.className = 'modal';
+        const title = document.createElement('h3'); title.textContent = 'Layer Mask'; modal.appendChild(title);
+        const fields = new Map();
+        const addRange = (label, key, min, max, value) => {
+            const row = document.createElement('div'); row.className = 'modal-row';
+            const caption = document.createElement('label'); caption.textContent = label;
+            const input = document.createElement('input'); input.type = 'range'; input.min = min; input.max = max; input.value = value;
+            const output = document.createElement('span'); output.className = 'opt-val'; output.textContent = `${value}%`;
+            input.addEventListener('input', () => { output.textContent = `${input.value}%`; }); row.append(caption, input, output); modal.appendChild(row); fields.set(key, input);
+        };
+        addRange('Feather', 'feather', 0, 100, mask.feather); addRange('Density', 'density', 0, 100, mask.density);
+        const hint = document.createElement('p'); hint.textContent = 'Feather softens the mask edge; density controls its maximum coverage.'; hint.style.cssText = 'font-size:11px;color:var(--text-muted);margin:0 0 8px 100px'; modal.appendChild(hint);
+        const buttons = document.createElement('div'); buttons.className = 'modal-btns';
+        const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn'; cancel.textContent = 'Cancel';
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-danger'; remove.textContent = 'Remove Mask';
+        const apply = document.createElement('button'); apply.type = 'button'; apply.className = 'btn btn-primary'; apply.textContent = 'Update Mask'; buttons.append(cancel, apply); modal.appendChild(buttons); overlay.appendChild(modal); document.body.appendChild(overlay);
+        const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+        const onKey = event => { if (event.key === 'Escape') close(); };
+        buttons.insertBefore(remove, apply);
+        cancel.addEventListener('click', close); remove.addEventListener('click', () => void this.removeLayerMask().then(success => { if (success) close(); })); overlay.addEventListener('click', event => { if (event.target === overlay) close(); }); document.addEventListener('keydown', onKey);
+        apply.addEventListener('click', () => void this.updateLayerMask({ feather:Number(fields.get('feather').value), density:Number(fields.get('density').value) }).then(success => { if (success) close(); }));
+        return overlay;
+    },
+    async updateLayerMask(params = {}) {
+        const active = this.canvas.getActiveObject();
+        const current = this._normalizeLayerMask(active?._openShopLayerMask);
+        if (!active || !current) return false;
+        const next = this._normalizeLayerMask({ ...current, ...params });
+        active._openShopLayerMask = next;
+        await this._rebuildLayerMasks();
+        this.canvas.renderAll(); this.saveHistory('Update Mask'); this.updateLayersPanel();
+        return true;
+    },
+    async removeLayerMask() {
+        const active = this.canvas.getActiveObject();
+        if (!active) return false;
+        if (!active._openShopLayerMask && !active._openShopMaskBaseSrc) {
+            active.clipPath = null; active._hasMask = false; this.canvas.renderAll(); this.saveHistory('Remove Mask'); this.updateLayersPanel(); return true;
+        }
+        delete active._openShopLayerMask;
+        await this._rebuildLayerMasks();
+        active._hasMask = Boolean(active.clipPath);
         this.canvas.renderAll(); this.saveHistory('Remove Mask'); this.updateLayersPanel();
         this.toast('Mask removed', 'info');
+        return true;
     },
 
     // ====================== PEN / BEZIER TOOL ======================
