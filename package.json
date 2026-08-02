@@ -4,6 +4,9 @@
   "private": true,
   "description": "Single-file browser image editor test harness",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "vitest run",
     "test:unit": "vitest run",

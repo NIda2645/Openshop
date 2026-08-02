@@ -4,6 +4,9 @@ All notable changes to Openshop will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Add a clean npm/Node release workflow that installs the lockfile, provisions Chromium/Firefox/WebKit, runs the full release gate, and preserves browser diagnostics as CI artifacts.
+
 ## [v0.28.0] - 2026-08-02
 
 ### Added
