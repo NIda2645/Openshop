@@ -12,7 +12,7 @@
 
 **[Open OpenShop in your browser](https://sysadmindoc.github.io/Openshop/)** — no download required.
 
-Or download `index.html` and open it locally. Everything runs client-side. Your images never leave your machine.
+Or download `index.html` and open it locally. Everything runs client-side. Your images never leave your machine — and the status bar tells you exactly what did, so you can check rather than trust. See [Privacy and Network Use](#privacy-and-network-use).
 
 ## Quick Start
 
@@ -151,6 +151,24 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 OpenShop `.openshop` files are JSON-encoded document schema v1. The same envelope drives project save/open, recovery, and undo/redo so layer membership and order, masks, guides, selections, animation frames, and active state stay synchronized. Legacy `.json`, Fabric 5, and OpenShop 0.18.13 projects are migrated on load.
 
 Recovery uses checksum-verified, immutable generations keyed by stable document IDs rather than one overwrite-in-place file. Writes stage and verify a temporary OPFS file before promotion, retain up to five generations per document, rebuild from snapshot files if the index is damaged, and fall back to the newest verified older generation when necessary. Web Locks serialize the shared index and active tab leases fork competing documents into separate recovery streams. Recovery Storage shows quota and durable/best-effort status and supports metadata preview, naming, export, restore, open-as-copy, and per-generation discard. The legacy singleton autosave migrates on first supported startup.
+
+## Privacy and Network Use
+
+OpenShop has no account, no credit meter, no telemetry, and no upload path. Every edit, filter, export, and AI inference runs in your browser on your machine. There is no server-side component to send a document to, so no document, layer, selection, or pixel is ever transmitted.
+
+What OpenShop *does* fetch is program code — and, the first time you use an AI feature, that model's weights:
+
+| Host | What comes from it | When |
+|---|---|---|
+| `cdn.jsdelivr.net` | Pinned, SHA-384-verified libraries and codecs (Fabric, ag-psd, jsPDF, Photon, GIF, AVIF, Transformers.js, ONNX Runtime) | Three at startup; the rest only when a feature that needs them is used |
+| `huggingface.co` / `*.hf.co` | Pinned AI model weights | First use of a given AI feature |
+| `fonts.googleapis.com` / `fonts.gstatic.com` | JetBrains Mono and DM Sans | Page load |
+
+You do not have to take that on trust. **The status bar reports outbound requests where a hosted competitor shows remaining credits.** It reads `Nothing sent` until something is fetched, then names the count; clicking it opens **Network Activity**, which lists every request this session grouped by host and purpose. The ledger is installed before the first fetch in the document, so the three startup libraries are on the list too.
+
+**Strict offline mode** — the same dialog, or `Toggle Strict Offline Mode` in the command palette — refuses every request to anywhere but this page unless it is already cached. It disables whichever lazily fetched capabilities have not been downloaded yet, and the dialog names them individually rather than warning in the abstract. The preference persists across reloads.
+
+One honest limitation: on the standalone `file://` lane a cold start needs the three pinned libraries, which *are* the application. If strict mode is on and nothing is cached, OpenShop stands the mode down, opens anyway, and reports why in the Network Activity dialog rather than leaving you with no interface to turn it off. To hold the guarantee across a cold start, use the hosted lane described under [Self-Hosting](#self-hosting), where those libraries are part of the verified offline shell — the same subdirectory bundle a school or clinic can serve from its own network.
 
 ## Security
 

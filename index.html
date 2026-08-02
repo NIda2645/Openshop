@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-3/H2+NC3z4ph57sDJbUFzCwYUpHvFpXzXiTtfNa4114=' 'sha256-iU+DmYO/5hCD56GUcB6iPkz60TITlMNHEKH9XbSCGAM=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-JpbZsy/kO9Ux73dJ+hfFeX3JIBfUgGB3NjuQLsS0qpQ=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -90,6 +90,123 @@ const applyFabricCompat = () => {
     });
 };
 
+// Every hosted competitor puts a credit meter in the corner of the editor.
+// OpenShop's equivalent claim is that the image never leaves the machine, and
+// the only honest way to show that is to record every outbound request the page
+// makes and let the user read the list. The wrapper is installed before the
+// first fetch in the document so the three pinned boot libraries are in the
+// ledger too, and it doubles as the enforcement point for strict offline mode.
+const OPENSHOP_NETWORK = (() => {
+    const STRICT_KEY = 'os_strict_offline';
+    const MAX_ENTRIES = 250;
+    const PURPOSES = [
+        [/(^|\.)jsdelivr\.net$/i, 'Pinned library or codec'],
+        [/(^|\.)huggingface\.co$/i, 'AI model weights'],
+        [/(^|\.)hf\.co$/i, 'AI model weights'],
+        [/(^|\.)googleapis\.com$/i, 'Web font stylesheet'],
+        [/(^|\.)gstatic\.com$/i, 'Web font file']
+    ];
+    const state = { strict:false, strictDisabledReason:null, entries:[], dropped:0, blocked:0 };
+    const listeners = new Set();
+    const announce = () => listeners.forEach(listener => { try { listener(); } catch (error) { console.warn('Network ledger listener failed:', error); } });
+    try { state.strict = localStorage.getItem(STRICT_KEY) === 'on'; } catch (error) { /* storage may be denied */ }
+
+    const describe = raw => {
+        let host = '';
+        try { host = new URL(String(raw), location.href).host; } catch (error) { host = ''; }
+        // A blob:, data: or file: URL has no host and never leaves the process.
+        if (!host) return { host:'(in-page)', purpose:'In-page data', external:false };
+        if (host === location.host) return { host, purpose:'Application shell', external:false };
+        const match = PURPOSES.find(([pattern]) => pattern.test(host));
+        return { host, purpose:match ? match[1] : 'Unclassified third party', external:true };
+    };
+    const record = (raw, method, outcome) => {
+        const info = describe(raw);
+        if (state.entries.length >= MAX_ENTRIES) { state.entries.shift(); state.dropped += 1; }
+        const entry = {
+            url:String(raw).slice(0, 300),
+            host:info.host,
+            purpose:info.purpose,
+            external:info.external,
+            method,
+            outcome,
+            status:0
+        };
+        state.entries.push(entry);
+        if (outcome === 'blocked') state.blocked += 1;
+        announce();
+        return entry;
+    };
+    const isCached = async raw => {
+        if (!globalThis.caches?.match) return false;
+        try { return Boolean(await caches.match(String(raw))); } catch (error) { return false; }
+    };
+
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+        const raw = typeof input === 'string' ? input : (input?.url ?? String(input));
+        const method = String(init?.method || input?.method || 'GET').toUpperCase();
+        const info = describe(raw);
+        if (state.strict && info.external && !(await isCached(raw))) {
+            record(raw, method, 'blocked');
+            throw new Error(`Strict offline mode blocked a request to ${info.host}`);
+        }
+        const entry = record(raw, method, 'sent');
+        try {
+            const response = await nativeFetch(input, init);
+            entry.status = response.status;
+            return response;
+        } catch (error) {
+            entry.outcome = 'failed';
+            throw error;
+        }
+    };
+
+    return {
+        get strict() { return state.strict; },
+        get strictDisabledReason() { return state.strictDisabledReason; },
+        subscribe(listener) {
+            if (typeof listener === 'function') listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+        setStrict(on) {
+            state.strict = Boolean(on);
+            if (state.strict) state.strictDisabledReason = null;
+            try { localStorage.setItem(STRICT_KEY, state.strict ? 'on' : 'off'); }
+            catch (error) { /* the toggle still holds for this session */ }
+            announce();
+            return state.strict;
+        },
+        disableStrict(reason) {
+            state.strict = false;
+            state.strictDisabledReason = String(reason || 'Disabled');
+            try { localStorage.setItem(STRICT_KEY, 'off'); } catch (error) { /* session only */ }
+            announce();
+            return state.strictDisabledReason;
+        },
+        snapshot() {
+            const hosts = new Map();
+            state.entries.forEach(entry => {
+                const key = `${entry.host} ${entry.purpose}`;
+                const bucket = hosts.get(key) || { host:entry.host, purpose:entry.purpose, external:entry.external, sent:0, blocked:0, failed:0 };
+                if (entry.outcome === 'blocked') bucket.blocked += 1;
+                else if (entry.outcome === 'failed') bucket.failed += 1;
+                else bucket.sent += 1;
+                hosts.set(key, bucket);
+            });
+            return {
+                strict:state.strict,
+                strictDisabledReason:state.strictDisabledReason,
+                dropped:state.dropped,
+                blocked:state.blocked,
+                entries:state.entries.map(entry => ({ ...entry })),
+                hosts:[...hosts.values()].sort((a, b) => (b.sent + b.blocked) - (a.sent + a.blocked))
+            };
+        }
+    };
+})();
+window.__openshopNetwork = OPENSHOP_NETWORK;
+
 // Fabric, ag-psd and jsPDF were <script src> tags on a CDN, which forced
 // script-src to allow the whole of cdn.jsdelivr.net. That allowance is far
 // wider than the three SRI-pinned tags needing it and is a standard bypass
@@ -149,11 +266,29 @@ const runVerifiedBootScript = (bytes, name) => new Promise((resolve, reject) => 
     (document.head || document.documentElement).appendChild(element);
 });
 
-window.__openshopBoot = (async () => {
-    if (!globalThis.crypto?.subtle) throw new Error('OpenShop needs Web Crypto to verify its libraries');
+const executedBootAssets = new Set();
+const runVerifiedBootAssets = async () => {
     // Sequential: the compat shim below reads the Fabric build the moment it runs.
     for (const asset of OPENSHOP_BOOT_ASSETS) {
+        if (executedBootAssets.has(asset.name)) continue;
         await runVerifiedBootScript(await fetchVerifiedBootAsset(asset), asset.name);
+        executedBootAssets.add(asset.name);
+    }
+};
+
+window.__openshopBoot = (async () => {
+    if (!globalThis.crypto?.subtle) throw new Error('OpenShop needs Web Crypto to verify its libraries');
+    try {
+        await runVerifiedBootAssets();
+    } catch (error) {
+        // Strict offline mode must never be able to brick a cold start, or a
+        // user who enabled it on the standalone file lane — where there is no
+        // cache to satisfy it — would have no interface left to turn it off.
+        // Stand down, remember why, and let the status bar say the guarantee is
+        // not in force. Assets that already executed are not run twice.
+        if (!OPENSHOP_NETWORK.strict) throw error;
+        OPENSHOP_NETWORK.disableStrict(`A cold start needs the pinned libraries and none were cached (${error.message})`);
+        await runVerifiedBootAssets();
     }
     applyFabricCompat();
     return true;
@@ -2670,6 +2805,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
     <button type="button" id="zoom-display" title="Fit canvas to view" aria-label="Zoom level, activate to fit canvas to view" data-os-click="click-103">100%</button><span class="sep"></span>
     <span id="cursor-pos" aria-hidden="true">X: 0 Y: 0</span><span class="sep"></span>
     <span id="tool-display">Select</span><span style="flex:1"></span>
+    <button type="button" class="ready-state offline-state" id="network-state" data-state="ready" aria-haspopup="dialog" aria-label="Outbound network activity" data-os-click="click-220"><i></i><span id="network-state-label">Nothing sent</span></button><span class="sep"></span>
     <button type="button" class="ready-state offline-state" id="offline-state" data-state="limited" aria-haspopup="dialog" aria-label="Offline and install status" data-os-click="click-193"><i></i><span id="offline-state-label">Checking offline support</span></button><span class="sep"></span>
     <span id="object-count">0 objects</span><span class="sep"></span>
     <button type="button" id="diagnostics-badge" class="btn" style="display:none;font-size:10px;padding:3px 8px;min-height:24px" title="Errors this session — run Export Diagnostics from the command palette" data-os-click="click-diagnostics"></button><span class="ready-state" id="persistence-state" data-state="clean" aria-live="polite"><i></i><span id="persistence-state-label">All changes saved</span></span>
@@ -2994,7 +3130,8 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-215": function(event) { OS._curvesPreset('brighten') },
         "click-216": function(event) { OS._curvesPreset('darken') },
         "click-217": function(event) { OS._curvesPreset('contrast') },
-        "click-218": function(event) { OS._curvesPreset('invert') }
+        "click-218": function(event) { OS._curvesPreset('invert') },
+        "click-220": function(event) { OS.showNetworkActivity() }
     }),
     change: Object.freeze({
         "change-001": function(event) { OS.setBrushPreset(this.value) },
@@ -10417,6 +10554,7 @@ self.onmessage = function(event) {
         error:null
     },
     initPWA() {
+        this._initNetworkState();
         this._initFileLaunchQueue();
         const hosted = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
         const installed = window.matchMedia?.('(display-mode: standalone)').matches === true;
@@ -10485,6 +10623,200 @@ self.onmessage = function(event) {
                     : 'Hosted shell is not yet cached';
         return state;
     },
+
+    // ====================== NETWORK TRANSPARENCY ======================
+    // Hosted editors put a credit meter in this corner of the status bar. The
+    // equivalent honest signal for a local editor is what it has sent, so the
+    // badge counts outbound requests rather than remaining credits.
+    _networkStateBound: false,
+    // Each entry names one lazily fetched capability and the runtime assets it
+    // cannot work without, so strict offline mode can report precisely which
+    // features it takes away instead of warning in the abstract.
+    _networkCapabilities: Object.freeze([
+        Object.freeze({ label:'AVIF import and export', assets:Object.freeze(['avifEncoderModule', 'avifEncoderWasm', 'avifDecoderModule', 'avifDecoderWasm']) }),
+        Object.freeze({ label:'Animated GIF import and export', assets:Object.freeze(['gifCodec', 'gifWorker']) }),
+        Object.freeze({ label:'GPU-accelerated filters (Photon)', assets:Object.freeze(['photonModule', 'photonWasm']) }),
+        Object.freeze({ label:'PSD import and export', assets:Object.freeze(['psdDecoder']) }),
+        Object.freeze({ label:'AI features (model weights are fetched separately)', assets:Object.freeze(['transformers', 'onnxWasm', 'onnxWasmFactory']) })
+    ]),
+    _network() {
+        return window.__openshopNetwork || null;
+    },
+    _initNetworkState() {
+        const ledger = this._network();
+        if (!ledger || this._networkStateBound) return false;
+        this._networkStateBound = true;
+        ledger.subscribe(() => this._refreshNetworkState());
+        this._refreshNetworkState();
+        return true;
+    },
+    _refreshNetworkState() {
+        const ledger = this._network();
+        const button = document.getElementById('network-state');
+        const label = document.getElementById('network-state-label');
+        if (!ledger || !button || !label) return null;
+        const snapshot = ledger.snapshot();
+        const external = snapshot.hosts.filter(host => host.external);
+        const sent = external.reduce((total, host) => total + host.sent, 0);
+        if (snapshot.strict) {
+            label.textContent = snapshot.blocked ? `Strict · ${snapshot.blocked} blocked` : 'Strict offline';
+            button.dataset.state = 'ready';
+            button.title = 'Strict offline mode is on: requests to anywhere but this page are refused unless they are already cached.';
+        } else if (!sent) {
+            label.textContent = 'Nothing sent';
+            button.dataset.state = 'ready';
+            button.title = 'No request has left this page. Your images are never uploaded.';
+        } else {
+            label.textContent = `${sent} download${sent === 1 ? '' : 's'}`;
+            button.dataset.state = 'limited';
+            button.title = `${sent} outbound request${sent === 1 ? '' : 's'} to ${external.map(host => host.host).join(', ')} — code and model weights only, never document pixels.`;
+        }
+        return snapshot;
+    },
+    async _strictOfflineImpact() {
+        const ledger = this._network();
+        const cached = async url => {
+            if (!globalThis.caches?.match) return false;
+            try { return Boolean(await caches.match(url)); } catch (error) { return false; }
+        };
+        return Promise.all(this._networkCapabilities.map(async capability => {
+            const states = await Promise.all(capability.assets.map(async name => {
+                if (this._runtimeAssetPromises.has(name)) return true;
+                return cached(this._runtimeAssets[name]?.url || '');
+            }));
+            return {
+                label:capability.label,
+                available:states.every(Boolean),
+                strict:Boolean(ledger?.strict)
+            };
+        }));
+    },
+    setStrictOffline(on) {
+        const ledger = this._network();
+        if (!ledger) return false;
+        const enabled = ledger.setStrict(on);
+        this._refreshNetworkState();
+        this.toast(enabled
+            ? this._t('Strict offline mode on — uncached downloads are refused')
+            : this._t('Strict offline mode off'), enabled ? 'success' : 'info');
+        return enabled;
+    },
+    async showNetworkActivity() {
+        const ledger = this._network();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal offline-manager';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'network-activity-title');
+        const title = document.createElement('h3');
+        title.id = 'network-activity-title';
+        title.textContent = this._t('Network Activity');
+        const intro = document.createElement('p');
+        intro.className = 'offline-manager-intro';
+        intro.textContent = this._t('Every editing, filter, export and AI operation runs on this machine. Nothing on this list is a document, a layer or a pixel — OpenShop has no upload path at all. What it does fetch is program code and, on first use, AI model weights.');
+        modal.append(title, intro);
+
+        const snapshot = ledger ? ledger.snapshot() : { hosts:[], entries:[], strict:false, blocked:0, dropped:0, strictDisabledReason:null };
+        const external = snapshot.hosts.filter(host => host.external);
+        const summary = document.createElement('p');
+        summary.className = 'offline-manager-note';
+        summary.id = 'network-activity-summary';
+        summary.textContent = external.length
+            ? `${external.reduce((total, host) => total + host.sent, 0)} outbound request(s) this session across ${external.length} host(s).`
+            : 'No request has left this page this session.';
+        modal.appendChild(summary);
+
+        const details = document.createElement('dl');
+        details.className = 'info-grid offline-details';
+        details.id = 'network-activity-hosts';
+        if (external.length) {
+            external.forEach(host => {
+                const dt = document.createElement('dt');
+                dt.textContent = host.host;
+                const dd = document.createElement('dd');
+                dd.textContent = `${host.purpose} · ${host.sent} sent`
+                    + (host.blocked ? ` · ${host.blocked} blocked` : '')
+                    + (host.failed ? ` · ${host.failed} failed` : '');
+                details.append(dt, dd);
+            });
+        } else {
+            const dt = document.createElement('dt');
+            dt.textContent = 'Outbound hosts';
+            const dd = document.createElement('dd');
+            dd.textContent = 'None';
+            details.append(dt, dd);
+        }
+        modal.appendChild(details);
+
+        const strictTitle = document.createElement('h3');
+        strictTitle.textContent = this._t('Strict offline mode');
+        strictTitle.style.marginBottom = '4px';
+        const strictRow = document.createElement('label');
+        strictRow.className = 'pref-row';
+        const strictToggle = document.createElement('input');
+        strictToggle.type = 'checkbox';
+        strictToggle.id = 'network-strict-toggle';
+        strictToggle.checked = Boolean(snapshot.strict);
+        const strictText = document.createElement('span');
+        strictText.textContent = this._t('Refuse every request that is not already cached');
+        strictRow.append(strictToggle, strictText);
+        const strictNote = document.createElement('p');
+        strictNote.className = 'offline-manager-note';
+        strictNote.id = 'network-strict-note';
+        modal.append(strictTitle, strictRow, strictNote);
+
+        const impactList = document.createElement('div');
+        impactList.className = 'offline-model-list';
+        impactList.id = 'network-strict-impact';
+        modal.appendChild(impactList);
+
+        const renderImpact = async () => {
+            const on = Boolean(ledger?.strict);
+            strictNote.textContent = on
+                ? this._t('On. Anything not already downloaded stays unavailable until you turn this off. A cold start on the standalone file lane cannot honour it, because the three pinned libraries are the app itself; OpenShop stands the mode down and says so rather than failing to open.')
+                : snapshot.strictDisabledReason
+                    ? `${this._t('Off.')} ${snapshot.strictDisabledReason}`
+                    : this._t('Off. Program code and AI model weights may be downloaded on demand from the pinned hosts above.');
+            const impact = await this._strictOfflineImpact();
+            impactList.replaceChildren();
+            impact.forEach(entry => {
+                const row = document.createElement('div');
+                row.className = 'offline-model';
+                const name = document.createElement('strong');
+                name.textContent = entry.label;
+                const value = document.createElement('span');
+                value.textContent = entry.available
+                    ? this._t('Available')
+                    : on ? this._t('Disabled while strict') : this._t('Downloads on first use');
+                row.append(name, value);
+                impactList.appendChild(row);
+            });
+        };
+        strictToggle.addEventListener('change', async () => {
+            this.setStrictOffline(strictToggle.checked);
+            await renderImpact();
+        });
+
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-btns';
+        const close = document.createElement('button');
+        close.className = 'btn btn-primary';
+        close.type = 'button';
+        close.textContent = this._t('Close');
+        close.dataset.modalClose = '';
+        close.dataset.modalCancel = '';
+        close.addEventListener('click', () => overlay.remove());
+        buttons.appendChild(close);
+        modal.appendChild(buttons);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => { overlay.classList.add('show'); close.focus(); });
+        await renderImpact();
+        return overlay;
+    },
+
     _watchPWARegistration(registration) {
         if (!registration || registration._openshopWatched) return;
         registration._openshopWatched = true;
@@ -14441,6 +14773,8 @@ self.onmessage = async function(e) {
             {label:'Theme: Midnight',cat:'View',fn:()=>this.setTheme('midnight')},
             {label:'Theme: OLED',cat:'View',fn:()=>this.setTheme('oled')},
             {label:'Toggle Panels',cat:'View',fn:()=>this.togglePanels(),key:'Tab'},
+            {label:'Network Activity',cat:'Help',fn:()=>this.showNetworkActivity()},
+            {label:'Toggle Strict Offline Mode',cat:'Help',fn:()=>this.setStrictOffline(!this._network()?.strict)},
             {label:'Export Diagnostics',cat:'Help',fn:()=>this.exportDiagnostics()},
             {label:'Clear Diagnostics',cat:'Help',fn:()=>this.clearDiagnostics()},
             {label:'Add Layer',cat:'Layer',fn:()=>this.addLayer()},

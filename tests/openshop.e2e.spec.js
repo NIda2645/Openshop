@@ -1676,6 +1676,96 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('reports what it sent and can refuse every uncached download @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  // The three pinned boot libraries are fetched before anything else runs, so
+  // the ledger has to have been installed ahead of them to be worth trusting.
+  const boot = await page.evaluate(() => {
+    const snapshot = OS._network().snapshot();
+    return {
+      strict: snapshot.strict,
+      cdn: snapshot.hosts.find(host => host.host === 'cdn.jsdelivr.net') || null,
+      documentBytesSent: snapshot.entries.some(entry => entry.method !== 'GET'),
+      badge: document.getElementById('network-state-label').textContent
+    };
+  });
+  expect(boot.strict).toBe(false);
+  expect(boot.cdn).toMatchObject({ purpose: 'Pinned library or codec', external: true });
+  expect(boot.cdn.sent).toBeGreaterThanOrEqual(3);
+  // Nothing OpenShop does is a POST, because there is nowhere to post to.
+  expect(boot.documentBytesSent).toBe(false);
+  expect(boot.badge).toBe(`${boot.cdn.sent} downloads`);
+
+  const dialog = await page.evaluate(async () => {
+    const overlay = await OS.showNetworkActivity();
+    return {
+      summary: overlay.querySelector('#network-activity-summary').textContent,
+      hosts: [...overlay.querySelectorAll('#network-activity-hosts dt')].map(node => node.textContent),
+      impact: [...overlay.querySelectorAll('#network-strict-impact .offline-model')].map(row => row.textContent),
+      checked: overlay.querySelector('#network-strict-toggle').checked
+    };
+  });
+  expect(dialog.hosts).toContain('cdn.jsdelivr.net');
+  expect(dialog.summary).toContain('outbound request');
+  expect(dialog.checked).toBe(false);
+  expect(dialog.impact.some(row => row.startsWith('AVIF import and export'))).toBe(true);
+
+  // Turning strict mode on must actually refuse an uncached cross-origin fetch,
+  // leave same-origin and in-page URLs alone, and say what it took away.
+  const strict = await page.evaluate(async () => {
+    const overlay = document.querySelector('.modal-overlay');
+    const toggle = overlay.querySelector('#network-strict-toggle');
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    let blocked = null;
+    try {
+      await fetch('https://cdn.jsdelivr.net/npm/openshop-strict-mode-probe@0.0.0/nothing.js');
+    } catch (error) {
+      blocked = error.message;
+    }
+    const inPage = await fetch(URL.createObjectURL(new Blob(['ok']))).then(response => response.text());
+    const snapshot = OS._network().snapshot();
+    const impact = [...overlay.querySelectorAll('#network-strict-impact .offline-model')].map(row => row.textContent);
+    overlay.remove();
+    return {
+      blocked,
+      inPage,
+      persisted: localStorage.getItem('os_strict_offline'),
+      blockedCount: snapshot.blocked,
+      badge: document.getElementById('network-state-label').textContent,
+      disabled: impact.filter(row => row.endsWith('Disabled while strict')).length
+    };
+  });
+  expect(strict.blocked).toContain('Strict offline mode blocked a request to cdn.jsdelivr.net');
+  expect(strict.inPage).toBe('ok');
+  expect(strict.persisted).toBe('on');
+  expect(strict.blockedCount).toBe(1);
+  expect(strict.badge).toBe('Strict · 1 blocked');
+  expect(strict.disabled).toBeGreaterThan(0);
+
+  // A cold start must never be left unopenable by the toggle: the pinned boot
+  // libraries are the app, so strict mode stands down and records why.
+  await openApp(page);
+  const recovered = await page.evaluate(() => ({
+    strict: OS._network().strict,
+    reason: OS._network().strictDisabledReason,
+    persisted: localStorage.getItem('os_strict_offline'),
+    booted: document.documentElement.dataset.osBoot
+  }));
+  expect(recovered.booted).toBe('ready');
+  if (recovered.strict === false && recovered.reason) {
+    expect(recovered.reason).toContain('cold start');
+    expect(recovered.persisted).toBe('off');
+  } else {
+    // The shell was cached, so the guarantee survived the reload intact.
+    expect(recovered.strict).toBe(true);
+  }
+  await page.evaluate(() => OS.setStrictOffline(false));
+});
+
 test('exports real alpha or matte pixels and presents format loss before download @cross-browser', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
