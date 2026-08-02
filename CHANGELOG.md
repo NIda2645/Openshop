@@ -14,6 +14,7 @@ All notable changes to Openshop will be documented in this file.
 - Add a deterministic 4K/8K/12MP performance-budget runner covering editing, filters, tiled history, export boundaries, batch, cancellation, and stale-result probes; the release gate now runs it.
 - Add a cross-engine mobile capability matrix with compact-workspace overflow, two-finger pinch, safe-area, orientation, visual-viewport, and pressure-variance coverage; physical-device support remains explicitly unclaimed.
 - Require sandboxed plugins to declare stable manifests, verify source SHA-256 provenance, obtain explicit consent, persist exact-version approvals, and retain deny-by-default capability boundaries.
+- Add cancellable, progress-reporting batch runs with raster-only format validation, partial-failure status, rollback-safe cancellation, and yielding ZIP assembly.
 
 ## [v0.28.0] - 2026-08-02
 

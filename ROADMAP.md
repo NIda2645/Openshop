@@ -64,13 +64,6 @@ testing gates.
 
 ### P2 — Performance, mobile, extensibility, and workflow depth
 
-- [ ] P2 — Make batch processing cancellable, worker-friendly, and format-honest
-  Why: The batch path caps files and bytes but runs ZIP/output work on the main thread, exposes no user cancel/progress surface, and accepts only raster inputs despite broader editor import support.
-  Evidence: `index.html` batch processor, `README.md` format matrix; [Filerobot editor export/history features](https://github.com/scaleflex/filerobot-image-editor); [WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API) and [OffscreenCanvas](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas/getContext).
-  Touches: `index.html`, batch unit/e2e tests, worker code if needed, `README.md`.
-  Acceptance: UI reports per-file and aggregate progress, supports cancellation and partial-failure recovery, leaves the open document unchanged on cancel, and yields or workers ZIP generation; input/output compatibility is explicit; tests cover size/file caps, duplicate names, malformed recipes, cancel, and one bad file among valid files.
-  Complexity: L
-
 - [ ] P2 — Render supported ABR tips as real raster brush stamps
   Why: The current ABR path preserves selectable preset metadata but README calls it the closest native stroke adapter; brush appearance is therefore not yet a faithful round-trip.
   Evidence: `README.md` ABR note, `index.html` ABR import/brush code, and [Aseprite brush documentation](https://www.aseprite.org/docs/brushes/).

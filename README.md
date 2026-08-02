@@ -62,7 +62,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **OpenShop Project (`.openshop` / legacy `.json`)** | Yes | Yes (full project with layers) |
 | **Palette and asset sets (`.ase`, `.gpl`, `.abr`, `.grd`, `.json`)** | Yes | `.json` palettes |
 
-Batch processing accepts raster images plus an `openshop-command-sequence` JSON action recipe, remaps recorded object and layer IDs to each imported image, and emits one ZIP with the selected PNG, JPEG, or WebP output. Relative folder paths are retained and the open document is restored after the run. The same menu also exports the current canvas to multiple formats in one click. Export Settings previews PNG/WebP/AVIF alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
+Batch processing accepts raster images plus an `openshop-command-sequence` JSON action recipe, remaps recorded object and layer IDs to each imported image, and emits one ZIP with the selected PNG, JPEG, or WebP output. SVG, AVIF, RAW, and project inputs are rejected explicitly. The progress dialog reports each file, supports cancellation between safe file boundaries, restores the open document after success, failure, or cancellation, and reports partial failures without claiming a clean batch. ZIP assembly yields periodically so large result sets can keep the page responsive. The same menu also exports the current canvas to multiple formats in one click. Export Settings previews PNG/WebP/AVIF alpha or the chosen matte, disables alpha for JPEG, and lists project features that the selected format cannot preserve. Exporting never marks the editable project as saved. Native save/open dialogs are available on Chrome/Edge via File System Access API.
 
 Use **Color → Swatches → Import** for ASE/GPL/JSON palettes, Photoshop ABR brush sets, or Photoshop GRD gradients. Imported brushes and gradients are bounded, sanitized, and retained in browser storage; ABR entries use the closest native stroke adapter while preserving their selectable preset metadata.
 
@@ -94,7 +94,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | **Command Palette** | `Ctrl+K` to search and run any command |
 | **Sandboxed Plugin API** | Register immutable JavaScript source in an opaque-origin `iframe` with explicit `commands`, `document:read`, `selection:read`, and `ui:toast` capabilities; plugin commands use the versioned `postMessage` protocol and can be disposed cleanly |
 | **Action Recorder** | Records validated, versioned edit commands and replays mixed actions atomically; a failed step rolls back the whole action |
-| **Batch Processor** | Select a folder of raster images, apply a saved versioned action recipe to each image, and download a relative-path-preserving ZIP; the open document is restored after processing |
+| **Batch Processor** | Select a folder of raster images, apply a saved versioned action recipe to each image, cancel safely, recover around bad files, and download a relative-path-preserving ZIP; the open document is restored after processing |
 | **Collaborative Session** | Share one document peer-to-peer over a WebRTC data channel; create an offer, paste the answer, and sync state without a relay server |
 | **Context Menus** | Right-click for contextual actions |
 | **Rulers & Guides** | Draggable guides with snapping and pixel grid at high zoom |

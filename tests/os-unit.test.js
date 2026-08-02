@@ -259,7 +259,7 @@ describe('OpenShop core object', () => {
       }
     };
     vi.stubGlobal('Blob', ZipBlob);
-    const zip = OS._zipBatchEntries([
+    const zip = await OS._zipBatchEntries([
       { name: 'folder/é.png', bytes: new TextEncoder().encode('first') },
       { name: 'folder/second.png', bytes: new TextEncoder().encode('second') }
     ]);
@@ -278,6 +278,38 @@ describe('OpenShop core object', () => {
     expect(bytes[1]).toBe(0x4b);
     expect(bytes[2]).toBe(0x03);
     expect(bytes[3]).toBe(0x04);
+  });
+
+  it('cancels batch work between files and keeps partial failures format-honest', async () => {
+    const OS = loadOpenShop();
+    const command = OS._makeCommand('canvas.resize', { width:320, height:240 });
+    OS._captureRollbackState = vi.fn(() => ({ snapshot:'before-batch' }));
+    OS._restoreRollbackState = vi.fn(async () => {});
+    OS._remapBatchCommands = vi.fn(() => [command]);
+    OS._executeCommand = vi.fn(async () => true);
+    OS._captureExportRaster = vi.fn(() => ({ dataUrl:'data:image/png;base64,AAAA' }));
+    OS._dataUrlToBlob = vi.fn(() => ({ arrayBuffer:async () => new Uint8Array([1, 2, 3]).buffer }));
+    OS._loadBatchImageFile = vi.fn(async file => {
+      if (file.name === 'bad.png') throw new Error('decode failed');
+    });
+    const files = [
+      { name:'first.png', type:'image/png', size:3 },
+      { name:'second.png', type:'image/png', size:3 },
+      { name:'bad.png', type:'image/png', size:3 }
+    ];
+    const progress = [];
+    const cancelled = await OS.runBatch(files, { kind:'openshop-command-sequence', schemaVersion:1, commands:[command] }, {
+      onProgress:detail => { progress.push(detail); if (detail.index === 1) OS.cancelBatch(); }
+    });
+    expect(cancelled).toMatchObject({ cancelled:true, status:'cancelled', processed:['first.png'], failed:[] });
+    expect(cancelled.blob).toBeNull();
+    expect(progress.at(-1).cancelled).toBe(true);
+    expect(OS._restoreRollbackState).toHaveBeenCalledWith({ snapshot:'before-batch' });
+
+    const partial = await OS.runBatch([files[2], files[0]], { kind:'openshop-command-sequence', schemaVersion:1, commands:[command] });
+    expect(partial).toMatchObject({ cancelled:false, status:'completed-with-failures', processed:['first.png'] });
+    expect(partial.failed).toEqual([{ name:'bad.png', error:'decode failed' }]);
+    expect(partial.blob).toBeTruthy();
   });
 
   it('validates manual WebRTC signaling and bounds state chunking', () => {
