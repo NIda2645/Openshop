@@ -63,4 +63,16 @@ describe('OpenShop typed command and tool registry', () => {
     expect(pseudo.label).not.toBe(english.label);
     expect(pseudo.shortcut).toBe('T');
   });
+
+  it('declares tool-specific options schemas instead of only a display label', () => {
+    const OS = loadOpenShop();
+    const byState = state => OS.listRegisteredTools({ documentOpen: true }).find(tool => tool.toolState === state);
+
+    expect(byState('select').optionsSchema).toMatchObject({ context:'select', groupId:'opt-select', requiresDocument:true });
+    expect(byState('eraser').optionsSchema).toMatchObject({ context:'eraser', groupId:'opt-brush' });
+    expect(byState('pen').optionsSchema).toMatchObject({ context:'pen', groupId:'opt-pen' });
+    expect(byState('text').optionsSchema).toMatchObject({ context:'type', groupId:'opt-text' });
+    expect(byState('zoom').optionsSchema).toMatchObject({ context:'zoom', groupId:'opt-zoom' });
+    expect(OS.getCommandState('tool.move', { documentOpen:true }).optionsSchema).toMatchObject({ context:'select' });
+  });
 });

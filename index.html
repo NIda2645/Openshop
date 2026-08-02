@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-uk/q0AWfToPueSyY8kPr6LQWERRLMo+vN4OljIkcZpk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-FBKpaCPkUu06mZJlfErwJnDoD2t+QDuY7sDS6kybhko=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -305,7 +305,7 @@ window.__openshopBoot = (async () => {
 --text-primary:#f3f6fb;--text-secondary:#aebbd0;--text-muted:#7d8ca4;
 --accent:#3978ff;--accent-hover:#6296ff;--accent-dim:rgba(57,120,255,.16);
 --success:#41d7a0;--warning:#f6c65b;--danger:#ff7587;
---canvas-bg:#0a111b;--tool-size:38px;--panel-width:312px;--topbar-h:52px;--toolbar-w:64px;--statusbar-h:52px;
+--canvas-bg:#0a111b;--tool-size:38px;--panel-width:312px;--topbar-h:52px;--toolbar-w:112px;--statusbar-h:52px;--bottom-tabs-h:32px;
 --glass:rgba(11,17,27,.92);--glass-border:rgba(112,157,255,.18);
 --checker-a:#39435a;--checker-b:#59647d;--guide:#6cdcff;--smart-guide:#ff5078;
 --accent-solid:color-mix(in srgb, var(--accent) 78%, #05070d);
@@ -433,6 +433,7 @@ html.os-native-popovers #context-menu[popover]{position-area:block-end span-inli
 .opt-group input[type="color"]{width:24px;height:22px;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;padding:0}
 .opt-val{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-secondary);min-width:24px;text-align:center}
 .opt-group input[type="checkbox"]{accent-color:var(--accent)}
+#tool-options-reset{margin-inline-start:auto;flex:0 0 auto;padding:3px 10px;font-size:10px}
 
 /* === PANELS === */
 #panels{position:absolute;right:0;top:var(--topbar-h);bottom:var(--statusbar-h);width:var(--panel-width);background:var(--bg-depth-1);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:50;overflow-y:auto;overflow-x:hidden}
@@ -538,7 +539,12 @@ html.os-native-popovers #context-menu[popover]{position-area:block-end span-inli
 .history-item.future{opacity:.35}
 
 /* === CANVAS === */
-#canvas-area{position:absolute;left:var(--toolbar-w);top:calc(var(--topbar-h) + 34px);right:var(--panel-width);bottom:var(--statusbar-h);background:var(--canvas-bg);overflow:hidden;cursor:crosshair}
+#canvas-area{position:absolute;left:var(--toolbar-w);top:calc(var(--topbar-h) + 34px);right:var(--panel-width);bottom:calc(var(--statusbar-h) + var(--bottom-tabs-h));background:var(--canvas-bg);overflow:hidden;cursor:crosshair}
+#bottom-tabs{position:absolute;left:var(--toolbar-w);right:var(--panel-width);bottom:var(--statusbar-h);height:var(--bottom-tabs-h);display:flex;align-items:stretch;gap:1px;padding:0 8px;background:var(--bg-depth-1);border-top:1px solid var(--border);z-index:900;}
+.bottom-tab{min-width:112px;padding:0 14px;border:0;border-right:1px solid var(--border);background:transparent;color:var(--text-muted);font:600 10px 'DM Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:var(--transition-chrome)}
+.bottom-tab:hover{background:var(--bg-depth-3);color:var(--text-secondary)}
+.bottom-tab[aria-selected="true"]{color:var(--accent);background:var(--accent-dim);box-shadow:inset 0 2px 0 var(--accent)}
+.bottom-tab:focus-visible{box-shadow:var(--focus-ring)}
 #blank-workspace{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:110;pointer-events:none;text-align:center}
 #blank-workspace.hidden{display:none}
 #blank-workspace .blank-card{pointer-events:auto;max-width:360px;padding:28px 32px;border:1px solid var(--border);border-radius:var(--radius-lg);background:color-mix(in srgb,var(--bg-depth-2) 92%,transparent);box-shadow:0 18px 48px rgba(0,0,0,.28)}
@@ -917,7 +923,7 @@ body.fullscreen #canvas-area{left:0;top:0;right:0;bottom:0}
 #liquify-canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
 
 /* === TIMELINE / ANIMATION === */
-#timeline-panel{position:fixed;bottom:var(--statusbar-h);left:var(--toolbar-w);right:var(--panel-width);height:140px;background:var(--bg-depth-1);border-top:1px solid var(--border);border-radius:8px 8px 0 0;z-index:9600;display:none;flex-direction:column;box-shadow:0 -4px 16px rgba(0,0,0,.3)}
+#timeline-panel{position:fixed;bottom:calc(var(--statusbar-h) + var(--bottom-tabs-h));left:var(--toolbar-w);right:var(--panel-width);height:140px;background:var(--bg-depth-1);border-top:1px solid var(--border);border-radius:8px 8px 0 0;z-index:9600;display:none;flex-direction:column;box-shadow:0 -4px 16px rgba(0,0,0,.3)}
 #timeline-panel.visible{display:flex}
 #timeline-header{height:32px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0}
 #timeline-header .btn{padding:2px 8px;font-size:11px}
@@ -1071,7 +1077,7 @@ body{
   align-items:center;
   gap:7px;
   height:28px;
-  margin-left:auto;
+  margin-left:8px;
   padding:0 11px;
   border:1px solid var(--border);
   border-radius:999px;
@@ -1084,6 +1090,35 @@ body{
   white-space:nowrap;
 }
 .local-badge svg{width:14px;height:14px;color:var(--accent-hover)}
+#workspace-selector-wrap{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  height:28px;
+  padding:0 8px 0 10px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text-muted);
+  background:color-mix(in srgb, var(--bg-depth-2) 82%, transparent);
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+#workspace-selector-wrap select{
+  min-width:96px;
+  height:22px;
+  border:0;
+  color:var(--text-primary);
+  background:transparent;
+  font:600 10px 'DM Sans',sans-serif;
+  letter-spacing:.02em;
+  outline:none;
+}
+#workspace-selector-wrap select:focus-visible{box-shadow:0 0 0 2px var(--accent-dim),var(--focus-ring)}
+#workspace-selector-wrap option{color:#0b111b;background:#f3f6fb}
 .mobile-panel-toggle{
   align-items:center;
   justify-content:center;
@@ -1148,6 +1183,24 @@ body{
   background:color-mix(in srgb, var(--bg-depth-1) 98%, transparent);
   border-color:var(--border-active);
 }
+#toolbar{
+  width:104px;
+  display:grid;
+  grid-template-columns:repeat(2,48px);
+  grid-auto-rows:min-content;
+  justify-content:center;
+  align-content:start;
+}
+#toolbar .audit-tool-group{width:48px;min-width:0}
+#toolbar .audit-tool-face{width:46px;height:36px;flex-direction:column;gap:2px;padding:3px;border:1px solid transparent}
+#toolbar .audit-tool-face .tool-glyph{font:700 9px 'JetBrains Mono',monospace;letter-spacing:-.04em;line-height:1;color:currentColor}
+#toolbar .audit-tool-face .tool-family-label{max-width:43px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:7px;line-height:1;color:var(--text-muted)}
+#toolbar .audit-tool-flyout{min-width:232px;padding:5px;gap:2px}
+#toolbar .audit-tool-flyout .tool-btn{width:220px;height:29px;justify-content:flex-start;gap:8px;padding:4px 8px;border-radius:5px}
+#toolbar .audit-tool-flyout .tool-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text-secondary)}
+#toolbar .audit-tool-flyout .tool-shortcut{margin-inline-start:auto;color:var(--text-muted);font:10px 'JetBrains Mono',monospace}
+#toolbar .audit-tool-flyout .tool-btn:hover .tool-name,#toolbar .audit-tool-flyout .tool-btn.active .tool-name{color:var(--text-primary)}
+#toolbar .audit-tool-face::before{bottom:1px;right:1px}
 
 #tool-options{
   left:calc(var(--toolbar-w) + 8px);
@@ -1302,7 +1355,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
   left:var(--toolbar-w);
   top:calc(var(--topbar-h) + 56px);
   right:var(--panel-width);
-  bottom:var(--statusbar-h);
+  bottom:calc(var(--statusbar-h) + var(--bottom-tabs-h));
   background-color:var(--canvas-bg);
   background-image:
     radial-gradient(circle at 50% 45%,color-mix(in srgb, var(--border-active) 28%, transparent),transparent 42%),
@@ -1777,7 +1830,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 
 /* === MOBILE RESPONSIVE === */
 @media(max-width:767px){
-  :root{--panel-width:0px;--toolbar-w:0px;--topbar-h:44px;--tool-size:34px;--statusbar-h:0px}
+  :root{--panel-width:0px;--toolbar-w:0px;--topbar-h:44px;--tool-size:34px;--statusbar-h:0px;--bottom-tabs-h:40px}
   #statusbar{display:none}
   .tool-btn[data-tip]::after{display:none}
   .tool-group .tool-flyout{bottom:calc(100% + 4px);left:50%;right:auto;top:auto;transform:translateX(-50%)}
@@ -1789,7 +1842,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
   .cr-dialog{min-width:auto;flex-wrap:wrap}
   .cr-left,.cr-right{min-width:auto;width:100%}
   /* Clears the floating toolbar (46px tall, inset 6px), not the old flush 48px bar. */
-  #timeline-panel{left:6px;right:6px;bottom:58px}
+  #timeline-panel{left:6px;right:6px;bottom:calc(58px + var(--bottom-tabs-h))}
   #topbar{
     gap:1px;
     padding:0 6px;
@@ -1812,6 +1865,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
     letter-spacing:.055em;
   }
   .local-badge{display:none}
+  #workspace-selector-wrap{display:none}
   .mobile-panel-toggle{
     position:sticky;
     right:4px;
@@ -1990,9 +2044,9 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
   .modal .btn{min-height:44px}
 }
 @media(min-width:768px) and (max-width:1023px){
-  :root{--panel-width:248px;--toolbar-w:58px}
-  #toolbar{left:6px;width:44px}
-  #tool-options{left:58px}
+  :root{--panel-width:248px;--toolbar-w:112px}
+  #toolbar{left:6px;width:104px}
+  #tool-options{left:112px}
   .local-badge span{display:none}
   .local-badge{padding:0 8px}
   .menu-item{padding-inline:6px;font-size:9.5px}
@@ -2312,6 +2366,14 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         </div>
     </div>
     </div>
+    <label id="workspace-selector-wrap" title="Choose the workspace layout">
+        <span>Workspace</span>
+        <select id="workspace-selector" aria-label="Workspace layout" data-os-change="change-043">
+            <option value="standard">Standard</option>
+            <option value="essentials">Essentials</option>
+            <option value="motion">Motion</option>
+        </select>
+    </label>
     <div class="local-badge" title="Your files and edits stay on this device" aria-label="Local-only editing">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l7 3v5c0 4.7-2.8 8-7 10-4.2-2-7-5.3-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
         <span>Local only</span>
@@ -2546,6 +2608,8 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
     </div>
     <div class="opt-group" id="opt-measure" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click two points to measure distance.</span><span id="measure-result" style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></div>
     <div class="opt-group" id="opt-select" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click to select. Drag to move. Handles to resize/rotate.</span></div>
+    <div class="opt-group" id="opt-zoom" style="display:none"><span style="color:var(--text-muted);font-size:11px">Click to zoom in. Alt-click to zoom out.</span><button type="button" class="btn" data-os-click="click-103">Fit</button></div>
+    <button type="button" id="tool-options-reset" class="btn" data-os-click="click-227" aria-label="Reset options" title="Reset the current tool options">Reset</button>
 </div>
 
 <!-- ===== RULERS ===== -->
@@ -2573,6 +2637,10 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
     <div id="selection-overlay" class="selection-rect" style="display:none"></div>
     <div id="crop-container" class="crop-overlay" style="display:none"></div>
 </div>
+<nav id="bottom-tabs" aria-label="Bottom panels">
+    <button type="button" class="bottom-tab" id="mini-bridge-tab" data-bottom-tab="mini-bridge" aria-selected="true" data-os-click="click-226">Mini Bridge</button>
+    <button type="button" class="bottom-tab" id="timeline-tab" data-bottom-tab="timeline" aria-selected="false" data-os-click="click-117">Timeline</button>
+</nav>
 <section id="canvas-a11y-tree" class="sr-only" aria-label="Canvas state">
     <h2>Canvas state</h2>
     <p id="canvas-a11y-summary">OpenShop canvas ready.</p>
@@ -3163,7 +3231,10 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-222": function(event) { OS.aiSuperResolve(2) },
         "click-223": function(event) { OS.aiSuperResolve(4) },
         "click-224": function(event) { OS.showTraceDialog() },
-        "click-225": function(event) { OS.showSnapshotManager() }
+        "click-225": function(event) { OS.showSnapshotManager() },
+        "click-226": function(event) { OS.selectBottomTab('mini-bridge') },
+        "click-227": function(event) { OS.resetToolOptions() },
+        "click-229": function(event) { OS.selectRegistryTool(this) }
     }),
     change: Object.freeze({
         "change-001": function(event) { OS.setBrushPreset(this.value) },
@@ -3207,7 +3278,8 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "change-039": function(event) { OS.setTextDecoration('overline', this.checked) },
         "change-040": function(event) { OS.setTextDecoration('linethrough', this.checked) },
         "change-041": function(event) { OS.setTextDecoration('textDecorationColor', this.value) },
-        "change-042": function(event) { OS.setTextDecoration('textDecorationThickness', this.value) }
+        "change-042": function(event) { OS.setTextDecoration('textDecorationThickness', this.value) },
+        "change-043": function(event) { OS.setWorkspaceMode(this.value) }
     }),
     input: Object.freeze({
         "input-001": function(event) { OS.setBrushSize(this.value) },
@@ -3268,6 +3340,9 @@ function registerDeclarativeEvents() {
                 return;
             }
             const result = handlers[action].call(control, event);
+            if (result !== false && (type === 'input' || type === 'change') && control.closest('#tool-options')) {
+                OS._persistToolOption(control);
+            }
             if (result === false) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -4160,6 +4235,7 @@ const OS = {
     _syncSessionWorkspace() {
         if (!this.session) return;
         const panels = document.getElementById('panels');
+        const workspaceSelector = document.getElementById('workspace-selector');
         this.session.tool.selectedId = this.state.tool;
         this.session.viewport = {
             zoom: Number(this.zoom) || 1,
@@ -4172,11 +4248,24 @@ const OS = {
             layout: this.session.workspace?.layout || 'default',
             mode: this.session.workspace?.mode || 'standard'
         };
+        if (workspaceSelector && workspaceSelector.value !== this.session.workspace.mode) {
+            workspaceSelector.value = this.session.workspace.mode;
+        }
         this.session.panels.visible = !panels || panels.style.display !== 'none';
         this.session.preferences = {
             language: this._lang || 'en',
             theme: this._currentTheme || 'default'
         };
+    },
+    setWorkspaceMode(mode) {
+        const allowed = new Set(['standard', 'essentials', 'motion']);
+        const next = allowed.has(mode) ? mode : 'standard';
+        this.session.workspace = { ...this.session.workspace, mode: next };
+        document.documentElement.dataset.osWorkspace = next;
+        const selector = document.getElementById('workspace-selector');
+        if (selector && selector.value !== next) selector.value = next;
+        this._syncSessionWorkspace();
+        this.toast(`Workspace: ${next[0].toUpperCase()}${next.slice(1)}`, 'info');
     },
     _updateDocumentAvailability() {
         const blank = !this._hasActiveDocument();
@@ -4199,6 +4288,7 @@ const OS = {
             button.disabled = blank;
             button.setAttribute('aria-disabled', blank ? 'true' : 'false');
         });
+        this._updateToolOptionsAvailability();
         this._syncSessionDocument();
         this._syncSessionWorkspace();
         this._renderAccessibilityTree();
@@ -4443,6 +4533,7 @@ const OS = {
         this._restoreTheme();
         this.initCmdPalette();
         this.setTool('select');
+        this._restoreToolOptionState();
         this.updateLayersPanel(); this.updateStatus();
         const ca = document.getElementById('canvas-area');
         ca.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
@@ -7809,7 +7900,84 @@ self.onmessage = function(event) {
 
     // ====================== TOOLS ======================
     // ====================== TOOL GROUP FLYOUTS ======================
+    _buildToolboxFromRegistry() {
+        const toolbar = document.getElementById('toolbar');
+        if (!toolbar || toolbar.dataset.registryBuilt === 'true') return;
+        const catalog = this._toolCatalog().filter(tool => tool.kind === 'tool' && tool.family !== 'Mode');
+        // These OpenShop-native brushes remain visible alongside the audited
+        // Photoshop family inventory so existing drawing behavior is not lost.
+        const extensions = [
+            { family:'Brush', toolState:'brush', label:'Brush', shortcut:'B' },
+            { family:'Brush', toolState:'pencil', label:'Pencil', shortcut:'N' },
+            { family:'Brush', toolState:'spray', label:'Spray / Airbrush', shortcut:'' },
+            { family:'AI Select', toolState:'ai-segment', label:'AI Segment Select', shortcut:'' }
+        ];
+        const entries = [...catalog, ...extensions];
+        const familyOrder = ['Marquee','Move','Lasso','Selection','Crop','Sampling','Brush','Healing','Clone','History','Eraser','Fill','Blur','Tone','Pen','Type','Path Selection','Shape','Navigation','AI Select'];
+        const abbreviations = {
+            Marquee:'M', Move:'V', Lasso:'L', Selection:'W', Crop:'C', Sampling:'I', Healing:'J', Clone:'S',
+            History:'Y', Eraser:'E', Fill:'G', Blur:'R', Tone:'O', Pen:'P', Type:'T', 'Path Selection':'A',
+            Shape:'U', Navigation:'H/Z', Brush:'B', 'AI Select':'AI'
+        };
+        toolbar.replaceChildren();
+        toolbar.dataset.registryBuilt = 'true';
+        familyOrder.forEach(family => {
+            const members = entries.filter(tool => tool.family === family);
+            if (!members.length) return;
+            const group = document.createElement('div');
+            group.className = 'tool-group audit-tool-group';
+            group.dataset.group = `registry-${family.toLowerCase().replace(/\s+/g, '-')}`;
+            const face = document.createElement('button');
+            face.type = 'button';
+            face.className = 'tool-btn audit-tool-face';
+            face.dataset.tool = members[0].toolState;
+            face.dataset.tip = `${family}: ${members[0].label}`;
+            face.setAttribute('aria-label', face.dataset.tip);
+            face.title = face.dataset.tip;
+            const glyph = document.createElement('span');
+            glyph.className = 'tool-glyph';
+            glyph.textContent = abbreviations[family] || family.slice(0, 2).toUpperCase();
+            const familyLabel = document.createElement('span');
+            familyLabel.className = 'tool-family-label';
+            familyLabel.textContent = family;
+            face.append(glyph, familyLabel);
+            const flyout = document.createElement('div');
+            flyout.className = 'tool-flyout audit-tool-flyout';
+            flyout.setAttribute('role', 'menu');
+            flyout.setAttribute('aria-label', `${family} tools`);
+            members.forEach(tool => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'tool-btn';
+                if (tool.id) button.classList.add('audit-tool-member');
+                button.dataset.tool = tool.toolState;
+                button.dataset.tip = tool.label;
+                button.setAttribute('aria-label', tool.label);
+                button.setAttribute('role', 'menuitem');
+                button.setAttribute('data-os-click', 'click-229');
+                button.title = tool.label;
+                const name = document.createElement('span');
+                name.className = 'tool-name';
+                name.textContent = tool.label;
+                const shortcut = document.createElement('span');
+                shortcut.className = 'tool-shortcut';
+                shortcut.textContent = tool.shortcut || '';
+                button.append(name, shortcut);
+                flyout.appendChild(button);
+            });
+            group.append(face, flyout);
+            toolbar.appendChild(group);
+        });
+        this.setTool(this.state.tool);
+    },
+    selectRegistryTool(button) {
+        if (!button?.dataset.tool) return false;
+        this._closeAllFlyouts();
+        this.setTool(button.dataset.tool);
+        return true;
+    },
     initToolGroups() {
+        this._buildToolboxFromRegistry();
         // Portal all flyouts to body so toolbar overflow doesn't clip them
         const flyoutHost = document.createElement('div');
         flyoutHost.id = 'flyout-host';
@@ -7865,6 +8033,12 @@ self.onmessage = function(event) {
                 }
             });
         }
+        if (!this._toolEscapeBound) {
+            this._toolEscapeBound = true;
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape') this._closeAllFlyouts();
+            }, true);
+        }
     },
     switchTab(tabBtn, groupId, contentId) {
         // Deactivate all tabs in this group
@@ -7895,6 +8069,136 @@ self.onmessage = function(event) {
         this.setTool(tool);
     },
 
+    _toolOptionSchemas() {
+        if (this._toolOptionSchemaCache) return this._toolOptionSchemaCache;
+        const schema = (groupId, requiresDocument = true, controls = []) => ({
+            groupId, requiresDocument, controls
+        });
+        this._toolOptionSchemaCache = Object.freeze({
+            none: schema(null, false),
+            select: schema('opt-select', true),
+            brush: schema('opt-brush', true, ['brush-preset', 'brush-size', 'brush-opacity']),
+            spray: schema('opt-spray', true, ['spray-density', 'spray-width']),
+            marquee: schema('opt-marquee', true),
+            lasso: schema('opt-lasso', true),
+            wand: schema('opt-wand', true, ['wand-tolerance', 'wand-contiguous']),
+            crop: schema('opt-crop', true, ['crop-ratio', 'crop-w', 'crop-h']),
+            healing: schema('opt-healing', true, ['healing-size']),
+            clone: schema('opt-clone', true, ['clone-size']),
+            history: schema(null, true),
+            eraser: schema('opt-brush', true, ['brush-size', 'brush-opacity']),
+            fill: schema('opt-gradient', true, ['grad-from', 'grad-to', 'grad-type']),
+            pattern: schema('opt-pattern', true, ['pattern-type', 'pattern-scale', 'pattern-color']),
+            blur: schema(null, true),
+            dodge: schema('opt-dodge', true, ['dodge-size', 'dodge-exp', 'dodge-range']),
+            burn: schema('opt-burn', true, ['burn-size', 'burn-exp', 'burn-range']),
+            sponge: schema('opt-sponge', true, ['sponge-size', 'sponge-flow', 'sponge-mode']),
+            smudge: schema('opt-smudge', true, ['smudge-size', 'smudge-str']),
+            pen: schema('opt-pen', true, ['pen-stroke', 'pen-width', 'pen-filled']),
+            type: schema('opt-text', true, ['text-font', 'text-size', 'text-color', 'text-bold', 'text-italic']),
+            shape: schema('opt-shape', true, ['shape-fill', 'shape-stroke', 'shape-stroke-w', 'shape-filled', 'shape-dash']),
+            polygon: schema('opt-polygon', true, ['poly-sides', 'poly-fill', 'poly-stroke', 'poly-filled']),
+            star: schema('opt-star', true, ['star-points', 'star-inner', 'star-fill', 'star-filled']),
+            measure: schema('opt-measure', true),
+            'ai-segment': schema('opt-ai-segment', true),
+            zoom: schema('opt-zoom', true)
+        });
+        return this._toolOptionSchemaCache;
+    },
+    _toolOptionContext(tool) {
+        const context = {
+            select:'select',
+            brush:'brush', pencil:'brush', spray:'spray', eraser:'eraser',
+            'marquee-rect':'marquee', 'marquee-ellipse':'marquee', 'marquee-row':'marquee', 'marquee-column':'marquee',
+            lasso:'lasso', 'lasso-polygonal':'lasso', 'lasso-magnetic':'lasso',
+            'quick-selection':'wand', 'magic-wand':'wand',
+            crop:'crop', 'perspective-crop':'crop', slice:'crop', 'slice-select':'crop',
+            healing:'healing', 'spot-healing':'healing', patch:'healing', 'content-aware-move':'healing', 'red-eye':'healing',
+            clone:'clone', 'pattern-stamp':'clone', 'history-brush':'history', 'art-history-brush':'history',
+            'background-eraser':'eraser', 'magic-eraser':'eraser',
+            gradient:'fill', fill:'none', pattern:'pattern',
+            blur:'blur', sharpen:'blur', smudge:'smudge', dodge:'dodge', burn:'burn', sponge:'sponge',
+            pen:'pen', 'freeform-pen':'pen', 'add-anchor':'pen', 'delete-anchor':'pen', 'convert-point':'pen',
+            text:'type', 'vertical-text':'type', 'horizontal-text-mask':'type', 'vertical-text-mask':'type',
+            rect:'shape', 'rounded-rect':'shape', circle:'shape', triangle:'shape', arrow:'shape', line:'shape', 'custom-shape':'shape',
+            polygon:'polygon', star:'star', measure:'measure', zoom:'zoom',
+            eyedropper:'none', 'color-sampler':'none', note:'none', pan:'none', 'path-selection':'none', 'direct-selection':'none',
+            'rotate-view':'none', 'ai-segment':'ai-segment', 'quick-mask':'none', 'screen-mode':'none'
+        };
+        return context[tool] || 'none';
+    },
+    _toolOptionSchema(tool = this.state.tool) {
+        const context = this._toolOptionContext(tool);
+        return { context, ...(this._toolOptionSchemas()[context] || this._toolOptionSchemas().none) };
+    },
+    _toolOptionControls(schema = this._toolOptionSchema()) {
+        const ids = Array.isArray(schema.controls) ? schema.controls : [];
+        return ids.map(id => document.getElementById(id)).filter(Boolean);
+    },
+    _applyToolOptions(tool = this.state.tool) {
+        const schema = this._toolOptionSchema(tool);
+        document.querySelectorAll('#tool-options .opt-group').forEach(group => { group.style.display = 'none'; });
+        const group = schema.groupId && document.getElementById(schema.groupId);
+        if (group) group.style.display = 'flex';
+        const options = document.getElementById('tool-options');
+        if (options) options.dataset.optionsContext = schema.context;
+        this._updateToolOptionsAvailability(schema);
+        return schema;
+    },
+    _updateToolOptionsAvailability(schema = this._toolOptionSchema()) {
+        const requiresDocument = Boolean(schema.requiresDocument);
+        const disabled = requiresDocument && !this._hasActiveDocument();
+        const controls = this._toolOptionControls(schema);
+        controls.forEach(control => {
+            control.disabled = disabled;
+            control.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        });
+        const reset = document.getElementById('tool-options-reset');
+        if (reset) {
+            reset.disabled = disabled;
+            reset.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        }
+    },
+    _persistToolOption(control) {
+        if (!control?.id) return;
+        const values = {};
+        document.querySelectorAll('#tool-options input[id],#tool-options select[id]').forEach(option => {
+            values[option.id] = option.type === 'checkbox'
+                ? { checked:Boolean(option.checked) }
+                : { value:String(option.value) };
+        });
+        this._prefs.toolOptions = values;
+        if (this.session?.preferences) this.session.preferences.toolOptions = values;
+        this._persistPreferences();
+    },
+    _restoreToolOptionState() {
+        const values = this._prefs.toolOptions && typeof this._prefs.toolOptions === 'object'
+            ? this._prefs.toolOptions
+            : {};
+        document.querySelectorAll('#tool-options input[id],#tool-options select[id]').forEach(control => {
+            const saved = values[control.id];
+            if (!saved) return;
+            if (control.type === 'checkbox' && typeof saved.checked === 'boolean') control.checked = saved.checked;
+            else if (typeof saved.value === 'string') control.value = saved.value;
+            const eventType = control.tagName === 'SELECT' || control.type === 'color' || control.type === 'checkbox' ? 'change' : 'input';
+            control.dispatchEvent(new Event(eventType, { bubbles:true }));
+        });
+    },
+    resetToolOptions(tool = this.state.tool) {
+        const schema = this._toolOptionSchema(tool);
+        this._toolOptionControls(schema).forEach(control => {
+            if (!control.hasAttribute('data-os-default')) {
+                control.setAttribute('data-os-default', control.type === 'checkbox' ? String(control.defaultChecked) : control.defaultValue ?? control.value);
+            }
+            const defaultValue = control.getAttribute('data-os-default');
+            if (control.type === 'checkbox') control.checked = defaultValue === 'true';
+            else control.value = defaultValue;
+            const eventType = control.tagName === 'SELECT' || control.type === 'color' || control.type === 'checkbox' ? 'change' : 'input';
+            control.dispatchEvent(new Event(eventType, { bubbles:true }));
+        });
+        this._announceAccessibility?.('Tool options reset');
+        return true;
+    },
 
     setTool(tool) {
         const prevTool = this.state.tool;
@@ -7906,7 +8210,17 @@ self.onmessage = function(event) {
             b.classList.toggle('active', isActive);
             b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
-        document.querySelectorAll('#tool-options .opt-group').forEach(g => g.style.display='none');
+        document.querySelectorAll('.audit-tool-group').forEach(group => {
+            const face = group.querySelector(':scope > .audit-tool-face');
+            const flyout = [...document.querySelectorAll('.audit-tool-flyout')]
+                .find(candidate => candidate._parentGroup === group);
+            const selected = Boolean(flyout && [...flyout.querySelectorAll('.tool-btn')].some(button => button.dataset.tool === tool));
+            if (face) {
+                face.classList.toggle('active', selected);
+                face.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            }
+        });
+        this._applyToolOptions(tool);
         const c = this.canvas; c.isDrawingMode = false; c.selection = false;
         c.defaultCursor = 'crosshair'; c.hoverCursor = 'crosshair';
         c.forEachObject(o => { o.selectable=false; o.evented=false; });
@@ -7981,8 +8295,9 @@ self.onmessage = function(event) {
                 break;
             case 'measure': document.getElementById('opt-measure').style.display='flex'; document.getElementById('measure-overlay').style.display='block'; break;
             case 'note': c.defaultCursor='crosshair'; c.hoverCursor='crosshair'; break;
-            case 'crop': document.getElementById('opt-crop').style.display='flex'; this._initCrop(); break;
+        case 'crop': document.getElementById('opt-crop').style.display='flex'; this._initCrop(); break;
         }
+        this._applyToolOptions(tool);
         this._applyLayerInteractionState({ render:false });
         const toolNames = {'marquee-rect':'Rect Marquee','marquee-ellipse':'Ellipse Marquee','magic-wand':'Magic Wand','ai-segment':'AI Segment'};
         document.getElementById('tool-display').textContent = toolNames[tool] || tool.charAt(0).toUpperCase()+tool.replace(/-/g,' ').slice(1);
@@ -9698,7 +10013,8 @@ self.onmessage = function(event) {
             label,
             shortcut,
             labelKey: label,
-            optionsContext: family.toLowerCase().replace(/\s+/g, '-'),
+            optionsContext: this._toolOptionContext(toolState),
+            optionsSchema: this._toolOptionSchema(toolState),
             prerequisite: output === 'application state' ? 'none' : 'open document',
             requiresDocument: output !== 'application state',
             output,
@@ -9750,6 +10066,7 @@ self.onmessage = function(event) {
             shortcut: definition.shortcut || '',
             family: definition.family || null,
             optionsContext: definition.optionsContext || null,
+            optionsSchema: definition.optionsSchema || null,
             prerequisite: definition.prerequisite || (requiresDocument ? 'open document' : 'none'),
             output: definition.output || null,
             undoPolicy: definition.undoPolicy || null,
@@ -14699,6 +15016,9 @@ self.onmessage = async function(event) {
             maxHistory: this.maxHistory,
             stackNewObjects: Boolean(this._prefs.stackNewObjects),
             vectorStrokes: Boolean(this._prefs.vectorStrokes),
+            toolOptions: this._prefs.toolOptions && typeof this._prefs.toolOptions === 'object'
+                ? Object.fromEntries(Object.entries(this._prefs.toolOptions).slice(0, 120))
+                : {},
             panelSizes: Array.isArray(this._prefs.panelSizes) ? this._prefs.panelSizes.slice(0, 8) : []
         };
         if (/^#[0-9a-fA-F]{6}$/.test(String(accent || ''))) payload.accent = String(accent).toLowerCase();
@@ -14724,6 +15044,9 @@ self.onmessage = async function(event) {
         this.maxHistory = clamp(stored.maxHistory, 10, 200, this.maxHistory);
         this._prefs.stackNewObjects = Boolean(stored.stackNewObjects);
         this._prefs.vectorStrokes = Boolean(stored.vectorStrokes);
+        this._prefs.toolOptions = stored.toolOptions && typeof stored.toolOptions === 'object'
+            ? Object.fromEntries(Object.entries(stored.toolOptions).slice(0, 120))
+            : {};
         this._prefs.panelSizes = Array.isArray(stored.panelSizes)
             ? stored.panelSizes.slice(0, 8).map(value => clamp(value, this._panelMinHeight, 2000, this._panelMinHeight))
             : [];
@@ -18163,9 +18486,19 @@ self.onmessage = async function(e) {
     },
 
     // ====================== ANIMATION TIMELINE ======================
+    selectBottomTab(tab) {
+        const next = tab === 'timeline' ? 'timeline' : 'mini-bridge';
+        if (next === 'mini-bridge') document.getElementById('timeline-panel')?.classList.remove('visible');
+        document.querySelectorAll('#bottom-tabs .bottom-tab').forEach(button => {
+            const selected = button.dataset.bottomTab === next;
+            button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+        document.documentElement.dataset.osBottomTab = next;
+    },
     toggleTimeline() {
         const p = document.getElementById('timeline-panel');
         p.classList.toggle('visible');
+        this.selectBottomTab(p.classList.contains('visible') ? 'timeline' : 'mini-bridge');
         if (!p.classList.contains('visible')) return;
         // Frames are flat snapshots, so switching frames collapses the layer
         // stack. Say so once rather than letting it happen unannounced.

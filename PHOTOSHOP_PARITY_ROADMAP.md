@@ -204,7 +204,7 @@ been migrated wholesale to registry-backed command items under PS-016 and PS-040
 ### PS-010 — Reconstruct the application shell
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: PS-002, PS-003
 
 Implement the observed shell relationships: dark workspace surround, application/menu
@@ -222,10 +222,28 @@ Acceptance criteria:
 
 Evidence: screen 000_initial_untouched and screen 002_final_restored_baseline.
 
+Implementation notes: The shell now has an explicit blank-workspace owner, dark
+menu/options/tool/panel chrome, a responsive center-column bottom tab strip for
+Mini Bridge and Timeline, and an upper-right workspace selector persisted in the
+application session. The canvas reserves the bottom-tab band so toolbar, canvas,
+right dock, status bar, and bottom tabs retain ownership during resize. Timeline
+selection is shell-only until its panel is opened, and selecting Mini Bridge
+dismisses the timeline without creating or mutating a document.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (106 unit tests, including
+`tests/shell-contract.test.js`), `node work/ps010-e2e.mjs` (hosted Chromium blank
+shell and 1440x1000/1024x720 ownership checks), `tools/security.mjs --write`, and
+visual review of `tests/openshop.e2e.spec.js-snapshots/openshop-blank-shell-chromium-win32.png`.
+
+Remaining limitations: The Mini Bridge tab is a shell surface only; an offline
+file browser implementation remains outside this milestone. The responsive
+acceptance covers desktop and tablet widths; the existing mobile-specific shell
+tests remain the authority for phone layout.
+
 ### PS-011 — Implement shell tokens and density
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: PS-010
 
 Define reusable tokens for dark neutral surfaces, separators, compact UI text,
@@ -240,10 +258,27 @@ Acceptance criteria:
   modes.
 - No implementation relies on screenshot pixels or proprietary Adobe assets.
 
+Implementation notes: Shared CSS variables drive neutral surfaces, borders,
+text hierarchy, accent/disabled states, focus rings, radii, motion durations,
+flyouts, panel headers, options controls, dialogs, status surfaces, and the
+two-column toolbox. Reduced-motion clamps animation and transition durations;
+forced-colors replaces glass effects with system colors; high-contrast preference
+raises secondary text and separator contrast. All toolbox visuals are original
+text/glyph treatments and do not copy Adobe artwork.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (106 unit tests,
+including the component-treatment contract), hosted Chromium forced-colors and
+reduced-motion acceptance via `node work/ps011-e2e.mjs`, and
+`tools/security.mjs --write`.
+
+Remaining limitations: High-contrast preference is validated through the CSS
+contract and forced-colors browser lane; native Windows theme rendering remains
+platform-dependent.
+
 ### PS-012 — Reconstruct the options bar
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: PS-004, PS-010
 
 Implement a context-driven options bar. The audit observed distinct contexts for
@@ -258,10 +293,27 @@ Acceptance criteria:
   rules.
 - Options changes are transactional when they affect document output.
 
+Implementation notes: Each registered tool exposes an `optionsContext` and
+`optionsSchema` with group ownership, document prerequisite, and control IDs.
+Tool selection applies the declared context, hides unrelated groups, disables
+document-dependent controls in the blank workspace, and exposes the state through
+ARIA-disabled controls. A shared Reset action restores captured defaults without
+mutating document objects; option values persist only in the local preference
+store and are restored offline. Output-affecting state remains pending until the
+tool gesture commits its document command.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (106 unit tests), hosted
+Chromium context/reset/blank/persistence acceptance via `node work/ps012-e2e.mjs`,
+and `tools/security.mjs --write`.
+
+Remaining limitations: Some audited tools still map to placeholder tool-state
+implementations until PS-030 through PS-037; their schemas are declared now so
+the shell does not need another options-bar migration.
+
 ### PS-013 — Implement the two-column toolbox and flyouts
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: PS-004, PS-010, PS-012
 
 Reconstruct the grouped toolbox with current-tool highlight, group indicator,
@@ -294,6 +346,22 @@ Acceptance criteria:
 - Escape closes an open flyout without changing the active document.
 - Keyboard selection and pointer selection resolve to the same tool state.
 - Active tool state is exposed through an accessible selected or pressed semantic.
+
+Implementation notes: The visible toolbox is generated from the typed registry
+in the audited family order, rendering all 58 audited members in a two-column
+rail. Every flyout uses the same pointer/keyboard selection path, carries the
+selected-family pressed state, and closes on Escape. OpenShop-native Brush,
+Pencil, Spray/Airbrush, and AI Segment Select extensions remain available without
+altering the audited inventory. No Adobe icons or extracted resources were used.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (106 unit tests), hosted
+Chromium exact-family inventory/pointer/keyboard/Escape acceptance via
+`node work/ps013-e2e.mjs`, visual review of `work/ps013-toolbox.png`, and
+`tools/security.mjs --write`.
+
+Remaining limitations: Several audited members intentionally route to the
+existing selection/placeholder state until their concrete behavior lands in
+PS-030 through PS-037; the family surface and command identity are complete.
 
 ### PS-014 — Reconstruct the right dock and workspace menu
 
