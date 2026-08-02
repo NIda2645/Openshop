@@ -48,7 +48,8 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 |--------|--------|--------|
 | **PNG** | Yes | Yes |
 | **JPEG** | Yes | Yes |
-| **WebP** | Yes | Yes |
+| **WebP** | Yes (animated frames with timing) | Yes |
+| **APNG** | Yes (animated frames with timing) | — |
 | **AVIF** | Yes (verified WASM decoder) | Yes (deterministic verified WASM encoder) |
 | **SVG** | Yes (editable shapes, text, and groups — not rasterized) | Yes |
 | **Vector PDF** | — | Yes (real path operators when no raster layer is visible) |

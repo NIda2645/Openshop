@@ -6,6 +6,7 @@ All notable changes to Openshop will be documented in this file.
 
 ### Added
 - Import PDF documents entirely in the browser, rendering each page as its own editable layer with bounded page count, dimensions, and decoded memory use.
+- Import animated WebP and APNG frames through the browser decoder, preserve each frame's duration in the timeline and project file, and reuse those timings for animated GIF export.
 
 ## [v0.27.0] - 2026-08-01
 

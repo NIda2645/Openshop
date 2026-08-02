@@ -4319,6 +4319,60 @@ test('imports every PDF page as an editable layer @cross-browser', async ({ page
   expect(result.pageNames).toEqual(['Page 1', 'Page 2']);
 });
 
+test('imports animated WebP frames with microsecond durations converted to timeline timing', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const originalDecoder = window.ImageDecoder;
+    class FakeImageDecoder {
+      constructor(options) {
+        this.type = options.type;
+        this.tracks = {
+          ready:Promise.resolve(),
+          selectedTrack:{ frameCount:3, frameDuration:90000 }
+        };
+      }
+      async decode({ frameIndex }) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 2;
+        canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = ['#e22', '#2a5', '#28e'][frameIndex];
+        context.fillRect(0, 0, 2, 1);
+        canvas.displayWidth = 2;
+        canvas.displayHeight = 1;
+        canvas.duration = [90000, 140000, 260000][frameIndex];
+        canvas.close = () => {};
+        return { image:canvas };
+      }
+      close() {}
+    }
+    Object.defineProperty(window, 'ImageDecoder', { configurable:true, value:FakeImageDecoder });
+    try {
+      const imported = await OS._importImageDecoderFrames(new File([new Uint8Array([1, 2, 3])], 'timed.webp', { type:'image/webp' }));
+      const project = OS._captureDocumentState();
+      return {
+        imported,
+        frames:OS._animFrames.length,
+        delays:OS._animDelays,
+        persistedDelays:project.animation.delays,
+        timelineItems:document.getElementById('timeline-frames').children.length
+      };
+    } finally {
+      if (originalDecoder) Object.defineProperty(window, 'ImageDecoder', { configurable:true, value:originalDecoder });
+    }
+  });
+
+  expect(result).toEqual({
+    imported:true,
+    frames:3,
+    delays:[90, 140, 260],
+    persistedDelays:[90, 140, 260],
+    timelineItems:3
+  });
+});
+
 test('exports a smaller, more accurate animated GIF than the legacy encoder', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
