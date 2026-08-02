@@ -363,6 +363,8 @@ Runtime CDN URLs, integrity hashes, cache policy, and package metadata share one
 `npm test` runs Vitest unit coverage for the core editor object with canvas mocks. `npm run test:e2e` runs Playwright against `index.html`, including onboarding and dialog checks at 320×568, 375×667, 768×1024, and their landscape equivalents.
 `npm run test:release` adds a high/critical advisory gate before running both suites.
 
+`npm run test:perf` runs deterministic 4K (3840×2160), 8K (7680×4320), and 12MP (4000×3000) fixtures through import, paint, preview/apply filter, tiled undo/redo, the RGBA export boundary, batch, cancellation, and stale-result probes. It prints p50/p95 latency and peak RSS deltas for each operation; the release envelope uses p95 ceilings of 60 s for import/filter-apply/export/batch, 10 s for preview/undo-redo, and 5 s for paint/cancellation/stale-result handling. Results record CPU/worker/GPU path plus cancellation and stale-result outcomes. This contributor benchmark is a deterministic CPU proxy; browser worker/GPU and physical-device claims remain governed by the support matrix and cross-engine tests.
+
 ## Browser Support
 
 | Browser engine | `file://` / hosted mode | Viewport or emulation | Physical device | Pen / stylus | Offline claim |

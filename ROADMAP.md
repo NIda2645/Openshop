@@ -64,13 +64,6 @@ testing gates.
 
 ### P2 — Performance, mobile, extensibility, and workflow depth
 
-- [ ] P2 — Publish measured large-document performance and memory budgets
-  Why: Tiled history, GPU filters, import size caps, and worker fallbacks exist, but their limits are static policy rather than measured budgets; large canvas memory and region-update behavior are known browser failure modes.
-  Evidence: `index.html` import/history/filter limits and diagnostics; PS-060/PS-061/PS-062; [OffscreenCanvas guidance](https://web.dev/articles/offscreen-canvas?hl=en); [Krita 2026 roadmap](https://krita.org/en/posts/2026/roadmap-2026/); large-canvas memory reports [1](https://stackoverflow.com/questions/70796250/how-can-i-optimize-html-canvas-and-javascript-to-handle-large-sized-images-for-a) and [2](https://stackoverflow.com/questions/38463081/large-image-copy-to-canvas-causes-large-memory-usage).
-  Touches: benchmark fixtures/tools, `index.html` diagnostics and render pipeline, CI, `README.md`.
-  Acceptance: Deterministic 4K/8K/12MP fixtures benchmark import, paint, filter preview/apply, undo/redo, export, and batch; results record p50/p95 latency, peak/retained memory, worker/GPU/CPU path, cancellation, and stale-result handling; documented thresholds gate releases without claiming unsupported ceilings.
-  Complexity: M
-
 - [ ] P2 — Validate mobile and stylus on capability matrices
   Why: Mobile workspace and pressure-aware input were added in the 2026-08-02 release, but README support is viewport-only and physical-device behavior is explicitly unverified.
   Evidence: `README.md` browser/support table, `index.html` responsive and `PointerEvent.pressure` paths; [MDN PointerEvent pressure](https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/pressure); miniPaint phone issue and [Krita tablet roadmap](https://krita.org/en/posts/2026/roadmap-2026/).
