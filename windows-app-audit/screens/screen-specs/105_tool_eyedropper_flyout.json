@@ -1,0 +1,9 @@
+{
+  "screenId": "105_tool_eyedropper_flyout",
+  "classification": "CONFIRMED",
+  "status": "VISUALLY_INSPECTED",
+  "evidence": "evidence/tools/screenshots/105_tool_eyedropper_flyout_0.jpg",
+  "documentState": "no document open",
+  "uiAutomation": "partial; screenshot authoritative for custom surfaces",
+  "sideEffects": "none from recorded inspection"
+}

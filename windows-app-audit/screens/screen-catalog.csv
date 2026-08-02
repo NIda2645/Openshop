@@ -13,7 +13,7 @@ screen_id,name,state,status,evidence,notes
 040_help_menu_open,Help menu,open,VISUALLY_INSPECTED,evidence/screenshots/windows/040_help_menu_open_0.jpg,safe visual inspection
 041_about_dialog,About Photoshop,visual modal,VISUALLY_INSPECTED,evidence/screenshots/windows/041_about_dialog_0.jpg,closed with Escape
 100_tool_marquee_flyout,Marquee flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/100_tool_marquee_flyout_0.jpg,4 members
-101_tool_move_flyout,Move tool,selected,VISUALLY_INSPECTED,evidence/tools/screenshots/101_tool_move_flyout_0.jpg,no flyout
+101_tool_move_flyout,Move tool,selected,VISUALLY_INSPECTED,evidence/tools/screenshots/101_tool_move_flyout.jpg,no flyout
 102_tool_lasso_flyout,Lasso flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/102_tool_lasso_flyout_0.jpg,3 members
 103_tool_quick_selection_flyout,Quick Selection flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/103_tool_quick_selection_flyout_0.jpg,2 members
 104_tool_crop_flyout,Crop flyout,open,VISUALLY_INSPECTED,evidence/tools/screenshots/104_tool_crop_flyout_0.jpg,4 members

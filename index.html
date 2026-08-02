@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-lhk+Yz9tQNSshSnJx/6POQdq/gU9eDqz+jeNmjLHU/U=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-S7htH4JLu1TnP2MftzrozDtKzKK9FLfOoiVSeWTQf0k=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -539,6 +539,13 @@ html.os-native-popovers #context-menu[popover]{position-area:block-end span-inli
 
 /* === CANVAS === */
 #canvas-area{position:absolute;left:var(--toolbar-w);top:calc(var(--topbar-h) + 34px);right:var(--panel-width);bottom:var(--statusbar-h);background:var(--canvas-bg);overflow:hidden;cursor:crosshair}
+#blank-workspace{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:110;pointer-events:none;text-align:center}
+#blank-workspace.hidden{display:none}
+#blank-workspace .blank-card{pointer-events:auto;max-width:360px;padding:28px 32px;border:1px solid var(--border);border-radius:var(--radius-lg);background:color-mix(in srgb,var(--bg-depth-2) 92%,transparent);box-shadow:0 18px 48px rgba(0,0,0,.28)}
+#blank-workspace h2{margin:0 0 8px;color:var(--text-primary);font-size:17px;font-weight:600}
+#blank-workspace p{margin:0 0 16px;color:var(--text-muted);font-size:12px;line-height:1.5}
+#blank-workspace .blank-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+#blank-workspace .blank-actions .btn{min-height:32px}
 .selection-rect{position:absolute;pointer-events:none;z-index:100;
 background-image:linear-gradient(90deg,#000 50%,#fff 50%),linear-gradient(90deg,#000 50%,#fff 50%),linear-gradient(0deg,#000 50%,#fff 50%),linear-gradient(0deg,#000 50%,#fff 50%);
 background-size:8px 1px,8px 1px,1px 8px,1px 8px;
@@ -2549,6 +2556,16 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
 <div id="canvas-area" role="application" aria-roledescription="image editor canvas" aria-label="Image canvas" aria-describedby="canvas-a11y-summary">
     <canvas id="editor-canvas" aria-label="Drawing surface"></canvas>
     <canvas class="canvas-grid" id="grid-overlay"></canvas>
+    <div id="blank-workspace" aria-live="polite">
+        <div class="blank-card">
+            <h2>No document open</h2>
+            <p>The workspace is ready. Create a canvas or open an image to begin.</p>
+            <div class="blank-actions">
+                <button type="button" class="btn btn-primary" data-os-click="click-001">New Canvas</button>
+                <button type="button" class="btn" data-os-click="click-002">Open Image</button>
+            </div>
+        </div>
+    </div>
     <div id="guides-container"></div>
     <div id="lasso-overlay" class="lasso-overlay" style="display:none"><svg><polygon class="lasso-path" points=""/><circle class="close-handle" id="lasso-close-handle" r="6" cx="-99" cy="-99"/></svg></div>
     <div id="pen-overlay" class="pen-overlay" style="display:none"><svg><path class="pen-path-preview" d=""/><circle class="close-handle" id="pen-close-handle" r="6" cx="-99" cy="-99"/></svg></div>
@@ -3075,7 +3092,7 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-150": function(event) { OS.dismissWelcome();OS.newImage() },
         "click-151": function(event) { OS.dismissWelcome();OS.openFile() },
         "click-152": function(event) { OS.dismissWelcome();OS.openPSD() },
-        "click-153": function(event) { OS.dismissWelcome() },
+        "click-153": function(event) { OS.dismissWelcome({ startDocument:true }) },
         "click-154": function(event) { OS.switchTab(this,'ptg1','ptg1-layers') },
         "click-155": function(event) { OS.switchTab(this,'ptg1','ptg1-props') },
         "click-156": function(event) { OS.switchTab(this,'ptg1','ptg1-align') },
@@ -3898,6 +3915,7 @@ const OS = {
     },
     setLocale(lang) {
         this._lang = lang;
+        if (this.session?.preferences) this.session.preferences.language = lang;
         const dict = this._locales[lang] || {};
         // Assistive technology, hyphenation, and bidi all key off these two
         // attributes; the locale switch never touched them before.
@@ -3953,7 +3971,29 @@ const OS = {
         const dict = this._locales[lang] || {};
         return this.i18nKeys().filter(key => !Object.prototype.hasOwnProperty.call(dict, key));
     },
-    canvas: null, layers: [], activeLayerIdx: 0,
+    // Application/session state is intentionally separate from the document
+    // scene. A blank workspace owns the shell, tools, panels, preferences, and
+    // viewport without manufacturing a hidden document just to paint the UI.
+    session: {
+        application: { id:'openshop', version:'0.27.0', ready:false },
+        workspace: { layout:'default', mode:'standard' },
+        tool: { selectedId:'select' },
+        document: { activeId:null, openIds:[], name:null },
+        viewport: { zoom:1, transform:[1,0,0,1,0,0] },
+        panels: { visible:true, activeTabs:{ ptg1:'ptg1-layers', ptg2:'ptg2-color', ptg3:'ptg3-history' } },
+        preferences: { language:'en', theme:'default' },
+        persistence: { state:'clean', dirty:false }
+    },
+    renderer: {
+        contract: 'openshop-render-v1',
+        adapters: {
+            preview: 'fabric-preview',
+            export: 'fabric-export',
+            reference: 'scene-reference'
+        }
+    },
+    _blankWorkspace: false,
+    canvas: null, layers: [], activeLayerIdx: -1,
     // One source for the version every file the app writes is stamped with.
     // These were hardcoded and went stale for three releases, so saved
     // projects, recovery generations and exported actions all claimed 0.21.0
@@ -4091,6 +4131,239 @@ const OS = {
         isDrawing: false, isPanning: false, panStart: null,
     },
 
+    _hasActiveDocument() {
+        // The document owner is authoritative. Session.document is a derived
+        // shell projection and must not be required to agree before it has
+        // been synchronized after opening or creating a document.
+        return Boolean(this._documentId && !this._blankWorkspace);
+    },
+    _hasDocumentStateForEditing() {
+        // Unit and integration fixtures can exercise document primitives before
+        // the browser boot lifecycle assigns a document id. Once the real
+        // session is ready, the explicit blank state is authoritative and must
+        // never be serialized as a phantom document.
+        return !this._blankWorkspace && (!this.session?.application?.ready || this._hasActiveDocument());
+    },
+    _syncSessionDocument() {
+        if (!this.session) return;
+        const activeId = this._hasActiveDocument() ? this._documentId : null;
+        this.session.document = {
+            activeId,
+            openIds: activeId ? [activeId] : [],
+            name: activeId ? this._safeText(this._docName || 'Untitled', 100) : null
+        };
+        this.session.persistence = {
+            state: this._persistenceState,
+            dirty: Boolean(this._isDirty)
+        };
+    },
+    _syncSessionWorkspace() {
+        if (!this.session) return;
+        const panels = document.getElementById('panels');
+        this.session.tool.selectedId = this.state.tool;
+        this.session.viewport = {
+            zoom: Number(this.zoom) || 1,
+            transform: Array.isArray(this.canvas?.viewportTransform)
+                ? this.canvas.viewportTransform.slice(0, 6)
+                : [1,0,0,1,0,0]
+        };
+        this.session.workspace = {
+            ...this.session.workspace,
+            layout: this.session.workspace?.layout || 'default',
+            mode: this.session.workspace?.mode || 'standard'
+        };
+        this.session.panels.visible = !panels || panels.style.display !== 'none';
+        this.session.preferences = {
+            language: this._lang || 'en',
+            theme: this._currentTheme || 'default'
+        };
+    },
+    _updateDocumentAvailability() {
+        const blank = !this._hasActiveDocument();
+        document.documentElement.dataset.osDocument = blank ? 'blank' : 'open';
+        const area = document.getElementById('canvas-area');
+        if (area) {
+            area.dataset.documentState = blank ? 'blank' : 'open';
+            area.setAttribute('aria-label', blank
+                ? 'No document open. Create a canvas or open an image.'
+                : 'Image canvas');
+        }
+        document.getElementById('blank-workspace')?.classList.toggle('hidden', !blank);
+        const dims = document.getElementById('canvas-dims');
+        if (dims) dims.textContent = blank ? 'No document' : `${this.canvasW} x ${this.canvasH}`;
+        const zoom = document.getElementById('zoom-display');
+        if (zoom) zoom.textContent = blank ? '—' : `${Math.round(this.zoom * 100)}%`;
+        const layersEmpty = document.getElementById('layers-empty');
+        if (layersEmpty) layersEmpty.textContent = blank ? 'No document open.' : 'No layers. Click + to add one.';
+        document.querySelectorAll('#panels .panel-action').forEach(button => {
+            button.disabled = blank;
+            button.setAttribute('aria-disabled', blank ? 'true' : 'false');
+        });
+        this._syncSessionDocument();
+        this._syncSessionWorkspace();
+        this._renderAccessibilityTree();
+    },
+    _cloneSceneValue(value) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (error) {
+            throw new Error(`Document scene contains unsupported data: ${error.message}`);
+        }
+    },
+    _assertDocumentScene(scene) {
+        if (!scene || scene.kind !== 'openshop-scene' || scene.schemaVersion !== 1) {
+            throw new Error('Unsupported document scene');
+        }
+        if (!scene.canvas || !Number.isFinite(Number(scene.canvas.width)) || !Number.isFinite(Number(scene.canvas.height))) {
+            throw new Error('Document scene canvas is invalid');
+        }
+        return scene;
+    },
+    _sceneFingerprint(scene) {
+        return JSON.stringify(this._assertDocumentScene(scene));
+    },
+    _captureDocumentScene() {
+        const state = this._captureDocumentState();
+        const serializedObjects = Array.isArray(state.canvas?.fabric?.objects)
+            ? state.canvas.fabric.objects
+            : [];
+        return {
+            kind: 'openshop-scene',
+            schemaVersion: 1,
+            document: this._cloneSceneValue(state.document),
+            canvas: {
+                width: Number(state.canvas.width),
+                height: Number(state.canvas.height)
+            },
+            layers: this._cloneSceneValue(state.layers),
+            nodes: serializedObjects.map((object, index) => ({
+                id: String(object._openShopObjectId || `node-${index + 1}`),
+                type: String(object.type || 'unknown'),
+                attributes: this._cloneSceneValue(object)
+            })),
+            guides: this._cloneSceneValue(state.guides || []),
+            selection: this._cloneSceneValue(state.selection || { bounds:null, mask:null }),
+            animation: this._cloneSceneValue(state.animation || { frames:[], activeFrameIndex:0 }),
+            interchange: this._cloneSceneValue(state.interchange || { psd:null })
+        };
+    },
+    _renderPreviewScene(scene) {
+        this._assertDocumentScene(scene);
+        const viewport = Array.isArray(this.canvas?.viewportTransform)
+            ? this.canvas.viewportTransform.slice(0, 6)
+            : [1,0,0,1,0,0];
+        this.canvas?.renderAll?.();
+        return {
+            kind: 'openshop-preview-render',
+            adapter: this.renderer.adapters.preview,
+            documentId: scene.document?.id || null,
+            width: scene.canvas.width,
+            height: scene.canvas.height,
+            sceneFingerprint: this._sceneFingerprint(scene),
+            viewport
+        };
+    },
+    _renderExportScene(scene, { format = 'png', quality = 1, multiplier = 1 } = {}) {
+        this._assertDocumentScene(scene);
+        const canvas = this.canvas;
+        if (!canvas?.toDataURL) throw new Error('Export renderer is unavailable');
+        const viewport = Array.isArray(canvas.viewportTransform)
+            ? canvas.viewportTransform.slice(0, 6)
+            : [1,0,0,1,0,0];
+        const zoom = this.zoom;
+        let dataUrl;
+        try {
+            canvas.setViewportTransform?.([1,0,0,1,0,0]);
+            canvas.renderAll?.();
+            dataUrl = canvas.toDataURL({
+                format: this._safeText(format, 12) || 'png',
+                quality: Math.max(0.01, Math.min(1, Number(quality) || 1)),
+                multiplier: Math.max(0.01, Math.min(16, Number(multiplier) || 1)),
+                left: 0,
+                top: 0,
+                width: scene.canvas.width,
+                height: scene.canvas.height
+            });
+        } finally {
+            canvas.setViewportTransform?.(viewport);
+            this.zoom = zoom;
+            canvas.renderAll?.();
+        }
+        return {
+            kind: 'openshop-export-render',
+            adapter: this.renderer.adapters.export,
+            documentId: scene.document?.id || null,
+            width: scene.canvas.width,
+            height: scene.canvas.height,
+            dataUrl,
+            sceneFingerprint: this._sceneFingerprint(scene)
+        };
+    },
+    _renderReferenceScene(scene) {
+        this._assertDocumentScene(scene);
+        return {
+            kind: 'openshop-reference-render',
+            adapter: this.renderer.adapters.reference,
+            documentId: scene.document?.id || null,
+            width: scene.canvas.width,
+            height: scene.canvas.height,
+            nodeCount: scene.nodes.length,
+            sceneFingerprint: this._sceneFingerprint(scene)
+        };
+    },
+    renderDocumentScene(scene, { target = 'preview', ...options } = {}) {
+        if (target === 'preview') return this._renderPreviewScene(scene);
+        if (target === 'export') return this._renderExportScene(scene, options);
+        if (target === 'reference') return this._renderReferenceScene(scene);
+        throw new Error(`Unknown document render target: ${this._safeText(target, 40)}`);
+    },
+    _initializeBlankWorkspace({ preserveViewport = false } = {}) {
+        const sessionViewport = preserveViewport
+            ? {
+                zoom: Number(this.zoom) || 1,
+                transform: Array.isArray(this.canvas?.viewportTransform)
+                    ? this.canvas.viewportTransform.slice(0, 6)
+                    : [1,0,0,1,0,0]
+            }
+            : { zoom:1, transform:[1,0,0,1,0,0] };
+        this._advanceDocumentGeneration('Blank workspace initialized');
+        this._blankWorkspace = true;
+        this._documentId = null;
+        this._documentIdAliases = [];
+        this._docName = null;
+        this._projectFileHandle = null;
+        this._psdInterchange = null;
+        this._lastPSDImportReport = null;
+        this._lastPSDExportReport = null;
+        this.canvasW = 0;
+        this.canvasH = 0;
+        this.layers = [];
+        this.activeLayerIdx = -1;
+        this.history = [];
+        this.historyIdx = -1;
+        this._historyBaseSnapshot = null;
+        this._historyCursorSnapshot = null;
+        this._savedSnapshot = null;
+        this._isDirty = false;
+        this._autoSaveDirty = false;
+        this._setPersistenceState('clean');
+        this._restoreGuidesState([]);
+        this._restoreSelectionState({ bounds:null, mask:null });
+        this._stopAnimationPlayback();
+        this._animFrames = [];
+        this._animIdx = 0;
+        this.canvas?.discardActiveObject?.();
+        this.canvas?.clear?.();
+        this.zoom = sessionViewport.zoom;
+        this.canvas?.setViewportTransform?.(sessionViewport.transform);
+        if (this.canvas) this.canvas.renderAll?.();
+        this.updateLayersPanel?.();
+        this.updateHistoryPanel?.();
+        this.updateInfoPanel?.();
+        this.updateStatus?.();
+        this._updateDocumentAvailability();
+    },
+
     // ====================== INIT ======================
     init() {
         const area = document.getElementById('canvas-area');
@@ -4104,7 +4377,7 @@ const OS = {
             // that request one render at the end instead.
             renderOnAddRemove: false,
         });
-        this.createNewDocument(this.canvasW, this.canvasH, { resetProject:true, clean:true });
+        this._initializeBlankWorkspace();
         this.canvas.on('mouse:move', e => this.onMouseMove(e));
         this.canvas.on('mouse:down', e => this.onMouseDown(e));
         this.canvas.on('mouse:up', e => this.onMouseUp(e));
@@ -4223,9 +4496,11 @@ const OS = {
         this.updateHistogram();
         // Pen double-click to close
         ca.addEventListener('dblclick', e => {
-            if (this.state.tool === 'lasso') this._lassoDoubleClick();
+        if (this.state.tool === 'lasso') this._lassoDoubleClick();
             if (this.state.tool === 'pen') this._penFinish();
         });
+        this.session.application.ready = true;
+        this._updateDocumentAvailability();
     },
 
     // ====================== DOCUMENT ======================
@@ -4381,12 +4656,14 @@ const OS = {
         const dirtyPrefix = this._isDirty ? '* ' : '';
         const stateSuffix = this._persistenceState === 'saving' ? ' (Saving)' : this._persistenceState === 'error' ? ' (Save failed)' : '';
         document.title = `${dirtyPrefix}${this._docName || 'Untitled'}${stateSuffix} — OpenShop v0.27.0`;
+        if (this.session) this.session.persistence = { state:this._persistenceState, dirty:Boolean(this._isDirty) };
     },
     _markDocumentDirty() {
         this._documentRevision += 1;
         this._isDirty = true;
         this._autoSaveDirty = true;
         this._setPersistenceState('dirty');
+        this._syncSessionDocument();
     },
     _currentHistorySnapshot() {
         return this._historyCursorSnapshot || this.history[this.historyIdx]?.snapshot || this._historyBaseSnapshot || null;
@@ -4409,12 +4686,16 @@ const OS = {
         }
     },
     createNewDocument(w, h, { resetProject = false, clean = false, resetHistory = true, background = null } = {}) {
+        this._blankWorkspace = false;
         if (resetProject) {
+            const previousLineage = [this._documentId, ...(this._documentIdAliases || [])].filter(Boolean);
+            const previousRecoveryFilename = this._activeRecoverySourceFilename;
             this._advanceDocumentGeneration('A new document replaced this operation');
             this._projectFileHandle = null;
             this._savedSnapshot = null;
             this._docName = 'Untitled';
             this._adoptDocumentId(this._newDocumentId('document'));
+            void this._clearAutoSave({ documentIds:previousLineage, recoveryFilename:previousRecoveryFilename });
         }
         if (!this._documentId) this._adoptDocumentId(this._newDocumentId('document'));
         this._psdInterchange = null;
@@ -4455,6 +4736,20 @@ const OS = {
         document.getElementById('canvas-dims').textContent = `${w} x ${h}`;
         this._captureBA();
         this._claimRecoveryOwnership();
+        this._updateDocumentAvailability();
+    },
+    async closeDocument({ force = false } = {}) {
+        if (!this._hasActiveDocument()) return true;
+        if (!force && !await this._confirmDiscardUnsaved('Closing this document')) return false;
+        const previousLineage = [this._documentId, ...(this._documentIdAliases || [])].filter(Boolean);
+        const previousRecoveryFilename = this._activeRecoverySourceFilename;
+        const pendingAutoSave = this._autoSaveInFlight;
+        if (pendingAutoSave) await pendingAutoSave.catch(() => {});
+        this._initializeBlankWorkspace({ preserveViewport:true });
+        await this._clearAutoSave({ documentIds:previousLineage, recoveryFilename:previousRecoveryFilename });
+        this._activeRecoverySourceFilename = null;
+        this.toast('Document closed', 'info');
+        return true;
     },
     _createCheckerBoundary(w, h) {
         const patSize = 16, half = patSize / 2;
@@ -4739,6 +5034,8 @@ const OS = {
         return { w, h, mask };
     },
     _captureDocumentState() {
+        if (!this._hasDocumentStateForEditing()) throw new Error('No active document');
+        if (!this.canvas?.getObjects || !this.canvas?.toJSON) throw new Error('Document renderer is unavailable');
         this._enforceLayerInvariants({ render:false });
         const canvasObjects = this.canvas.getObjects().filter(object => !object.excludeFromExport);
         const usedObjectIds = new Set();
@@ -4830,11 +5127,6 @@ const OS = {
             interchange: {
                 psd: this._normalizePSDInterchange(this._psdInterchange)
             },
-            workspace: {
-                tool: this.state.tool,
-                zoom: this.zoom,
-                viewportTransform: Array.isArray(this.canvas.viewportTransform) ? this.canvas.viewportTransform.slice(0, 6) : [1,0,0,1,0,0]
-            }
         };
     },
     _migrateLegacyProject(project) {
@@ -4979,6 +5271,7 @@ const OS = {
     },
     async _applyDocumentState(project, { fitToViewport = false, trusted = false } = {}) {
         const state = this._normalizeDocumentState(project, { trusted });
+        this._blankWorkspace = false;
         this.canvasW = state.canvas.width;
         this.canvasH = state.canvas.height;
         const loadResult = this.canvas.loadFromJSON(state.canvas.fabric);
@@ -5061,12 +5354,12 @@ const OS = {
         if (activeObjects.length === 1) this.canvas.setActiveObject(activeObjects[0]);
         else if (activeObjects.length > 1 && fabric.ActiveSelection) this.canvas.setActiveObject(new fabric.ActiveSelection(activeObjects, { canvas:this.canvas }));
 
+        // Tool selection, panel arrangement, language, preferences, and the
+        // viewport belong to the workspace session, not to document pixels.
+        // Older project files may still carry `workspace`; it is intentionally
+        // ignored so opening one cannot steal the user's current UI state.
         if (fitToViewport) this.zoomFit();
-        else if (Array.isArray(state.workspace?.viewportTransform) && state.workspace.viewportTransform.length === 6) {
-            this.canvas.setViewportTransform(state.workspace.viewportTransform.map(Number));
-            this.zoom = Number(state.workspace.zoom) || this.zoom;
-        }
-        if (state.workspace?.tool) this.setTool(state.workspace.tool);
+        this.setTool(this.session?.tool?.selectedId || this.state.tool || 'select');
         this.canvas.renderAll();
         this.updateLayersPanel();
         this.updateStatus();
@@ -5075,6 +5368,7 @@ const OS = {
         const dims = document.getElementById('canvas-dims');
         if (dims) dims.textContent = `${this.canvasW} x ${this.canvasH}`;
         this._claimRecoveryOwnership();
+        this._updateDocumentAvailability();
         return state;
     },
     _sanitizePaletteColors(colors) {
@@ -5978,6 +6272,8 @@ const OS = {
     },
     async _loadProjectFile(file, { handle = null } = {}) {
         let rollback = null;
+        const previousLineage = [this._documentId, ...(this._documentIdAliases || [])].filter(Boolean);
+        const previousRecoveryFilename = this._activeRecoverySourceFilename;
         try {
             this._assertJsonFileBudget(file, 'Project');
             const json = JSON.parse(await file.text());
@@ -5991,6 +6287,7 @@ const OS = {
             this._projectFileHandle = handle;
             this._initializeHistory('Open Project');
             this._markDocumentClean(this._historyBaseSnapshot, 'clean');
+            await this._clearAutoSave({ documentIds:previousLineage, recoveryFilename:previousRecoveryFilename });
             await this._clearAutoSave();
             this.trackRecentFile(this._docName, this.canvasW, this.canvasH);
             this.toast(this._t('Project loaded'),'success');
@@ -7004,6 +7301,12 @@ self.onmessage = function(event) {
     _activeLayerWriteTools: new Set(['brush','pencil','eraser','spray','text','gradient','pattern','line','rect','circle','triangle','arrow','polygon','star','pen']),
     _rebuildLayerOwnership() {
         if (!Array.isArray(this.layers) || !this.layers.length) {
+            if (this._blankWorkspace) {
+                this.layers = [];
+                this.activeLayerIdx = -1;
+                this._layerOwnership = new WeakMap();
+                return this._layerOwnership;
+            }
             this.layers = [{ id:this._newDocumentId('layer'), name:'Layer 0', visible:true, locked:false, opacity:100, blend:'source-over', objects:[] }];
         }
         this.activeLayerIdx = Math.max(0, Math.min(Number(this.activeLayerIdx) || 0, this.layers.length - 1));
@@ -7570,6 +7873,7 @@ self.onmessage = function(event) {
         // Show target content, hide siblings
         document.querySelectorAll('.panel-tab-content[data-group="' + groupId + '"]').forEach(c => c.classList.remove('active'));
         document.getElementById(contentId).classList.add('active');
+        if (this.session?.panels?.activeTabs) this.session.panels.activeTabs[groupId] = contentId;
     },
     _closeAllFlyouts() {
         document.querySelectorAll('.tool-flyout').forEach(f => {
@@ -7682,6 +7986,7 @@ self.onmessage = function(event) {
         this._applyLayerInteractionState({ render:false });
         const toolNames = {'marquee-rect':'Rect Marquee','marquee-ellipse':'Ellipse Marquee','magic-wand':'Magic Wand','ai-segment':'AI Segment'};
         document.getElementById('tool-display').textContent = toolNames[tool] || tool.charAt(0).toUpperCase()+tool.replace(/-/g,' ').slice(1);
+        this._syncSessionWorkspace();
         this._renderAccessibilityTree();
     },
     setBrushSize(v) { this.state.brushSize=+v; document.getElementById('brush-size-val').textContent=v; if(this.canvas.freeDrawingBrush) this.canvas.freeDrawingBrush.width=+v; },
@@ -9704,7 +10009,7 @@ self.onmessage = function(event) {
         });
     },
     saveHistory(action, { markDirty = true, command = null, coalesceKey = null } = {}) {
-        if (this._historyTransaction) return false;
+        if (this._historyTransaction || !this._hasDocumentStateForEditing()) return false;
         const snapshot = JSON.stringify(this._captureDocumentState());
         return this._pushHistoryEntry(action, snapshot, { markDirty, command, coalesceKey });
     },
@@ -10134,21 +10439,22 @@ self.onmessage = function(event) {
     },
 
     // ====================== ZOOM ======================
-    zoomIn() { this.zoom=Math.min(this.zoom*1.25,20); this.canvas.zoomToPoint({x:this.canvas.width/2,y:this.canvas.height/2},this.zoom); document.getElementById('zoom-display').textContent=Math.round(this.zoom*100)+'%'; this.drawGrid(); this.drawRulers(); },
-    zoomOut() { this.zoom=Math.max(this.zoom/1.25,0.05); this.canvas.zoomToPoint({x:this.canvas.width/2,y:this.canvas.height/2},this.zoom); document.getElementById('zoom-display').textContent=Math.round(this.zoom*100)+'%'; this.drawGrid(); this.drawRulers(); },
+    zoomIn() { this.zoom=Math.min(this.zoom*1.25,20); this.canvas.zoomToPoint({x:this.canvas.width/2,y:this.canvas.height/2},this.zoom); document.getElementById('zoom-display').textContent=Math.round(this.zoom*100)+'%'; this._syncSessionWorkspace(); this.drawGrid(); this.drawRulers(); },
+    zoomOut() { this.zoom=Math.max(this.zoom/1.25,0.05); this.canvas.zoomToPoint({x:this.canvas.width/2,y:this.canvas.height/2},this.zoom); document.getElementById('zoom-display').textContent=Math.round(this.zoom*100)+'%'; this._syncSessionWorkspace(); this.drawGrid(); this.drawRulers(); },
     zoomFit() {
+        if (!this.canvasW || !this.canvasH) return false;
         const a=document.getElementById('canvas-area'), pad=40;
         this.zoom=Math.min((a.clientWidth-pad*2)/this.canvasW,(a.clientHeight-pad*2)/this.canvasH,1);
         this.canvas.setViewportTransform([1,0,0,1,0,0]); this.canvas.zoomToPoint({x:0,y:0},this.zoom);
         const vpt=this.canvas.viewportTransform;
         vpt[4]=(a.clientWidth-this.canvasW*this.zoom)/2; vpt[5]=(a.clientHeight-this.canvasH*this.zoom)/2;
-        this.canvas.setViewportTransform(vpt); document.getElementById('zoom-display').textContent=Math.round(this.zoom*100)+'%'; this.drawGrid(); this.drawRulers();
+        this.canvas.setViewportTransform(vpt); document.getElementById('zoom-display').textContent=Math.round(this.zoom*100)+'%'; this._syncSessionWorkspace(); this.drawGrid(); this.drawRulers();
     },
     zoomReset() {
         this.zoom=1; const a=document.getElementById('canvas-area');
         this.canvas.setViewportTransform([1,0,0,1,0,0]); this.canvas.zoomToPoint({x:0,y:0},1);
         const vpt=this.canvas.viewportTransform; vpt[4]=(a.clientWidth-this.canvasW)/2; vpt[5]=(a.clientHeight-this.canvasH)/2;
-        this.canvas.setViewportTransform(vpt); document.getElementById('zoom-display').textContent='100%'; this.drawGrid(); this.drawRulers();
+        this.canvas.setViewportTransform(vpt); document.getElementById('zoom-display').textContent='100%'; this._syncSessionWorkspace(); this.drawGrid(); this.drawRulers();
     },
     resizeCanvas() { const a=document.getElementById('canvas-area'); this.canvas.setWidth(a.clientWidth); this.canvas.setHeight(a.clientHeight); this.canvas.renderAll(); },
     zoomActual() { this.zoomReset(); },
@@ -10726,7 +11032,7 @@ self.onmessage = function(event) {
         card.addEventListener('click', onSelect);
         return card;
     },
-    dismissWelcome() {
+    dismissWelcome({ startDocument = false } = {}) {
         // Not idempotent, and reachable twice: a PWA file launch calls this
         // after an await chain, so clicking "New Image" while that resolves ran
         // the whole initialisation block again — a second flyout host and a
@@ -10734,6 +11040,12 @@ self.onmessage = function(event) {
         // Ctrl+Z performed two undos and one paste inserted the image twice.
         if (this._welcomeDismissed) return;
         this._welcomeDismissed = true;
+        if (startDocument && !this._hasActiveDocument()) {
+            this.createNewDocument(this._prefs.defaultW || 1920, this._prefs.defaultH || 1080, {
+                resetProject:true,
+                clean:true
+            });
+        }
         const el = document.getElementById('welcome-overlay');
         el.classList.add('hidden');
         // The fade only drops opacity, so for 400ms — and forever, if the
@@ -10975,6 +11287,7 @@ self.onmessage = function(event) {
         if (!nodes.length) return false;
         const hidden = nodes[0].style.display === 'none';
         nodes.forEach(node => { node.style.display = hidden ? '' : 'none'; });
+        if (this.session?.panels) this.session.panels.visible = hidden;
         this._announceAccessibility(hidden ? 'Panels shown' : 'Panels hidden');
         return true;
     },
@@ -12954,19 +13267,25 @@ self.onmessage = async function(event) {
             return false;
         }
     },
-    async _clearAutoSave() {
+    async _clearAutoSave({ documentIds = null, recoveryFilename = null } = {}) {
         if (!navigator.storage?.getDirectory) return false;
         try {
             return await this._withRecoveryLock(async () => {
                 const records = await this._listRecoveryGenerations();
+                const explicitDocumentIds = Array.isArray(documentIds)
+                    ? new Set(documentIds.filter(Boolean).map(String))
+                    : null;
+                const activeRecoveryFilename = recoveryFilename || this._activeRecoverySourceFilename;
                 const targets = records.filter(record =>
                     record.legacy ||
                     // Match every id in this document's lineage: an ownership
                     // rename would otherwise strand the generations written
                     // under the previous id, and they would be offered as
                     // unsaved work on a later launch.
-                    (this._isSameDocumentLineage(record.documentId) &&
-                        (record.ownerId === this._getRecoveryTabId() || record.filename === this._activeRecoverySourceFilename))
+                    ((explicitDocumentIds
+                        ? explicitDocumentIds.has(String(record.documentId))
+                        : this._isSameDocumentLineage(record.documentId)) &&
+                        (record.ownerId === this._getRecoveryTabId() || record.filename === activeRecoveryFilename))
                 );
                 for (const record of targets) await this._discardRecovery(record, { updateIndex:false });
                 const remaining = records.filter(record => !targets.includes(record) && !record.legacy);
@@ -13916,6 +14235,7 @@ self.onmessage = async function(event) {
         ctx.clearRect(0, 0, cv.width, cv.height);
         ctx.fillStyle = this._themeColor('--bg-depth-3', '#162131');
         ctx.fillRect(0, 0, cv.width, cv.height);
+        if (!this.canvas || !this.canvasW || !this.canvasH) return;
         try {
             const vpt = this.canvas.viewportTransform.slice();
             this.canvas.viewportTransform = [1,0,0,1,0,0]; this.canvas.renderAll();
@@ -14351,10 +14671,10 @@ self.onmessage = async function(event) {
     // ====================== UPDATE INFO PANEL ======================
     updateInfoPanel() {
         const el = id => document.getElementById(id);
-        if (el('info-dims')) el('info-dims').textContent = `${this.canvasW} x ${this.canvasH}`;
+        if (el('info-dims')) el('info-dims').textContent = this._hasActiveDocument() ? `${this.canvasW} x ${this.canvasH}` : 'No document';
         if (el('info-layers')) el('info-layers').textContent = this.layers.length;
-        if (el('info-objects')) el('info-objects').textContent = this.canvas.getObjects().filter(o => o.name !== '__boundary__').length;
-        if (el('info-zoom')) el('info-zoom').textContent = Math.round(this.zoom * 100) + '%';
+        if (el('info-objects')) el('info-objects').textContent = this.canvas ? this.canvas.getObjects().filter(o => o.name !== '__boundary__').length : 0;
+        if (el('info-zoom')) el('info-zoom').textContent = this._hasActiveDocument() ? Math.round(this.zoom * 100) + '%' : '—';
     },
 
     // ====================== FILTER WORKER ======================
@@ -16465,6 +16785,7 @@ self.onmessage = async function(e) {
         const ctx = cv.getContext('2d');
         ctx.fillStyle = this._themeColor('--bg-depth-3', '#162131');
         ctx.fillRect(0, 0, w, h);
+        if (!this.canvas || !this.canvasW || !this.canvasH) return;
         const scale = Math.min(w / this.canvasW, h / this.canvasH);
         try {
             const vpt = this.canvas.viewportTransform.slice();
@@ -17253,6 +17574,7 @@ self.onmessage = async function(e) {
         document.documentElement.classList.remove('theme-midnight', 'theme-oled');
         if (next !== 'default') document.documentElement.classList.add('theme-' + next);
         this._currentTheme = next;
+        if (this.session?.preferences) this.session.preferences.theme = next;
         if (persist) {
             try { localStorage.setItem('os_theme', next); }
             catch(e) { console.warn('Theme preference not stored:', e.message); }

@@ -18,6 +18,47 @@ async function openApp(page, url) {
   await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
 }
 
+test('keeps a first-class blank workspace separate from the document session @cross-browser', async ({ page }) => {
+  await openApp(page);
+
+  const initial = await page.evaluate(() => ({
+    document: OS.session.document,
+    state: document.documentElement.dataset.osDocument,
+    layers: OS.layers.length
+  }));
+  expect(initial).toEqual({
+    document: { activeId: null, openIds: [], name: null },
+    state: 'blank',
+    layers: 0
+  });
+
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  const afterEnter = await page.evaluate(() => ({
+    document: OS.session.document,
+    state: document.documentElement.dataset.osDocument,
+    layers: OS.layers.length,
+    dismissed: OS._welcomeDismissed
+  }));
+  expect(afterEnter).toMatchObject({ state: 'open', layers: 2, dismissed: true });
+  await expect(page.locator('#blank-workspace')).toHaveClass(/hidden/);
+  await page.evaluate(() => OS.setTool('brush'));
+  const afterClose = await page.evaluate(() => OS.closeDocument({ force: true }).then(() => ({
+    document: OS.session.document,
+    state: document.documentElement.dataset.osDocument,
+    layers: OS.layers.length,
+    tool: OS.session.tool.selectedId,
+    tabs: OS.session.panels.activeTabs
+  })));
+
+  expect(afterClose).toEqual({
+    document: { activeId: null, openIds: [], name: null },
+    state: 'blank',
+    layers: 0,
+    tool: 'brush',
+    tabs: { ptg1: 'ptg1-layers', ptg2: 'ptg2-color', ptg3: 'ptg3-history' }
+  });
+});
+
 test('loads the editor shell and supports core UI interactions @cross-browser', async ({ page }, testInfo) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));

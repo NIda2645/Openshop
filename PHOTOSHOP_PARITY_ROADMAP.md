@@ -48,7 +48,7 @@ remain untested. Roadmap entries preserve that distinction.
 ### PS-001 — Establish audit traceability
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: none
 
 Create a traceability table in the issue or milestone system that maps every roadmap
@@ -63,10 +63,26 @@ Acceptance criteria:
   BLOCKED_BY_PREREQUISITE rather than implied complete.
 - Changes to the parity contract identify the audit evidence or a new observation.
 
+Implementation notes:
+
+- Added `windows-app-audit/traceability/roadmap-traceability.csv` as the repository-owned
+  mapping between this roadmap entry and the audited screen, tool, behavior, and safety
+  catalogs.
+- Added `tests/roadmap-traceability.test.js` to verify screen-spec/screenshot links, the
+  complete 60-row tool inventory, tool-family coverage, and explicit untested or blocked
+  labels for document-dependent behavior.
+
+Test evidence: `npm run test:unit -- tests/roadmap-traceability.test.js` (PS-001 traceability
+acceptance coverage).
+
+Remaining limitations: the live Photoshop audit intentionally did not open a document, so
+document mutation, file side effects, and persistence remain UNTESTED or
+BLOCKED_BY_PREREQUISITE in the source catalogs.
+
 ### PS-002 — Split workspace session from document session
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: none
 
 Define separate state owners for application session, workspace layout, active tool,
@@ -81,10 +97,31 @@ Acceptance criteria:
   accidental document pixels.
 - A document mutation cannot leak into another open document or recovery stream.
 
+Implementation notes:
+
+- Added an explicit application/session owner for workspace layout, active tool,
+  document identity, viewport, panels, preferences, and persistence state.
+- Added a first-class blank workspace with no active document, disabled document
+  panel actions, accessible blank-state messaging, and close/replace transitions
+  that preserve the active tool, panel tabs, language, theme, and viewport.
+- Separated document snapshots from workspace state and made document capture and
+  history no-ops in the ready blank state rather than creating phantom layers.
+- Added recovery-lineage cleanup for close, new-document replacement, and project
+  open so old generations cannot be offered as the next document's recovery stream.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (98 unit tests, including
+`tests/session-model.test.js`); hosted browser acceptance for the blank/open/close
+flow passed with Chromium against `tests/server.mjs`.
+
+Remaining limitations: the session currently exposes one active document at a time;
+multi-document tabs and independent document windows are not implemented. The live
+Photoshop audit did not exercise document mutation, so Photoshop-side behavioral
+parity remains UNTESTED beyond the OpenShop fixtures covered here.
+
 ### PS-003 — Introduce a renderer-agnostic seam
 
 Priority: P0  
-Status: PLANNED  
+Status: VERIFIED  
 Dependencies: PS-002
 
 Define a document scene and render contract independent of the current Fabric.js
@@ -101,6 +138,26 @@ Acceptance criteria:
   tool command semantics.
 - Visual output parity is asserted between the current adapter and the reference
   render for representative documents.
+
+Implementation notes:
+
+- Added the `openshop-render-v1` scene contract, which normalizes document canvas,
+  layers, nodes, guides, selection, animation, and interchange data without
+  exposing Fabric instances to downstream render consumers.
+- Added separate preview and export adapters over the existing Fabric surface;
+  export renders with a document-space viewport and restores the user's viewport
+  and zoom after rendering.
+- Added a deterministic reference adapter and scene fingerprints so representative
+  preview/export scenes can assert parity without coupling tests to Fabric internals.
+
+Test evidence: `node node_modules/vitest/vitest.mjs run` (98 unit tests, including
+`tests/renderer-seam.test.js`); `tools/security.mjs --check` passed with the updated
+inline-script hash.
+
+Remaining limitations: Fabric remains the only production preview/export adapter;
+the reference adapter validates scene determinism and contract parity, not an
+independent GPU or pixel compositor. Worker, WebGL2, and WebGPU adapters remain
+future work under PS-060.
 
 ### PS-004 — Build a typed command and tool registry
 

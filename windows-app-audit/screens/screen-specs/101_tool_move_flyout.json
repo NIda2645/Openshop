@@ -1,0 +1,9 @@
+{
+  "screenId": "101_tool_move_flyout",
+  "classification": "CONFIRMED",
+  "status": "VISUALLY_INSPECTED",
+  "evidence": "evidence/tools/screenshots/101_tool_move_flyout.jpg",
+  "documentState": "no document open",
+  "uiAutomation": "partial; screenshot authoritative for custom surfaces",
+  "sideEffects": "none from recorded inspection"
+}
