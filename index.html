@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-aQxBEbHJ3s3q5H1fOmhrl5d913y5rOs2TxC8g2u0fbY=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-Jk0JaHCkzZ/cCgE2ZQMTlrvt+8z8NqF9AWfDWb9isLA=' 'sha256-NmvA2ILZnT+xNRN1ujvlqB3ZTh2mNh8fYsXKvQ0HGGw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.26.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -2071,6 +2071,7 @@ input[type="range"]::-moz-range-thumb:hover{transform:scale(1.15)}
         <div class="menu-dropdown">
             <div class="dd-item" data-os-click="click-015">Undo</div>
             <div class="dd-item" data-os-click="click-016">Redo</div>
+            <div class="dd-item" data-os-click="click-225">Snapshots &amp; Branches...</div>
             <div class="dd-sep"></div>
             <div class="dd-item" data-os-click="click-017">Copy</div>
             <div class="dd-item" data-os-click="click-018">Paste</div>
@@ -3144,7 +3145,8 @@ const OS_EVENT_HANDLERS = Object.freeze({
         "click-221": function(event) { OS.editGradientStops() },
         "click-222": function(event) { OS.aiSuperResolve(2) },
         "click-223": function(event) { OS.aiSuperResolve(4) },
-        "click-224": function(event) { OS.showTraceDialog() }
+        "click-224": function(event) { OS.showTraceDialog() },
+        "click-225": function(event) { OS.showSnapshotManager() }
     }),
     change: Object.freeze({
         "change-001": function(event) { OS.setBrushPreset(this.value) },
@@ -3739,6 +3741,7 @@ const OS = {
         "Similar": "选取相似",
         "Size": "大小",
         "Skew...": "斜切...",
+        "Snapshots & Branches...": "快照与分支...",
         "Trace to Vector...": "描摹为矢量...",
         "Enlarge 2x (AI model)": "放大 2 倍（AI 模型）",
         "Enlarge 4x (AI model)": "放大 4 倍（AI 模型）",
@@ -9546,7 +9549,12 @@ self.onmessage = function(event) {
             ? this.history[this.historyIdx]?.snapshot
             : this._historyBaseSnapshot;
         if (snapshot === previousSnapshot) return false;
-        if (this.historyIdx < this.history.length - 1) this.history = this.history.slice(0, this.historyIdx + 1);
+        if (this.historyIdx < this.history.length - 1) {
+            // Editing after an undo used to throw the rest of the line away.
+            // Keep it as a branch instead, so the other future is still there.
+            this._archiveHistoryBranch(this.history.slice(this.historyIdx + 1), action);
+            this.history = this.history.slice(0, this.historyIdx + 1);
+        }
         const normalizedCommand = command ? this._normalizeCommand(command) : null;
         const entry = {
             kind:'openshop-history-entry',
@@ -9804,6 +9812,248 @@ self.onmessage = function(event) {
             list.appendChild(item);
         });
         list.scrollTop = list.scrollHeight;
+    },
+
+    // ====================== SNAPSHOTS & BRANCHES ======================
+    // The 60-step ring answers "step back". These answer "go back to the good
+    // version" — a named state you chose to keep, and every line of work an
+    // edit-after-undo would otherwise have deleted without asking.
+    _snapshots: [],
+    _historyBranches: [],
+    _snapshotSequence: 0,
+    _maxSnapshots: 30,
+    _maxHistoryBranches: 10,
+    // Snapshots are whole documents. Without a ceiling a few large pastes would
+    // pin hundreds of megabytes for the rest of the session.
+    _snapshotByteBudget: 96 * 1024 * 1024,
+    _snapshotThumbnail() {
+        try {
+            const edge = Math.max(1, this.canvasW, this.canvasH);
+            const captured = this._captureExportRaster({
+                format:'png',
+                scale:Math.min(1, 160 / edge),
+                transparent:false,
+                matte:'#0d1117'
+            });
+            return captured.dataUrl;
+        } catch (error) {
+            console.warn('Snapshot thumbnail failed:', error.message);
+            return null;
+        }
+    },
+    _snapshotBytes() {
+        const of = list => list.reduce((total, entry) => total
+            + (entry.snapshot?.length || 0)
+            + (entry.entries || []).reduce((sum, step) => sum + (step.snapshot?.length || 0), 0), 0);
+        return of(this._snapshots) + of(this._historyBranches);
+    },
+    _enforceSnapshotBudget() {
+        let dropped = 0;
+        while (this._historyBranches.length > this._maxHistoryBranches) { this._historyBranches.shift(); dropped += 1; }
+        while (this._snapshots.length > this._maxSnapshots) { this._snapshots.shift(); dropped += 1; }
+        // Automatic branches go first: the user asked for the named ones.
+        while (this._snapshotBytes() > this._snapshotByteBudget && this._historyBranches.length) {
+            this._historyBranches.shift();
+            dropped += 1;
+        }
+        while (this._snapshotBytes() > this._snapshotByteBudget && this._snapshots.length > 1) {
+            this._snapshots.shift();
+            dropped += 1;
+        }
+        return dropped;
+    },
+    _archiveHistoryBranch(entries, reason = '') {
+        const steps = (entries || []).filter(entry => entry?.snapshot);
+        if (!steps.length) return null;
+        const branch = {
+            id:`branch-${++this._snapshotSequence}`,
+            name:`${steps.length} step${steps.length === 1 ? '' : 's'} after "${this._safeText(this._lastAction || 'start', 40)}"`,
+            reason:this._safeText(reason, 60),
+            createdAt:Date.now(),
+            entries:steps,
+            snapshot:steps.at(-1).snapshot,
+            tipLabel:steps.at(-1).action
+        };
+        this._historyBranches.push(branch);
+        this._enforceSnapshotBudget();
+        return branch;
+    },
+    nameCurrentState(name) {
+        const label = this._safeText(String(name || '').trim(), 80);
+        if (!label) { this.toast(this._t('Give the snapshot a name'), 'info'); return null; }
+        const snapshot = JSON.stringify(this._captureDocumentState());
+        const entry = {
+            id:`snapshot-${++this._snapshotSequence}`,
+            name:label,
+            createdAt:Date.now(),
+            action:this._lastAction || this._historyBaseLabel,
+            thumbnail:this._snapshotThumbnail(),
+            snapshot
+        };
+        this._snapshots.push(entry);
+        const dropped = this._enforceSnapshotBudget();
+        this.toast(dropped
+            ? `Saved snapshot "${label}"; ${dropped} older entr${dropped === 1 ? 'y was' : 'ies were'} released to stay within the memory budget`
+            : `Saved snapshot "${label}"`, 'success');
+        return entry;
+    },
+    renameSnapshot(id, name) {
+        const entry = this._snapshots.find(item => item.id === id);
+        const label = this._safeText(String(name || '').trim(), 80);
+        if (!entry || !label) return false;
+        entry.name = label;
+        return true;
+    },
+    deleteSnapshot(id) {
+        const before = this._snapshots.length + this._historyBranches.length;
+        this._snapshots = this._snapshots.filter(item => item.id !== id);
+        this._historyBranches = this._historyBranches.filter(item => item.id !== id);
+        return this._snapshots.length + this._historyBranches.length < before;
+    },
+    _findSnapshot(id) {
+        return this._snapshots.find(item => item.id === id)
+            || this._historyBranches.find(item => item.id === id)
+            || null;
+    },
+    // Restore looks at a state. Branch continues from it, and the line being
+    // left behind is archived first so it stays reachable.
+    async restoreSnapshot(id, { branch = false } = {}) {
+        const entry = this._findSnapshot(id);
+        if (!entry) { this.toast(this._t('That snapshot is no longer available'), 'info'); return false; }
+        if (branch) {
+            this._archiveHistoryBranch(this.history.slice(this.historyIdx + 1), 'branch');
+            this.history = this.history.slice(0, this.historyIdx + 1);
+        }
+        try {
+            await this._loadDocumentState(JSON.parse(entry.snapshot), { trusted:true });
+        } catch (error) {
+            this.toast(`Snapshot restore failed: ${error.message}`, 'error');
+            return false;
+        }
+        this._pushHistoryEntry(branch ? `Branch from "${entry.name}"` : `Restore "${entry.name}"`, entry.snapshot, { markDirty:true });
+        this.toast(branch ? `Branched from "${entry.name}"` : `Restored "${entry.name}"`, 'success');
+        return true;
+    },
+    _formatSnapshotAge(timestamp) {
+        const seconds = Math.max(0, Math.round((Date.now() - Number(timestamp || 0)) / 1000));
+        if (seconds < 60) return `${seconds}s ago`;
+        if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+        return `${Math.round(seconds / 3600)}h ago`;
+    },
+    promptNameCurrentState() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `<div class="modal"><h3>Name This State</h3>
+            <p class="offline-manager-intro">Snapshots are kept for this session and are not limited by the undo step count.</p>
+            <div class="modal-row"><label>Name</label><input id="snap-name" type="text" maxlength="80" value="${this._safeText(this._lastAction || 'Snapshot', 60)}"></div>
+            <div class="modal-btns"><button class="btn" data-modal-close>Cancel</button>
+            <button class="btn btn-primary" data-modal-action>Save</button></div></div>`;
+        overlay.querySelector('[data-modal-action]').addEventListener('click', () => {
+            const name = overlay.querySelector('#snap-name').value;
+            overlay.remove();
+            this.nameCurrentState(name);
+        });
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => { overlay.classList.add('show'); overlay.querySelector('#snap-name')?.select(); });
+        return overlay;
+    },
+    showSnapshotManager() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal offline-manager';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'snapshot-manager-title');
+        const title = document.createElement('h3');
+        title.id = 'snapshot-manager-title';
+        title.textContent = this._t('Snapshots & Branches');
+        const intro = document.createElement('p');
+        intro.className = 'offline-manager-intro';
+        intro.textContent = this._t('Named states you kept, and every line of work an edit-after-undo moved aside. Both are held for this session only.');
+        modal.append(title, intro);
+
+        const render = () => {
+            [...modal.querySelectorAll('[data-snapshot-section]')].forEach(node => node.remove());
+            const section = (heading, entries, kind) => {
+                const wrap = document.createElement('div');
+                wrap.dataset.snapshotSection = kind;
+                const label = document.createElement('h3');
+                label.textContent = heading;
+                label.style.marginBottom = '4px';
+                wrap.appendChild(label);
+                const list = document.createElement('div');
+                list.className = 'offline-model-list';
+                list.id = `snapshot-list-${kind}`;
+                if (!entries.length) {
+                    const empty = document.createElement('p');
+                    empty.className = 'offline-manager-note';
+                    empty.textContent = kind === 'named'
+                        ? this._t('No named states yet.')
+                        : this._t('No branches — nothing has been undone and then edited over.');
+                    list.appendChild(empty);
+                }
+                entries.slice().reverse().forEach(entry => {
+                    const row = document.createElement('div');
+                    row.className = 'offline-model';
+                    row.dataset.snapshotId = entry.id;
+                    if (entry.thumbnail) {
+                        const image = document.createElement('img');
+                        image.src = entry.thumbnail;
+                        image.alt = '';
+                        image.width = 48;
+                        image.style.cssText = 'width:48px;height:auto;border-radius:4px;border:1px solid var(--border)';
+                        row.appendChild(image);
+                    }
+                    const name = document.createElement('strong');
+                    name.textContent = entry.name;
+                    const meta = document.createElement('span');
+                    meta.textContent = `${entry.tipLabel || entry.action || ''} · ${this._formatSnapshotAge(entry.createdAt)}`;
+                    row.append(name, meta);
+                    const action = (text, handler) => {
+                        const button = document.createElement('button');
+                        button.className = 'btn';
+                        button.type = 'button';
+                        button.textContent = text;
+                        button.setAttribute('aria-label', `${text} ${entry.name}`);
+                        button.addEventListener('click', handler);
+                        row.appendChild(button);
+                        return button;
+                    };
+                    action(this._t('Restore'), async () => { await this.restoreSnapshot(entry.id); render(); });
+                    action(this._t('Branch'), async () => { await this.restoreSnapshot(entry.id, { branch:true }); render(); });
+                    action(this._t('Delete'), () => { this.deleteSnapshot(entry.id); render(); });
+                    list.appendChild(row);
+                });
+                wrap.appendChild(list);
+                return wrap;
+            };
+            const buttons = modal.querySelector('.modal-btns');
+            modal.insertBefore(section(this._t('Named states'), this._snapshots, 'named'), buttons);
+            modal.insertBefore(section(this._t('Branches'), this._historyBranches, 'branches'), buttons);
+        };
+
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-btns';
+        const name = document.createElement('button');
+        name.className = 'btn';
+        name.type = 'button';
+        name.textContent = this._t('Name This State');
+        name.addEventListener('click', () => { this.promptNameCurrentState(); });
+        const close = document.createElement('button');
+        close.className = 'btn btn-primary';
+        close.type = 'button';
+        close.textContent = this._t('Close');
+        close.dataset.modalClose = '';
+        close.dataset.modalCancel = '';
+        close.addEventListener('click', () => overlay.remove());
+        buttons.append(name, close);
+        modal.appendChild(buttons);
+        render();
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => { overlay.classList.add('show'); close.focus(); });
+        return overlay;
     },
 
     // ====================== ZOOM ======================
@@ -14996,6 +15246,8 @@ self.onmessage = async function(e) {
             {label:'AI Depth Map',cat:'AI',fn:()=>this.aiDepthMap()},
             {label:'AI Object Detection',cat:'AI',fn:()=>this.aiObjectDetect()},
             {label:'AI Segment Select',cat:'AI',fn:()=>this.activateSegmentSelect()},
+            {label:'Name This State...',cat:'Edit',fn:()=>this.promptNameCurrentState()},
+            {label:'Snapshots & Branches...',cat:'Edit',fn:()=>this.showSnapshotManager()},
             {label:'Trace to Vector...',cat:'Image',fn:()=>this.showTraceDialog()},
             {label:'Enlarge 2x (AI model)',cat:'Image',fn:()=>this.aiSuperResolve(2)},
             {label:'Enlarge 4x (AI model)',cat:'Image',fn:()=>this.aiSuperResolve(4)},

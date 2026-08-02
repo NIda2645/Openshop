@@ -35,6 +35,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Selection Operations** | Select All, Deselect, Reselect, Inverse, Grow, Similar, Modify (Expand, Contract, Feather, Border, Smooth) |
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |
 | **Undo/Redo** | 60-step versioned transaction history with named entries, exact destructive-edit rollback, and a visual history panel |
+| **Snapshots & Branches** | Name the current state and return to it later, outside the undo step limit; editing after an undo archives the abandoned line as a branch instead of deleting it. Session-scoped and memory-budgeted |
 | **Free Transform** | Resize, rotate, skew, perspective, and warp on any object |
 | **Text Styling** | Bold, italic, underline, overline, and line-through, with the decoration line's own colour and thickness rather than the fill's |
 | **Trace to Vector** | Converts a raster layer into editable paths with colour-count, smoothing, and detail controls; the source layer is hidden, not destroyed |

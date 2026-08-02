@@ -1676,6 +1676,86 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('names states and keeps the branch an edit-after-undo used to delete @cross-browser', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const result = await page.evaluate(async () => {
+    const add = (fill, name) => {
+      const rect = new fabric.Rect({ left: 5, top: 5, width: 40, height: 40, fill, name });
+      OS.canvas.add(rect);
+      OS.layers[OS.activeLayerIdx].objects.push(rect);
+      OS.saveHistory(name);
+      return rect;
+    };
+    const names = () => OS.canvas.getObjects().map(object => object.name).filter(name => name && name !== '__boundary__');
+
+    add('#ff0000', 'Red');
+    const named = OS.nameCurrentState('  After red  ');
+    add('#00ff00', 'Green');
+    add('#0000ff', 'Blue');
+    const beforeUndo = names();
+
+    // Step back over Blue and Green, then edit — the old line would vanish here.
+    await OS.undo();
+    await OS.undo();
+    const atRed = names();
+    add('#ffff00', 'Yellow');
+    const afterBranchingEdit = names();
+
+    const branch = OS._historyBranches.at(-1);
+    await OS.restoreSnapshot(branch.id);
+    const restoredBranch = names();
+
+    // Step back so branching genuinely leaves a line behind to archive.
+    await OS.undo();
+    const branchesBeforeBranching = OS._historyBranches.length;
+    await OS.restoreSnapshot(named.id, { branch: true });
+    const restoredNamed = names();
+
+    const branchesAfter = OS._historyBranches.length;
+    const budget = (() => {
+      OS._maxHistoryBranches = 1;
+      OS._maxSnapshots = 1;
+      const dropped = OS._enforceSnapshotBudget();
+      return { dropped, branches: OS._historyBranches.length, snapshots: OS._snapshots.length };
+    })();
+
+    return {
+      namedName: named.name,
+      hasThumbnail: typeof named.thumbnail === 'string' && named.thumbnail.startsWith('data:image/png'),
+      beforeUndo,
+      atRed,
+      afterBranchingEdit,
+      branchName: branch.name,
+      branchTip: branch.tipLabel,
+      restoredBranch,
+      restoredNamed,
+      // Branching from a named state archives the line it left behind too.
+      branchesBeforeBranching,
+      branchesAfter,
+      budget,
+      missing: await OS.restoreSnapshot('snapshot-does-not-exist')
+    };
+  });
+
+  expect(result.namedName).toBe('After red');
+  expect(result.hasThumbnail).toBe(true);
+  expect(result.beforeUndo).toEqual(['Red', 'Green', 'Blue']);
+  expect(result.atRed).toEqual(['Red']);
+  expect(result.afterBranchingEdit).toEqual(['Red', 'Yellow']);
+  // The two steps that used to be silently discarded are still reachable.
+  expect(result.branchName).toContain('2 steps');
+  expect(result.branchTip).toBe('Blue');
+  expect(result.restoredBranch).toEqual(['Red', 'Green', 'Blue']);
+  expect(result.restoredNamed).toEqual(['Red']);
+  expect(result.branchesAfter).toBe(result.branchesBeforeBranching + 1);
+  expect(result.budget.branches).toBe(1);
+  expect(result.budget.snapshots).toBe(1);
+  expect(result.budget.dropped).toBeGreaterThan(0);
+  expect(result.missing).toBe(false);
+});
+
 test('traces a raster layer into editable paths that survive SVG and PDF export @cross-browser', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
