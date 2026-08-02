@@ -111,14 +111,15 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 
 Hosted deployments should publish `plugin-sandbox.html` and `plugin-sandbox.js` beside
 `index.html`. A plugin is immutable JavaScript source, never a remote URL, and runs in an
-opaque-origin `iframe` with `sandbox="allow-scripts"`. Its explicit capabilities are
-`commands`, `document:read`, `selection:read`, and `ui:toast`:
+opaque-origin `iframe` with `sandbox="allow-scripts"`. Plugins require a stable manifest
+with an id, semver-like version, SHA-256 source hash, minimum API version, and explicit
+capabilities. The first load must go through `showPluginConsent`, which displays the
+manifest and persists the exact id/version/hash approval; changed hashes and versions need
+new approval. Its explicit capabilities are `commands`, `document:read`, `selection:read`,
+and `ui:toast`:
 
 ```js
-const plugin = OS.registerPlugin({
-  name: 'Example command',
-  capabilities: ['commands', 'document:read'],
-  source: `
+const source = `
     const host = globalThis.__openShopPluginHost;
     window.addEventListener('message', event => {
       const message = event.data;
@@ -135,15 +136,22 @@ const plugin = OS.registerPlugin({
       pluginId: host.pluginId, token: host.token, requestId: 'register',
       method: 'register-command', args: { label: 'Example command', category: 'Plugin' }
     }, '*');
-  `
-});
+`;
+const manifest = {
+  id: 'com.example.command', version: '1.0.0', name: 'Example command',
+  sourceHash: await OS._pluginSourceHash(source),
+  capabilities: ['commands', 'document:read'], minApiVersion: 1
+};
+const plugin = await OS.showPluginConsent({ manifest, source });
 await plugin.ready;
 plugin.dispose();
 ```
 
 The host validates the protocol version, opaque frame source, token, capability for every
-request, and bounded labels/commands. `dispose()` removes the frame, listener, commands,
-and pending requests.
+request, source hash, and bounded labels/commands. Network, file, DOM, and document-write
+capabilities are not available. `listPluginConsents()` and `removePluginConsent(id)` expose
+the persisted allow list; `dispose()` removes the frame, listener, commands, and pending
+requests without revoking consent.
 
 ## Keyboard Shortcuts
 

@@ -7203,11 +7203,11 @@ test('registers a sandbox plugin and lets it contribute a command', async ({ pag
 
   const result = await page.evaluate(async () => {
     const source = `const host = globalThis.__openShopPluginHost;
-      window.addEventListener('message', event => {
-        const message = event.data;
-        if (message?.type === 'openshop:command-invoked') window.parent.postMessage({
+      window.addEventListener('message', function(event) {
+        const data = event.data;
+        if (data && data.type === 'openshop:command-invoked') window.parent.postMessage({
           type: 'openshop:plugin-result', protocolVersion: host.protocolVersion, pluginId: host.pluginId, token: host.token,
-          requestId: message.requestId, ok: true, result: 'ran'
+          requestId: data.requestId, ok: true, result: 'ran'
         }, '*');
       });
       setTimeout(() => window.parent.postMessage({
@@ -7215,17 +7215,24 @@ test('registers a sandbox plugin and lets it contribute a command', async ({ pag
         requestId: 'register-probe', method: 'register-command', args: { label: 'Probe Command', category: 'Plugin' }
       }, '*'), 0);`;
     const rejectedInit = OS.registerPlugin({ name: 'Unsafe', init() {} });
-    const handle = OS.registerPlugin({ name: 'Probe', source, capabilities: ['commands'] });
+    const manifest = {
+      id: 'com.example.probe', version: '1.0.0', name: 'Probe',
+      sourceHash: await OS._pluginSourceHash(source), capabilities: ['commands'], minApiVersion: 1
+    };
+    const rejectedConsent = OS.registerPlugin({ manifest, source });
+    const handle = OS.registerPlugin({ manifest, source }, { consent:true });
     await handle.ready;
     await new Promise(resolve => setTimeout(resolve, 20));
     const record = OS._pluginRecords.get(handle.id);
     const command = OS._getCommands().find(entry => entry.label === 'Probe Command');
     const commandResult = await command.fn();
+    const registered = OS.plugins.some(plugin => plugin.name === 'Probe');
     const disposed = handle.dispose();
     return {
       rejectedInit,
+      rejectedConsent,
       sandbox: record.iframe.getAttribute('sandbox'),
-      registered: OS.plugins.some(plugin => plugin.name === 'Probe'),
+      registered,
       commandFound: Boolean(command),
       commandResult,
       disposed,
@@ -7234,6 +7241,7 @@ test('registers a sandbox plugin and lets it contribute a command', async ({ pag
   });
 
   expect(result.rejectedInit).toBeUndefined();
+  expect(result.rejectedConsent).toBeUndefined();
   expect(result.sandbox).toBe('allow-scripts');
   expect(result.registered).toBe(true);
   expect(result.commandFound).toBe(true);

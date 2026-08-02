@@ -64,13 +64,6 @@ testing gates.
 
 ### P2 — Performance, mobile, extensibility, and workflow depth
 
-- [ ] P2 — Give plugins an installable manifest, consent, and provenance contract
-  Why: The sandbox API has capability and token checks, but runtime source registration has no stable identity, persistence, provenance, review screen, or lifecycle contract.
-  Evidence: `index.html` plugin registry and `plugin-sandbox.js`; [Penpot plugin/API model](https://github.com/penpot/penpot) and [self-hosting/privacy model](https://penpot.app/self-host); existing sandbox-security tests.
-  Touches: `index.html`, `plugin-sandbox.js`, plugin tests, `README.md`.
-  Acceptance: A manifest defines stable id/version/name/source hash/capabilities/minimum API; explicit consent precedes load; allow/remove state persists; incompatible or changed-hash plugins are rejected; network, file, DOM, and document-write access remain deny-by-default; disposal removes commands and listeners.
-  Complexity: L
-
 - [ ] P2 — Make batch processing cancellable, worker-friendly, and format-honest
   Why: The batch path caps files and bytes but runs ZIP/output work on the main thread, exposes no user cancel/progress surface, and accepts only raster inputs despite broader editor import support.
   Evidence: `index.html` batch processor, `README.md` format matrix; [Filerobot editor export/history features](https://github.com/scaleflex/filerobot-image-editor); [WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API) and [OffscreenCanvas](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas/getContext).

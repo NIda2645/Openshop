@@ -13,6 +13,7 @@ All notable changes to Openshop will be documented in this file.
 - Add a package-owned release metadata source and consistency gate for project versions, hosted shell revisions, offline test fixtures, and documented browser/file/hosted support boundaries.
 - Add a deterministic 4K/8K/12MP performance-budget runner covering editing, filters, tiled history, export boundaries, batch, cancellation, and stale-result probes; the release gate now runs it.
 - Add a cross-engine mobile capability matrix with compact-workspace overflow, two-finger pinch, safe-area, orientation, visual-viewport, and pressure-variance coverage; physical-device support remains explicitly unclaimed.
+- Require sandboxed plugins to declare stable manifests, verify source SHA-256 provenance, obtain explicit consent, persist exact-version approvals, and retain deny-by-default capability boundaries.
 
 ## [v0.28.0] - 2026-08-02
 

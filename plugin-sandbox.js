@@ -11,6 +11,8 @@
         if (event.source !== window.parent || started) return;
         const message = event.data;
         if (!message || message.type !== 'openshop:host-init' || message.protocolVersion !== 1 || typeof message.source !== 'string') return;
+        const manifest = message.manifest;
+        if (!manifest || typeof manifest !== 'object' || manifest.id !== message.pluginId || manifest.minApiVersion > message.protocolVersion) return;
         started = true;
         if (new Blob([message.source]).size > MAX_SOURCE_BYTES) {
             window.parent.postMessage({
@@ -26,6 +28,7 @@
             protocolVersion:message.protocolVersion,
             pluginId:message.pluginId,
             token:message.token,
+            manifest:Object.freeze({ ...manifest }),
             capabilities:Object.freeze([...(message.capabilities || [])]),
             api:Object.freeze({ ...(message.api || {}) })
         });

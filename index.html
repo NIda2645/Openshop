@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-N4+sKIlrEAjKO++CEcyBd0mKkMvhVXRd2LyIkRH7/Tw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-8FlVk6P3pJcAlf6De4LZnOpVaGL/A9tqm6TGFk63eSA=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4332,6 +4332,8 @@ const OS = {
     _cropRegion: null,
     plugins: [],
     _pluginRecords: new Map(),
+    _pluginConsents: null,
+    _pluginConsentStorageKey: 'openshop.plugin-consents.v1',
     _pluginProtocolVersion: 1,
     _pluginMaxSourceBytes: 512 * 1024,
     _pluginMaxCommands: 32,
@@ -23695,6 +23697,98 @@ self.onmessage = async function(e) {
         if (unknown) throw new Error(`Unsupported plugin capability: ${unknown}`);
         return capabilities;
     },
+    async _pluginSourceHash(source) {
+        if (!globalThis.crypto?.subtle || typeof TextEncoder !== 'function') throw new Error('Plugin provenance requires Web Crypto');
+        const bytes = new TextEncoder().encode(String(source));
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        return `sha256:${[...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+    },
+    _pluginManifestFor(plugin) {
+        const manifest = plugin?.manifest;
+        if (!manifest || typeof manifest !== 'object') throw new Error('manifest is required');
+        const id = this._safeText(manifest.id, 80).toLowerCase();
+        if (!/^[a-z0-9][a-z0-9._-]{2,79}$/.test(id)) throw new Error('manifest id must be a stable reverse-domain or package id');
+        const version = this._safeText(manifest.version, 40);
+        if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) throw new Error('manifest version must be semver-like');
+        const name = this._safeText(manifest.name, 80);
+        if (!name) throw new Error('manifest name is required');
+        const sourceHash = this._safeText(manifest.sourceHash, 80).toLowerCase();
+        if (!/^sha256:[0-9a-f]{64}$/.test(sourceHash)) throw new Error('manifest sourceHash must be a SHA-256 digest');
+        const minApiVersion = Number(manifest.minApiVersion ?? manifest.apiVersion ?? 1);
+        if (!Number.isInteger(minApiVersion) || minApiVersion < 1 || minApiVersion > this._pluginProtocolVersion) {
+            throw new Error(`plugin requires unsupported API version ${this._safeText(manifest.minApiVersion ?? manifest.apiVersion, 20)}`);
+        }
+        return Object.freeze({
+            id,
+            version,
+            name,
+            sourceHash,
+            capabilities:Object.freeze(this._pluginCapabilitiesFor(manifest.capabilities)),
+            minApiVersion
+        });
+    },
+    _pluginLoadConsents() {
+        if (this._pluginConsents instanceof Map) return this._pluginConsents;
+        const consents = new Map();
+        try {
+            const stored = JSON.parse(localStorage.getItem(this._pluginConsentStorageKey) || '{}');
+            if (stored && typeof stored === 'object') {
+                Object.entries(stored).slice(0, 100).forEach(([id, value]) => {
+                    if (value && typeof value === 'object' && typeof value.sourceHash === 'string' && typeof value.version === 'string') {
+                        consents.set(id, {
+                            id:this._safeText(value.id || id, 80),
+                            version:this._safeText(value.version, 40),
+                            name:this._safeText(value.name, 80),
+                            sourceHash:this._safeText(value.sourceHash, 80).toLowerCase(),
+                            capabilities:Array.isArray(value.capabilities) ? value.capabilities.slice(0, this._pluginCapabilities.length) : [],
+                            allowedAt:this._safeText(value.allowedAt, 40)
+                        });
+                    }
+                });
+            }
+        } catch (error) { /* consent storage is optional and untrusted */ }
+        this._pluginConsents = consents;
+        return consents;
+    },
+    _pluginPersistConsents() {
+        const serializable = {};
+        this._pluginLoadConsents().forEach((value, id) => { serializable[id] = value; });
+        try { localStorage.setItem(this._pluginConsentStorageKey, JSON.stringify(serializable)); } catch (error) { /* storage is optional */ }
+    },
+    _pluginConsentStatus(manifest) {
+        const existing = this._pluginLoadConsents().get(manifest.id) || null;
+        if (!existing) return { allowed:false, changed:false, record:null };
+        const same = existing.version === manifest.version && existing.sourceHash === manifest.sourceHash;
+        return { allowed:same, changed:!same, record:existing };
+    },
+    _pluginGrantConsent(manifest) {
+        this._pluginLoadConsents().set(manifest.id, {
+            id:manifest.id,
+            version:manifest.version,
+            name:manifest.name,
+            sourceHash:manifest.sourceHash,
+            capabilities:[...manifest.capabilities],
+            allowedAt:new Date().toISOString()
+        });
+        this._pluginPersistConsents();
+        return true;
+    },
+    listPluginConsents() {
+        return [...this._pluginLoadConsents().values()].map(value => ({ ...value, capabilities:[...value.capabilities] }));
+    },
+    removePluginConsent(pluginOrId) {
+        const id = typeof pluginOrId === 'string' ? pluginOrId : pluginOrId?.manifest?.id || pluginOrId?.id;
+        if (!id) return false;
+        const removed = this._pluginLoadConsents().delete(id);
+        [...this._pluginRecords.values()].filter(record => record.manifest.id === id).forEach(record => this.disposePlugin(record.id));
+        if (removed) this._pluginPersistConsents();
+        return removed;
+    },
+    async _pluginVerifySource(record) {
+        const actual = await this._pluginSourceHash(record.source);
+        if (actual !== record.manifest.sourceHash) throw new Error('Plugin source hash does not match its manifest');
+        return actual;
+    },
     _pluginPost(record, message) {
         if (record.disposed || !record.iframe?.contentWindow) return false;
         try {
@@ -23840,23 +23934,84 @@ self.onmessage = async function(e) {
             }
         });
     },
-    registerPlugin(plugin) {
+    showPluginConsent(plugin) {
+        let manifest;
+        try { manifest = this._pluginManifestFor(plugin); }
+        catch (error) { this._pluginError(error.message); return Promise.resolve(undefined); }
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        const title = document.createElement('h3');
+        title.textContent = `Allow plugin: ${manifest.name}`;
+        const explanation = document.createElement('p');
+        explanation.textContent = `This plugin will run in an isolated script sandbox. OpenShop grants only the capabilities listed below; network, file, DOM, and document-write access stay unavailable.`;
+        const details = document.createElement('dl');
+        details.className = 'offline-details';
+        [['Plugin ID', manifest.id], ['Version', manifest.version], ['Source SHA-256', manifest.sourceHash], ['Minimum API', String(manifest.minApiVersion)]].forEach(([label, value]) => {
+            const term = document.createElement('dt'); term.textContent = label;
+            const description = document.createElement('dd'); description.textContent = value;
+            details.append(term, description);
+        });
+        const capabilities = document.createElement('p');
+        capabilities.textContent = `Requested capabilities: ${manifest.capabilities.length ? manifest.capabilities.join(', ') : 'none'}`;
+        const buttons = document.createElement('div'); buttons.className = 'modal-btns';
+        const deny = document.createElement('button'); deny.className = 'btn'; deny.textContent = 'Deny';
+        const allow = document.createElement('button'); allow.className = 'btn btn-primary'; allow.textContent = 'Allow and load';
+        buttons.append(deny, allow); modal.append(title, explanation, details, capabilities, buttons); overlay.appendChild(modal); document.body.appendChild(overlay);
+        const finish = value => { overlay.remove(); resolve(value); };
+        let resolve;
+        const result = new Promise(done => { resolve = done; });
+        deny.addEventListener('click', () => finish(undefined));
+        allow.addEventListener('click', () => {
+            this._pluginGrantConsent(manifest);
+            finish(this.registerPlugin(plugin, { consent:true }));
+        });
+        requestAnimationFrame(() => overlay.classList.add('show'));
+        return result;
+    },
+    _pluginVerifyAndStart(record) {
+        this._pluginVerifySource(record).then(() => {
+            if (record.disposed) return;
+            record.hashVerified = true;
+            this._pluginPost(record, {
+                type:'openshop:host-init',
+                source:record.source,
+                manifest:record.manifest,
+                capabilities:record.capabilities,
+                api:{ version:this._pluginProtocolVersion, methods:['register-command','get-document','get-selection','toast'] }
+            });
+        }).catch(error => {
+            this._pluginRejectReady(record, error);
+            this.disposePlugin(record.id);
+        });
+    },
+    registerPlugin(plugin, { consent = false } = {}) {
         if (!plugin || typeof plugin !== 'object') return this._pluginError('registration requires an object');
         if (typeof plugin.init === 'function') return this._pluginError('direct init hooks are not allowed; provide immutable source code');
-        const name = this._safeText(plugin.name, 80);
-        if (!name) return this._pluginError('name is required');
-        if (this.plugins.some(existing => existing.name === name)) return this._pluginError(`a plugin named ${name} is already registered`);
         if (typeof plugin.source !== 'string' || !plugin.source.trim()) return this._pluginError('source must be a non-empty JavaScript string');
+        let manifest;
+        try { manifest = this._pluginManifestFor(plugin); }
+        catch (error) { return this._pluginError(error.message); }
+        if (this._pluginRecords.has(manifest.id)) return this._pluginError(`plugin id ${manifest.id} is already registered`);
         let capabilities;
-        try { capabilities = this._pluginCapabilitiesFor(plugin.capabilities); }
+        try { capabilities = this._pluginCapabilitiesFor(manifest.capabilities); }
         catch (error) { return this._pluginError(error.message); }
         const source = `${plugin.source}`;
         if (new Blob([source]).size > this._pluginMaxSourceBytes) return this._pluginError('source exceeds the 512 KiB limit');
         if (typeof Blob === 'undefined') return this._pluginError('sandboxed plugins require Blob support');
+        const consentStatus = this._pluginConsentStatus(manifest);
+        if (!consent && !consentStatus.allowed) {
+            return this._pluginError(consentStatus.changed
+                ? 'plugin source or version changed; explicit consent is required again'
+                : 'explicit plugin consent is required before loading');
+        }
+        if (consent) this._pluginGrantConsent(manifest);
 
         const record = {
-            id:`plugin-${++this._pluginRequestSequence}`,
-            name,
+            id:manifest.id,
+            name:manifest.name,
+            manifest,
             capabilities:Object.freeze(capabilities),
             source,
             token:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -23870,6 +24025,7 @@ self.onmessage = async function(e) {
             readyResolve:null,
             readyReject:null,
             readyTimeout:null,
+            hashVerified:false,
             onMessage:null
         };
         const iframe = document.createElement('iframe');
@@ -23887,6 +24043,8 @@ self.onmessage = async function(e) {
         const handle = Object.freeze({
             id:record.id,
             name:record.name,
+            manifest:record.manifest,
+            sourceHash:record.manifest.sourceHash,
             capabilities:record.capabilities,
             protocolVersion:this._pluginProtocolVersion,
             ready,
@@ -23895,12 +24053,7 @@ self.onmessage = async function(e) {
         record.handle = handle;
         this._pluginRecords.set(record.id, record);
         this.plugins.push(handle);
-        iframe.addEventListener('load', () => this._pluginPost(record, {
-            type:'openshop:host-init',
-            source:record.source,
-            capabilities:record.capabilities,
-            api:{ version:this._pluginProtocolVersion, methods:['register-command','get-document','get-selection','toast'] }
-        }), { once:true });
+        iframe.addEventListener('load', () => this._pluginVerifyAndStart(record), { once:true });
         iframe.addEventListener('error', () => this._pluginRejectReady(record, new Error('Plugin sandbox failed to load')), { once:true });
         iframe.src = record.helperUrl;
         (document.body || document.documentElement).appendChild(iframe);
@@ -23911,6 +24064,8 @@ self.onmessage = async function(e) {
         return [...this._pluginRecords.values()].map(record => ({
             id:record.id,
             name:record.name,
+            manifest:{ ...record.manifest, capabilities:[...record.manifest.capabilities] },
+            sourceHash:record.manifest.sourceHash,
             capabilities:[...record.capabilities],
             protocolVersion:this._pluginProtocolVersion,
             ready:record.readySettled && !record.disposed

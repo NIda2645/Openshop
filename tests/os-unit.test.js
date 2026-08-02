@@ -347,7 +347,7 @@ describe('OpenShop core object', () => {
     expect(OS._collab.currentTuple).toEqual({ revision:4, peerId:'peer-local123' });
   });
 
-  it('registers only capability-scoped sandbox plugins and disposes their resources', () => {
+  it('requires manifest consent and provenance before loading a sandbox plugin', async () => {
     const OS = loadOpenShop();
     quietUiMethods(OS);
 
@@ -355,12 +355,18 @@ describe('OpenShop core object', () => {
     expect(rejected).toBeUndefined();
     expect(OS.plugins).toHaveLength(0);
 
-    const handle = OS.registerPlugin({
-      name: 'Sandbox Probe',
-      source: 'window.addEventListener("message", () => {});',
-      capabilities: ['commands', 'document:read']
-    });
+    const source = 'window.addEventListener("message", () => {});';
+    const manifest = {
+      id: 'com.example.sandbox-probe', version: '1.0.0', name: 'Sandbox Probe',
+      sourceHash: await OS._pluginSourceHash(source),
+      capabilities: ['commands', 'document:read'], minApiVersion: 1
+    };
+    expect(OS.registerPlugin({ manifest, source })).toBeUndefined();
+    expect(OS.plugins).toHaveLength(0);
+
+    const handle = OS.registerPlugin({ manifest, source }, { consent:true });
     expect(handle).toMatchObject({ name: 'Sandbox Probe', protocolVersion: 1 });
+    expect(handle.manifest).toMatchObject({ id:manifest.id, version:'1.0.0', sourceHash:manifest.sourceHash });
     const record = OS._pluginRecords.get(handle.id);
     expect(record.iframe.getAttribute('sandbox')).toBe('allow-scripts');
     expect(record.capabilities).toEqual(['commands', 'document:read']);
@@ -371,6 +377,13 @@ describe('OpenShop core object', () => {
     expect(OS.disposePlugin(handle)).toBe(true);
     expect(OS.plugins).toHaveLength(0);
     expect(OS.listPlugins()).toEqual([]);
+    expect(OS.listPluginConsents()).toHaveLength(1);
+    const changedManifest = { ...manifest, sourceHash:`sha256:${'0'.repeat(64)}` };
+    expect(OS.registerPlugin({ manifest:changedManifest, source })).toBeUndefined();
+    expect(OS._pluginRecords.size).toBe(0);
+    expect(OS.registerPlugin({ manifest:{ ...manifest, minApiVersion:2 }, source }, { consent:true })).toBeUndefined();
+    expect(OS.removePluginConsent(manifest.id)).toBe(true);
+    expect(OS.listPluginConsents()).toEqual([]);
   });
 
   it('exports PNG using a sanitized download name', () => {
