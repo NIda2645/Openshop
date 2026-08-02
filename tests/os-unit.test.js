@@ -198,6 +198,32 @@ describe('OpenShop core object', () => {
     expect(() => OS._makeCommand('_privateMethod', {})).toThrow('Unknown command');
   });
 
+  it('registers only capability-scoped sandbox plugins and disposes their resources', () => {
+    const OS = loadOpenShop();
+    quietUiMethods(OS);
+
+    const rejected = OS.registerPlugin({ name: 'Unsafe', init() {} });
+    expect(rejected).toBeUndefined();
+    expect(OS.plugins).toHaveLength(0);
+
+    const handle = OS.registerPlugin({
+      name: 'Sandbox Probe',
+      source: 'window.addEventListener("message", () => {});',
+      capabilities: ['commands', 'document:read']
+    });
+    expect(handle).toMatchObject({ name: 'Sandbox Probe', protocolVersion: 1 });
+    const record = OS._pluginRecords.get(handle.id);
+    expect(record.iframe.getAttribute('sandbox')).toBe('allow-scripts');
+    expect(record.capabilities).toEqual(['commands', 'document:read']);
+    expect(() => OS._handlePluginRequest(record, {
+      requestId: 'denied', method: 'get-selection', args: {}
+    })).toThrow('Capability not granted');
+
+    expect(OS.disposePlugin(handle)).toBe(true);
+    expect(OS.plugins).toHaveLength(0);
+    expect(OS.listPlugins()).toEqual([]);
+  });
+
   it('exports PNG using a sanitized download name', () => {
     const OS = loadOpenShop();
     const boundary = {

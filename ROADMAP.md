@@ -26,9 +26,6 @@ testing gates.
 - **Photopea has shipped nothing since 5.6 (Sep 2024)** — verified 2026-07-31, blog dormant ~22 months. The free incumbent has stalled; its users' loudest complaints (ads eating canvas width, anti-adblock lockout, COPPA-driven school bans) are all things OpenShop already avoids by construction and never advertises.
 
 ## Nice-to-Haves
-- Command palette plugin API (third-party scripts registered at runtime)
-  Research note (2026-07-29): Capability-scoped registration, lifecycle cleanup, and immutable code origins are prerequisites; do not accept arbitrary remote URLs.
-  Research note (2026-07-31): **ShadowRealm is dead for this purpose** — TC39 Stage 2.7 with no shipping implementation. Of the four real host models (VS Code multi-process, Obsidian's no-isolation, Figma's QuickJS-in-WASM, Photopea's cross-origin iframe), only **sandboxed iframe + `postMessage` with a versioned command API** fits a no-build single file under strict CSP; it needs `frame-src blob:` added. QuickJS-wasm is the only true in-page isolate but costs 300–800 KB against an 899 KB file. Note the shipped `registerPlugin()` (`index.html:16287`) is currently a façade: it validates `name`/`init`, pushes, and calls `plugin.init(this)` with no sandbox, no hook surface and no UI to load anything.
 - Color management with embedded ICC profiles on export
   Research note (2026-07-31): Confirmed absent — exported PSDs carry no `0x040F` image-resource block, so every file is untagged sRGB by assumption. `lcms-wasm` (MIT, ~550 KB) is the only library that performs real ICC→ICC pixel transforms; the `icc` npm package parses headers only. Adobe publicly states Photoshop Web dropped CMYK because "browsers can't do it accurately", so shipping even **soft-proofing** would be a headline. Do not attempt print-accurate separation.
 - Batch processor (drop a folder, apply an action recipe, zip the output)

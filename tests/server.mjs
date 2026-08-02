@@ -13,6 +13,8 @@ const allowedControlOrigins = new Set([origin, `http://localhost:${port}`]);
 const publicFiles = new Map([
   ['/', 'index.html'],
   ['/index.html', 'index.html'],
+  ['/plugin-sandbox.html', 'plugin-sandbox.html'],
+  ['/plugin-sandbox.js', 'plugin-sandbox.js'],
   ['/sw.js', 'sw.js'],
   ['/manifest.webmanifest', 'manifest.webmanifest'],
   ['/icon-192.png', 'icon-192.png'],

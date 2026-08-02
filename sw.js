@@ -35,6 +35,8 @@ const STATE_URL = new URL('./__openshop_offline_state__', self.registration.scop
 const REQUIRED_ASSETS = [
     './',
     './index.html',
+    './plugin-sandbox.html',
+    './plugin-sandbox.js',
     './manifest.webmanifest',
     './icon-192.png',
     './icon-512.png',

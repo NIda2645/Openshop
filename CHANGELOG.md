@@ -16,6 +16,7 @@ All notable changes to Openshop will be documented in this file.
 - Add text-on-path groups with editable source text plus ligature, small-caps, and tabular-number feature controls.
 - Run parity-verified invert filters through a WebGPU compute worker, fall back to WebGL2 on OffscreenCanvas, and retain the existing CPU worker as the final fallback; expose measured per-filter backend/FPS data for diagnostics.
 - Store raster undo changes as 64×64 dirty-tile deltas with reconstruction assertions available in debug mode, doubling the default history ring from 60 to 120 steps while retaining full snapshots for metadata and non-raster edits.
+- Replace the direct plugin `init(editor)` façade with an opaque-origin sandboxed iframe API. Plugins register immutable source strings with explicit capabilities, contribute versioned command-palette entries over `postMessage`, and can be disposed without leaving listeners, frames, or commands behind.
 
 ## [v0.27.0] - 2026-08-01
 

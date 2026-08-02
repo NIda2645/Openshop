@@ -86,6 +86,7 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 |---------|-------------|
 | **Precision Studio UI** | High-contrast dark workspace with a floating tool dock, structured inspector cards, responsive local-first launcher, and default, midnight, and OLED variants |
 | **Command Palette** | `Ctrl+K` to search and run any command |
+| **Sandboxed Plugin API** | Register immutable JavaScript source in an opaque-origin `iframe` with explicit `commands`, `document:read`, `selection:read`, and `ui:toast` capabilities; plugin commands use the versioned `postMessage` protocol and can be disposed cleanly |
 | **Action Recorder** | Records validated, versioned edit commands and replays mixed actions atomically; a failed step rolls back the whole action |
 | **Context Menus** | Right-click for contextual actions |
 | **Rulers & Guides** | Draggable guides with snapping and pixel grid at high zoom |
@@ -97,6 +98,44 @@ Heavy filters (Oil Paint, Tilt Shift, Unsharp Mask, Posterize, Threshold, Vignet
 | **Offline & Install** | The hosted HTTPS lane stages and verifies its complete core shell, supports install prompts, exposes cache/model state, and rolls back an update that cannot confirm startup; the one-file `file://` lane is explicitly network-first |
 | **Accessibility** | ARIA roles, keyboard navigation, focus indicators, reduced-motion support, hidden canvas-state mirror, and live status announcements |
 | **Save State** | The status bar and document title distinguish clean, unsaved, saving, saved, and failed writes; unload warnings follow actual dirty state |
+
+### Sandboxed Plugin API
+
+Hosted deployments should publish `plugin-sandbox.html` and `plugin-sandbox.js` beside
+`index.html`. A plugin is immutable JavaScript source, never a remote URL, and runs in an
+opaque-origin `iframe` with `sandbox="allow-scripts"`. Its explicit capabilities are
+`commands`, `document:read`, `selection:read`, and `ui:toast`:
+
+```js
+const plugin = OS.registerPlugin({
+  name: 'Example command',
+  capabilities: ['commands', 'document:read'],
+  source: `
+    const host = globalThis.__openShopPluginHost;
+    window.addEventListener('message', event => {
+      const message = event.data;
+      if (message?.type === 'openshop:command-invoked') {
+        parent.postMessage({
+          type: 'openshop:plugin-result', protocolVersion: host.protocolVersion,
+          pluginId: host.pluginId, token: host.token, requestId: message.requestId,
+          ok: true
+        }, '*');
+      }
+    });
+    parent.postMessage({
+      type: 'openshop:plugin-request', protocolVersion: host.protocolVersion,
+      pluginId: host.pluginId, token: host.token, requestId: 'register',
+      method: 'register-command', args: { label: 'Example command', category: 'Plugin' }
+    }, '*');
+  `
+});
+await plugin.ready;
+plugin.dispose();
+```
+
+The host validates the protocol version, opaque frame source, token, capability for every
+request, and bounded labels/commands. `dispose()` removes the frame, listener, commands,
+and pending requests.
 
 ## Keyboard Shortcuts
 
@@ -275,7 +314,7 @@ The portable `file://` lane enforces the policy embedded in `index.html`; becaus
 OpenShop has two explicit distribution contracts:
 
 - `index.html` opened from disk remains the portable one-file editor. Core libraries are pinned but CDN-hosted, so a cold launch and any uncached optional helper require a connection. Browsers do not allow this lane to register a service worker.
-- An HTTPS or localhost deployment that includes `sw.js`, `manifest.webmanifest`, `icon-192.png`, and `icon-512.png` stages the editor, manifest, icons, Fabric, ag-psd, and jsPDF as one verified shell. The status bar reports readiness. Once ready, the core editor reloads offline.
+- An HTTPS or localhost deployment that includes `sw.js`, `plugin-sandbox.html`, `plugin-sandbox.js`, `manifest.webmanifest`, `icon-192.png`, and `icon-512.png` stages the editor, plugin runtime, manifest, icons, Fabric, ag-psd, and jsPDF as one verified shell. The status bar reports readiness. Once ready, the core editor reloads offline.
 
 Hosted updates install into a separate cache and remain waiting until applied. The new shell must complete an editor health check; if it does not, the next launch returns to the last verified shell. The Offline & Install dialog exposes update, rollback, connection, install, optional-helper, and pinned AI-model cache state.
 
@@ -289,16 +328,16 @@ cp index.html /var/www/html/index.html
 
 # Hosted offline/install lane, scoped to one application directory
 mkdir -p /var/www/html/openshop
-cp index.html sw.js manifest.webmanifest icon-192.png icon-512.png /var/www/html/openshop/
+cp index.html plugin-sandbox.html plugin-sandbox.js sw.js manifest.webmanifest icon-192.png icon-512.png /var/www/html/openshop/
 
 # Or with GitHub Pages
 git init && git add . && git commit -m "init"
 # Enable Pages in repo settings → serves as a live editor
 ```
 
-No build step. No bundler. No runtime `node_modules`. `index.html` remains usable by itself; the four static companions enable the hosted PWA contract.
+No build step. No bundler. No runtime `node_modules`. `index.html` remains usable by itself; the six static companions enable the hosted PWA and sandboxed-plugin contract.
 
-Keep those five hosted files together in their own directory. A service worker's default scope is the directory containing `sw.js`; placing it at `/sw.js` grants it navigation control over every path on that origin. GitHub project Pages sites such as `/Openshop/` already provide the desired directory scope. A user/organization Pages site served at the origin root should publish OpenShop below a subdirectory instead.
+Keep those seven hosted files together in their own directory. A service worker's default scope is the directory containing `sw.js`; placing it at `/sw.js` grants it navigation control over every path on that origin. GitHub project Pages sites such as `/Openshop/` already provide the desired directory scope. A user/organization Pages site served at the origin root should publish OpenShop below a subdirectory instead.
 
 ## Testing
 

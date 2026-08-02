@@ -7140,49 +7140,49 @@ test('runs the Photon WASM backend for real on the operation it is allowed @slow
   console.log(`Photon invert: cold ${result.cold.ms}ms, warm ${result.warm.ms}ms`);
 });
 
-test('registers a plugin and lets it contribute a command', async ({ page }) => {
+test('registers a sandbox plugin and lets it contribute a command', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
 
-  const result = await page.evaluate(() => {
-    const before = OS.plugins.length;
-    let received = null;
-    let ran = 0;
-
-    OS.registerPlugin({
-      name: 'Probe',
-      init(editor) {
-        received = editor === OS;
-        editor._getCommands = ((original) => () => [
-          ...original.call(editor),
-          { label: 'Probe Command', cat: 'Plugin', fn: () => { ran++; } }
-        ])(editor._getCommands);
-      }
-    });
-
-    const rejectedNoInit = OS.registerPlugin({ name: 'Broken' });
+  const result = await page.evaluate(async () => {
+    const source = `const host = globalThis.__openShopPluginHost;
+      window.addEventListener('message', event => {
+        const message = event.data;
+        if (message?.type === 'openshop:command-invoked') window.parent.postMessage({
+          type: 'openshop:plugin-result', protocolVersion: host.protocolVersion, pluginId: host.pluginId, token: host.token,
+          requestId: message.requestId, ok: true, result: 'ran'
+        }, '*');
+      });
+      setTimeout(() => window.parent.postMessage({
+        type: 'openshop:plugin-request', protocolVersion: host.protocolVersion, pluginId: host.pluginId, token: host.token,
+        requestId: 'register-probe', method: 'register-command', args: { label: 'Probe Command', category: 'Plugin' }
+      }, '*'), 0);`;
+    const rejectedInit = OS.registerPlugin({ name: 'Unsafe', init() {} });
+    const handle = OS.registerPlugin({ name: 'Probe', source, capabilities: ['commands'] });
+    await handle.ready;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const record = OS._pluginRecords.get(handle.id);
     const command = OS._getCommands().find(entry => entry.label === 'Probe Command');
-    command?.fn();
-
+    const commandResult = await command.fn();
+    const disposed = handle.dispose();
     return {
-      added: OS.plugins.length - before,
-      receivedEditor: received,
+      rejectedInit,
+      sandbox: record.iframe.getAttribute('sandbox'),
       registered: OS.plugins.some(plugin => plugin.name === 'Probe'),
-      brokenRegistered: OS.plugins.some(plugin => plugin.name === 'Broken'),
-      rejectedNoInit,
       commandFound: Boolean(command),
-      ran
+      commandResult,
+      disposed,
+      commandRemoved: !OS._getCommands().some(entry => entry.label === 'Probe Command')
     };
   });
 
-  expect(result.added).toBe(1);
-  expect(result.receivedEditor).toBe(true);
+  expect(result.rejectedInit).toBeUndefined();
+  expect(result.sandbox).toBe('allow-scripts');
   expect(result.registered).toBe(true);
   expect(result.commandFound).toBe(true);
-  expect(result.ran).toBe(1);
-  // A plugin without an init hook is refused rather than half-registered.
-  expect(result.brokenRegistered).toBe(false);
-  expect(result.rejectedNoInit).toBeUndefined();
+  expect(result.commandResult).toBe('ran');
+  expect(result.disposed).toBe(true);
+  expect(result.commandRemoved).toBe(true);
 });
 
 test('only runs Photon for operations that match the JavaScript worker exactly', async ({ page }) => {

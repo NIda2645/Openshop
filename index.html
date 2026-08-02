@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-/+O0hksyFayUzBLkmFIdlc6Gk6kKpPAg751U0zuSTaE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-/k/pbSUgCuGsCPH6SPTTEvYHcsMvLVbsrxDzbIWeF/g=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4290,6 +4290,12 @@ const OS = {
     _adjDebounce: null,
     _cropRegion: null,
     plugins: [],
+    _pluginRecords: new Map(),
+    _pluginProtocolVersion: 1,
+    _pluginMaxSourceBytes: 512 * 1024,
+    _pluginMaxCommands: 32,
+    _pluginCapabilities: Object.freeze(['commands', 'document:read', 'selection:read', 'ui:toast']),
+    _pluginRequestSequence: 0,
     guides: [],
     _lassoPoints: [],
     _measureStart: null,
@@ -22153,10 +22159,254 @@ self.onmessage = async function(e) {
     },
 
     // ====================== PLUGIN SYSTEM ======================
+    _pluginError(message) {
+        console.error('Plugin:', message);
+        return undefined;
+    },
+    _pluginCapabilitiesFor(input) {
+        if (input === undefined) return [];
+        if (!Array.isArray(input)) throw new Error('Plugin capabilities must be an array');
+        const capabilities = [...new Set(input.map(capability => this._safeText(capability, 40)))];
+        const unknown = capabilities.find(capability => !this._pluginCapabilities.includes(capability));
+        if (unknown) throw new Error(`Unsupported plugin capability: ${unknown}`);
+        return capabilities;
+    },
+    _pluginPost(record, message) {
+        if (record.disposed || !record.iframe?.contentWindow) return false;
+        try {
+            record.iframe.contentWindow.postMessage({
+                ...message,
+                protocolVersion: this._pluginProtocolVersion,
+                pluginId: record.id,
+                token: record.token
+            }, '*');
+            return true;
+        } catch (error) {
+            console.warn('Plugin message failed:', error.message);
+            return false;
+        }
+    },
+    _pluginResolveReady(record, value) {
+        if (record.readySettled) return;
+        record.readySettled = true;
+        clearTimeout(record.readyTimeout);
+        record.readyResolve(value);
+    },
+    _pluginRejectReady(record, error) {
+        if (record.readySettled) return;
+        record.readySettled = true;
+        clearTimeout(record.readyTimeout);
+        record.readyReject(error instanceof Error ? error : new Error(String(error || 'Plugin failed')));
+    },
+    _pluginDocumentSummary() {
+        return {
+            width: this.canvasW,
+            height: this.canvasH,
+            activeLayer: this.layers[this.activeLayerIdx]?.name || null,
+            layers: (this.layers || []).map(layer => ({
+                id: layer.id || null,
+                name: this._safeText(layer.name, 120),
+                visible: layer.visible !== false,
+                locked: Boolean(layer.locked),
+                opacity: Number(layer.opacity ?? 100),
+                blend: layer.blend || 'source-over',
+                objectCount: (layer.objects || []).filter(object => object.name !== '__boundary__').length
+            }))
+        };
+    },
+    _pluginSelectionSummary() {
+        const bounds = this._selectionBounds;
+        const mask = this._selectionMask;
+        return {
+            bounds: bounds ? { x:Number(bounds.x), y:Number(bounds.y), w:Number(bounds.w), h:Number(bounds.h) } : null,
+            selectedPixels: mask ? Number(mask.count ?? this._countMaskPixels(mask)) : 0
+        };
+    },
+    _pluginHandleMessage(record, event) {
+        if (record.disposed || event.source !== record.iframe.contentWindow || event.origin !== 'null') return;
+        const data = event.data;
+        if (!data || typeof data !== 'object' || data.protocolVersion !== this._pluginProtocolVersion || data.pluginId !== record.id || data.token !== record.token) return;
+        if (data.type === 'openshop:plugin-ready') {
+            if (data.protocolVersion !== this._pluginProtocolVersion) return;
+            this._pluginResolveReady(record, record.handle);
+            this.toast(`Plugin: ${record.name}`, 'info');
+            return;
+        }
+        if (data.type === 'openshop:plugin-error') {
+            this._pluginRejectReady(record, new Error(this._safeText(data.error || 'Plugin source failed', 200)));
+            return;
+        }
+        if (data.type === 'openshop:plugin-result') {
+            const requestId = typeof data.requestId === 'string' ? data.requestId : '';
+            const pending = record.pending.get(requestId);
+            if (!pending) return;
+            record.pending.delete(requestId);
+            clearTimeout(pending.timeout);
+            if (data.ok === false) pending.reject(new Error(this._safeText(data.error || 'Plugin command failed', 200)));
+            else pending.resolve(data.result);
+            return;
+        }
+        if (data.type !== 'openshop:plugin-request' || !record.readySettled) return;
+        const requestId = typeof data.requestId === 'string' ? data.requestId : '';
+        if (!requestId) return;
+        Promise.resolve().then(async () => {
+            try {
+                const result = await this._handlePluginRequest(record, data);
+                this._pluginPost(record, { type:'openshop:host-response', requestId, ok:true, result });
+            } catch (error) {
+                this._pluginPost(record, { type:'openshop:host-response', requestId, ok:false, error:this._safeText(error.message, 200) });
+            }
+        });
+    },
+    _handlePluginRequest(record, data) {
+        const args = data.args && typeof data.args === 'object' ? data.args : {};
+        const method = typeof data.method === 'string' ? data.method : '';
+        const requireCapability = capability => {
+            if (!record.capabilities.includes(capability)) throw new Error(`Capability not granted: ${capability}`);
+        };
+        if (method === 'register-command') {
+            requireCapability('commands');
+            if (record.commandObjects.length >= this._pluginMaxCommands) throw new Error('Plugin command limit reached');
+            const label = this._safeText(args.label, 120);
+            if (!label) throw new Error('Plugin command label is missing');
+            const category = this._safeText(args.category || record.name, 60) || record.name;
+            const shortcut = this._safeText(args.shortcut, 30);
+            const commandId = `${record.id}:command:${++record.commandSequence}`;
+            const command = {
+                label,
+                cat: category,
+                key: shortcut,
+                fn: () => this._invokePluginCommand(record, commandId)
+            };
+            this._getCommands().push(command);
+            record.commandObjects.push(command);
+            return { commandId, label, category };
+        }
+        if (method === 'get-document') {
+            requireCapability('document:read');
+            return this._pluginDocumentSummary();
+        }
+        if (method === 'get-selection') {
+            requireCapability('selection:read');
+            return this._pluginSelectionSummary();
+        }
+        if (method === 'toast') {
+            requireCapability('ui:toast');
+            const message = this._safeText(args.message, 240);
+            if (!message) throw new Error('Toast message is missing');
+            const type = ['info', 'success', 'error'].includes(args.type) ? args.type : 'info';
+            this.toast(message, type);
+            return true;
+        }
+        throw new Error(`Unsupported plugin method: ${this._safeText(method, 80)}`);
+    },
+    _invokePluginCommand(record, commandId) {
+        if (record.disposed) return Promise.resolve(false);
+        const requestId = `${record.id}:invoke:${++this._pluginRequestSequence}`;
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                record.pending.delete(requestId);
+                reject(new Error('Plugin command timed out'));
+            }, 10000);
+            record.pending.set(requestId, { resolve, reject, timeout });
+            if (!this._pluginPost(record, { type:'openshop:command-invoked', commandId, requestId })) {
+                clearTimeout(timeout);
+                record.pending.delete(requestId);
+                reject(new Error('Plugin is unavailable'));
+            }
+        });
+    },
     registerPlugin(plugin) {
-        if(!plugin.name||!plugin.init) { console.error('Plugin must have name and init'); return; }
-        this.plugins.push(plugin); plugin.init(this);
-        this.toast(`Plugin: ${plugin.name}`, 'info');
+        if (!plugin || typeof plugin !== 'object') return this._pluginError('registration requires an object');
+        if (typeof plugin.init === 'function') return this._pluginError('direct init hooks are not allowed; provide immutable source code');
+        const name = this._safeText(plugin.name, 80);
+        if (!name) return this._pluginError('name is required');
+        if (this.plugins.some(existing => existing.name === name)) return this._pluginError(`a plugin named ${name} is already registered`);
+        if (typeof plugin.source !== 'string' || !plugin.source.trim()) return this._pluginError('source must be a non-empty JavaScript string');
+        let capabilities;
+        try { capabilities = this._pluginCapabilitiesFor(plugin.capabilities); }
+        catch (error) { return this._pluginError(error.message); }
+        const source = `${plugin.source}`;
+        if (new Blob([source]).size > this._pluginMaxSourceBytes) return this._pluginError('source exceeds the 512 KiB limit');
+        if (typeof Blob === 'undefined') return this._pluginError('sandboxed plugins require Blob support');
+
+        const record = {
+            id:`plugin-${++this._pluginRequestSequence}`,
+            name,
+            capabilities:Object.freeze(capabilities),
+            source,
+            token:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            iframe:null,
+            helperUrl:new URL('plugin-sandbox.html', document.baseURI).href,
+            commandSequence:0,
+            commandObjects:[],
+            pending:new Map(),
+            disposed:false,
+            readySettled:false,
+            readyResolve:null,
+            readyReject:null,
+            readyTimeout:null,
+            onMessage:null
+        };
+        const iframe = document.createElement('iframe');
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.setAttribute('aria-hidden', 'true');
+        iframe.title = `${name} plugin sandbox`;
+        iframe.tabIndex = -1;
+        iframe.style.display = 'none';
+        record.iframe = iframe;
+        record.onMessage = event => this._pluginHandleMessage(record, event);
+        window.addEventListener('message', record.onMessage);
+        let ready;
+        ready = new Promise((resolve, reject) => { record.readyResolve = resolve; record.readyReject = reject; });
+        record.readyTimeout = setTimeout(() => this._pluginRejectReady(record, new Error('Plugin handshake timed out')), 10000);
+        const handle = Object.freeze({
+            id:record.id,
+            name:record.name,
+            capabilities:record.capabilities,
+            protocolVersion:this._pluginProtocolVersion,
+            ready,
+            dispose:() => this.disposePlugin(record.id)
+        });
+        record.handle = handle;
+        this._pluginRecords.set(record.id, record);
+        this.plugins.push(handle);
+        iframe.addEventListener('load', () => this._pluginPost(record, {
+            type:'openshop:host-init',
+            source:record.source,
+            capabilities:record.capabilities,
+            api:{ version:this._pluginProtocolVersion, methods:['register-command','get-document','get-selection','toast'] }
+        }), { once:true });
+        iframe.addEventListener('error', () => this._pluginRejectReady(record, new Error('Plugin sandbox failed to load')), { once:true });
+        iframe.src = record.helperUrl;
+        (document.body || document.documentElement).appendChild(iframe);
+        ready.catch(() => {});
+        return handle;
+    },
+    listPlugins() {
+        return [...this._pluginRecords.values()].map(record => ({
+            id:record.id,
+            name:record.name,
+            capabilities:[...record.capabilities],
+            protocolVersion:this._pluginProtocolVersion,
+            ready:record.readySettled && !record.disposed
+        }));
+    },
+    disposePlugin(pluginOrId) {
+        const id = typeof pluginOrId === 'string' ? pluginOrId : pluginOrId?.id;
+        const record = this._pluginRecords.get(id);
+        if (!record) return false;
+        record.disposed = true;
+        clearTimeout(record.readyTimeout);
+        if (!record.readySettled) this._pluginRejectReady(record, new Error('Plugin disposed'));
+        window.removeEventListener('message', record.onMessage);
+        record.pending.forEach(({ reject, timeout }) => { clearTimeout(timeout); reject(new Error('Plugin disposed')); });
+        record.pending.clear();
+        if (this._commands && record.commandObjects.length) this._commands = this._commands.filter(command => !record.commandObjects.includes(command));
+        record.iframe?.remove();
+        this._pluginRecords.delete(record.id);
+        this.plugins = this.plugins.filter(handle => handle.id !== record.id);
+        return true;
     },
 
     // ====================== STATUS / TOAST ======================
