@@ -12,6 +12,7 @@ All notable changes to Openshop will be documented in this file.
 - Make manual WebRTC sessions peer-identifiable and revision-safe with explicit consent, replay rejection, deterministic conflict handling, reconnect queuing, and local-document restore on failed remote loads.
 - Add a package-owned release metadata source and consistency gate for project versions, hosted shell revisions, offline test fixtures, and documented browser/file/hosted support boundaries.
 - Add a deterministic 4K/8K/12MP performance-budget runner covering editing, filters, tiled history, export boundaries, batch, cancellation, and stale-result probes; the release gate now runs it.
+- Add a cross-engine mobile capability matrix with compact-workspace overflow, two-finger pinch, safe-area, orientation, visual-viewport, and pressure-variance coverage; physical-device support remains explicitly unclaimed.
 
 ## [v0.28.0] - 2026-08-02
 

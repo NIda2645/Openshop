@@ -1,9 +1,11 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 // Chromium runs the whole suite. Firefox and WebKit run the flows tagged
 // @cross-browser — open, edit, filter, save, recover, export, and the keyboard
 // and dialog contracts — because the README claims full support there and a
 // Chromium-only suite cannot back that claim up.
+// The mobile projects are grep-gated so they exercise the compact workspace
+// and capability report without duplicating the desktop suite.
 export default defineConfig({
   testDir: './tests',
   testMatch: /.*\.e2e\.spec\.js/,
@@ -30,6 +32,21 @@ export default defineConfig({
       use: { browserName: 'chromium' }
     },
     { name: 'firefox', use: { browserName: 'firefox' }, grep: /@cross-browser/ },
-    { name: 'webkit', use: { browserName: 'webkit' }, grep: /@cross-browser/ }
+    { name: 'webkit', use: { browserName: 'webkit' }, grep: /@cross-browser/ },
+    {
+      name: 'mobile-chromium',
+      grep: /@mobile/,
+      use: { ...devices['Pixel 5'], browserName: 'chromium' }
+    },
+    {
+      name: 'mobile-firefox',
+      grep: /@mobile/,
+      use: { ...devices['Pixel 5'], browserName: 'firefox' }
+    },
+    {
+      name: 'mobile-webkit',
+      grep: /@mobile/,
+      use: { ...devices['iPhone 13'], browserName: 'webkit' }
+    }
   ]
 });

@@ -64,13 +64,6 @@ testing gates.
 
 ### P2 — Performance, mobile, extensibility, and workflow depth
 
-- [ ] P2 — Validate mobile and stylus on capability matrices
-  Why: Mobile workspace and pressure-aware input were added in the 2026-08-02 release, but README support is viewport-only and physical-device behavior is explicitly unverified.
-  Evidence: `README.md` browser/support table, `index.html` responsive and `PointerEvent.pressure` paths; [MDN PointerEvent pressure](https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/pressure); miniPaint phone issue and [Krita tablet roadmap](https://krita.org/en/posts/2026/roadmap-2026/).
-  Touches: mobile Playwright projects, capability diagnostics, pointer/input code, `README.md`.
-  Acceptance: Chromium/Firefox/WebKit emulation plus documented physical Android/iOS/Windows-pen checks cover pressure varying/constant, touch pan/pinch, safe-area, virtual keyboard, rotation, import/export, recovery, and offline start; support claims are limited to observed matrices.
-  Complexity: M
-
 - [ ] P2 — Give plugins an installable manifest, consent, and provenance contract
   Why: The sandbox API has capability and token checks, but runtime source registration has no stable identity, persistence, provenance, review screen, or lifecycle contract.
   Evidence: `index.html` plugin registry and `plugin-sandbox.js`; [Penpot plugin/API model](https://github.com/penpot/penpot) and [self-hosting/privacy model](https://penpot.app/self-host); existing sandbox-security tests.

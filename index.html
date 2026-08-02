@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-fASbAGn3aPEmYIWyi3L1uf1m7WXJO6Wg8wbmtd/F6Vk=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-N4+sKIlrEAjKO++CEcyBd0mKkMvhVXRd2LyIkRH7/Tw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4357,6 +4357,8 @@ const OS = {
     _symmetryMode: 'off',
     _pressureStroke: null,
     _pressureSupported: false,
+    _inputCapabilityObservations: { visualViewportResize:0, orientationChange:0 },
+    _inputCapabilityObserversReady: false,
     _prefs: { gridSize: 20, historyStates: 120, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false, vectorStrokes: false },
     _importLimits: {
         maxJsonBytes: 10 * 1024 * 1024,
@@ -4694,6 +4696,7 @@ const OS = {
             renderOnAddRemove: false,
         });
         this._initializeBlankWorkspace();
+        this._initInputCapabilityObservers();
         this.canvas.on('mouse:move', e => this.onMouseMove(e));
         this.canvas.on('mouse:down', e => this.onMouseDown(e));
         this.canvas.on('mouse:up', e => this.onMouseUp(e));
@@ -10383,6 +10386,64 @@ self.onmessage = function(event) {
         const brush = this.canvas?.freeDrawingBrush;
         if (brush) brush.width = this.state.tool === 'pencil' ? 1 : Math.max(1, Number(this.state.brushSize) || 1);
         this._setPressureStatus(supported ? 'Stylus: pressure' : 'Stylus: fixed');
+    },
+
+    _initInputCapabilityObservers() {
+        if (this._inputCapabilityObserversReady) return;
+        this._inputCapabilityObserversReady = true;
+        const observations = this._inputCapabilityObservations;
+        const markViewportResize = () => { observations.visualViewportResize += 1; };
+        const markOrientationChange = () => { observations.orientationChange += 1; };
+        try { window.visualViewport?.addEventListener('resize', markViewportResize, { passive:true }); } catch (error) { /* optional API */ }
+        try { window.screen?.orientation?.addEventListener('change', markOrientationChange, { passive:true }); } catch (error) { /* optional API */ }
+        try { window.addEventListener('orientationchange', markOrientationChange, { passive:true }); } catch (error) { /* optional API */ }
+    },
+
+    _buildInputCapabilityReport() {
+        this._initInputCapabilityObservers();
+        const pointerPrototype = typeof window.PointerEvent === 'function' ? window.PointerEvent.prototype : null;
+        const maxTouchPoints = Number(navigator.maxTouchPoints) || 0;
+        let safeAreaInsets = { top:0, right:0, bottom:0, left:0 };
+        try {
+            const probe = document.createElement('div');
+            probe.style.cssText = 'position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);pointer-events:none;visibility:hidden;';
+            document.body.appendChild(probe);
+            const computed = getComputedStyle(probe);
+            safeAreaInsets = {
+                top:parseFloat(computed.paddingTop) || 0,
+                right:parseFloat(computed.paddingRight) || 0,
+                bottom:parseFloat(computed.paddingBottom) || 0,
+                left:parseFloat(computed.paddingLeft) || 0
+            };
+            probe.remove();
+        } catch (error) { /* safe-area inspection is optional */ }
+        let coarsePointer = false;
+        try { coarsePointer = Boolean(window.matchMedia?.('(pointer: coarse)').matches); } catch (error) { /* optional API */ }
+        return {
+            pointerEvents:typeof window.PointerEvent === 'function',
+            touchEvents:'ontouchstart' in window,
+            maxTouchPoints,
+            coarsePointer,
+            pressure:{
+                api:Boolean(pointerPrototype && 'pressure' in pointerPrototype),
+                observedVariance:Boolean(this._pressureSupported),
+                mode:this._pressureStroke ? 'tracking' : (this._pressureSupported ? 'pressure' : 'fixed')
+            },
+            visualViewport:{
+                available:Boolean(window.visualViewport),
+                resizeEvents:this._inputCapabilityObservations.visualViewportResize
+            },
+            orientation:{
+                api:Boolean(window.screen?.orientation),
+                changeEvents:this._inputCapabilityObservations.orientationChange,
+                type:window.screen?.orientation?.type || null
+            },
+            safeArea:{
+                cssEnvironment:typeof CSS !== 'undefined' && Boolean(CSS.supports?.('padding: env(safe-area-inset-top)')),
+                insets:safeAreaInsets
+            },
+            workspace:this.session?.workspace?.mode || document.documentElement.dataset.osWorkspace || 'standard'
+        };
     },
 
     // ====================== MOUSE ======================
@@ -24038,7 +24099,8 @@ self.onmessage = async function(e) {
                 broadcastChannel:typeof BroadcastChannel !== 'undefined',
                 imageDecoder:typeof ImageDecoder !== 'undefined',
                 offscreenCanvas:typeof OffscreenCanvas !== 'undefined',
-                serviceWorker:Boolean(navigator.serviceWorker?.controller)
+                serviceWorker:Boolean(navigator.serviceWorker?.controller),
+                input:this._buildInputCapabilityReport()
             },
             document:{
                 width:this.canvasW,
