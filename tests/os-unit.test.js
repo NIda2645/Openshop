@@ -2138,6 +2138,32 @@ describe('history eviction, coalescing, and commit guards', () => {
     expect(OS.history).toHaveLength(2);
   });
 
+  it('stores raster edits as dirty tile deltas and reconstructs the image source on restore', () => {
+    const OS = primeHistory(loadOpenShop());
+    const makeTile = values => ({ width:2, height:1, data:OS._encodeHistoryBytes(new Uint8Array(values)) });
+    const beforePixels = { 'image-1': { width:2, height:1, tiles: { '0:0': makeTile([10,20,30,255,40,50,60,255]) } } };
+    const afterPixels = { 'image-1': { width:2, height:1, tiles: { '0:0': makeTile([110,120,130,255,140,150,160,255]) } } };
+    const documentState = {
+      kind:'openshop-document',
+      canvas:{ fabric:{ objects:[{ type:'image', _openShopObjectId:'image-1', src:'data:image/png;base64,FULL' }] } }
+    };
+    OS._historyBasePixelState = beforePixels;
+    OS._historyPixelState = beforePixels;
+    OS._historyCursorSnapshot = JSON.stringify({ state:'baseline' });
+    OS._captureHistoryPixelSurfaces = vi.fn(() => afterPixels);
+    OS._captureDocumentState = vi.fn(() => documentState);
+    OS._pushHistoryEntry('Paint', JSON.stringify(documentState));
+
+    const entry = OS.history[0];
+    expect(JSON.parse(entry.snapshot).canvas.fabric.objects[0].src).toBeNull();
+    expect(entry.pixelDelta.changes).toHaveLength(1);
+    expect(OS._historyPixelsForIndex(0)).toEqual(afterPixels);
+
+    OS._historySurfaceDataUrl = vi.fn(() => 'data:image/png;base64,REBUILT');
+    const restored = JSON.parse(OS._materializeHistorySnapshot(entry.snapshot, 0));
+    expect(restored.canvas.fabric.objects[0].src).toBe('data:image/png;base64,REBUILT');
+  });
+
   it('discards a filter result when the document moved on, without touching the canvas', () => {
     const OS = loadOpenShop();
     const active = { name: 'Photo', type: 'image' };

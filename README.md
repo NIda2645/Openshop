@@ -34,7 +34,7 @@ Or download `index.html` and open it locally. Everything runs client-side. Your 
 | **Selection Tools** | Rectangular/Elliptical Marquee, Magic Wand (contiguous + global), Lasso, Color Range dialog with fuzziness, presets, and live preview |
 | **Selection Operations** | Select All, Deselect, Reselect, Inverse, Grow, Similar, Modify (Expand, Contract, Feather, Border, Smooth) |
 | **Symmetry Drawing** | Horizontal, vertical, both-axes, and radial (6-fold) mirror modes for brush strokes |
-| **Undo/Redo** | 60-step versioned transaction history with named entries, exact destructive-edit rollback, and a visual history panel |
+| **Undo/Redo** | 120-step versioned transaction history with dirty 64×64 raster tiles, named entries, exact destructive-edit rollback, and a visual history panel |
 | **Snapshots & Branches** | Name the current state and return to it later, outside the undo step limit; editing after an undo archives the abandoned line as a branch instead of deleting it. Session-scoped and memory-budgeted |
 | **Free Transform** | Resize, rotate, skew, perspective, and warp on any object |
 | **Text Styling** | Bold, italic, underline, overline, and line-through, with the decoration line's own colour and thickness rather than the fill's |

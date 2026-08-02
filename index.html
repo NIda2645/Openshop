@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-qspdy/JqHwQR0U/IFYHIbJaGoBHVfpcp+s2IMzgOnJ4=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-/+O0hksyFayUzBLkmFIdlc6Gk6kKpPAg751U0zuSTaE=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:;">
 <title>OpenShop v0.27.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -4268,14 +4268,17 @@ const OS = {
     // into an unlabelled transient selection.
     _aiMasks: [],
     _lastPSDExportReport: null,
-    history: [], historyIdx: -1, maxHistory: 60,
-    // Entry count alone does not bound memory: _replaceActiveImage turns each
-    // edit into a base64 PNG, so one 12 MP photo makes every snapshot several
-    // megabytes and 60 of them retain gigabytes. Cap the retained characters
-    // too. JS strings are UTF-16, so the real footprint is about twice this.
+    history: [], historyIdx: -1, maxHistory: 120,
+    // Raster edits store only changed 64x64 RGBA tiles, so the default history
+    // ring can hold twice the old 60-step count without retaining a full PNG
+    // for every edit. Metadata and non-raster changes remain compact snapshots.
     maxHistoryBytes: 192 * 1024 * 1024,
-    _historySchemaVersion: 1,
+    _historySchemaVersion: 2,
+    _historyTileSize: 64,
+    _historyTileDebug: false,
     _historyBaseSnapshot: null,
+    _historyBasePixelState: null,
+    _historyPixelState: null,
     _historyBaseLabel: 'Document Baseline',
     _historyCursorSnapshot: null,
     _historyTransaction: null,
@@ -4303,7 +4306,7 @@ const OS = {
     _macroRecording: false, _macroPlaying: false, _macroSteps: [],
     _liquifyData: null,
     _symmetryMode: 'off',
-    _prefs: { gridSize: 20, historyStates: 60, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false, vectorStrokes: false },
+    _prefs: { gridSize: 20, historyStates: 120, defaultW: 1920, defaultH: 1080, theme: 'dark', snapTolerance: 5, stackNewObjects: false, vectorStrokes: false },
     _importLimits: {
         maxJsonBytes: 10 * 1024 * 1024,
         maxImageBytes: 100 * 1024 * 1024,
@@ -4593,6 +4596,8 @@ const OS = {
         this.history = [];
         this.historyIdx = -1;
         this._historyBaseSnapshot = null;
+        this._historyBasePixelState = null;
+        this._historyPixelState = null;
         this._historyCursorSnapshot = null;
         this._savedSnapshot = null;
         this._isDirty = false;
@@ -7149,7 +7154,7 @@ const OS = {
             await this._loadDocumentState(json, { fitToViewport:true });
             this._projectFileHandle = handle;
             this._initializeHistory('Open Project');
-            this._markDocumentClean(this._historyBaseSnapshot, 'clean');
+            this._markDocumentClean(JSON.stringify(this._captureDocumentState()), 'clean');
             await this._clearAutoSave({ documentIds:previousLineage, recoveryFilename:previousRecoveryFilename });
             await this._clearAutoSave();
             this.trackRecentFile(this._docName, this.canvasW, this.canvasH);
@@ -11319,11 +11324,178 @@ self.onmessage = function(event) {
         const definition = this._getCommandRegistry().get(command?.id);
         return definition ? this._t(definition.labelKey || definition.label || command?.id) : command?.id || 'Edit';
     },
+    _encodeHistoryBytes(bytes) {
+        const view = bytes instanceof Uint8Array
+            ? bytes
+            : ArrayBuffer.isView(bytes)
+                ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+                : new Uint8Array(bytes || []);
+        let binary = '';
+        for (let offset = 0; offset < view.length; offset += 0x8000) binary += String.fromCharCode(...view.subarray(offset, offset + 0x8000));
+        return btoa(binary);
+    },
+    _decodeHistoryBytes(encoded) {
+        const binary = atob(String(encoded || ''));
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        return bytes;
+    },
+    _cloneHistoryPixelState(state) {
+        const clone = {};
+        Object.entries(state || {}).forEach(([id, surface]) => {
+            clone[id] = {
+                width:surface.width,
+                height:surface.height,
+                tiles:{ ...(surface.tiles || {}) }
+            };
+        });
+        return clone;
+    },
+    _captureHistoryPixelSurfaces() {
+        const objects = this.canvas?.getObjects?.() || [];
+        const surfaces = {};
+        for (const object of objects) {
+            if (object?.type !== 'image') continue;
+            const id = object._openShopObjectId;
+            const element = object.getElement?.();
+            const width = Math.round(Number(element?.naturalWidth || element?.videoWidth || element?.width || 0));
+            const height = Math.round(Number(element?.naturalHeight || element?.videoHeight || element?.height || 0));
+            if (!id || width < 1 || height < 1 || width * height > this._importLimits.maxImagePixels) return null;
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            const context = canvas.getContext('2d', { willReadFrequently:true });
+            if (!context) return null;
+            try { context.drawImage(element, 0, 0, width, height); } catch (_) { return null; }
+            let imageData;
+            try { imageData = context.getImageData(0, 0, width, height); } catch (_) { return null; }
+            const tiles = {};
+            const size = this._historyTileSize;
+            for (let top = 0; top < height; top += size) {
+                for (let left = 0; left < width; left += size) {
+                    const tileWidth = Math.min(size, width - left);
+                    const tileHeight = Math.min(size, height - top);
+                    const tile = new Uint8Array(tileWidth * tileHeight * 4);
+                    for (let row = 0; row < tileHeight; row++) {
+                        const source = imageData.data.subarray(((top + row) * width + left) * 4, ((top + row) * width + left + tileWidth) * 4);
+                        tile.set(source, row * tileWidth * 4);
+                    }
+                    tiles[`${left}:${top}`] = { width:tileWidth, height:tileHeight, data:this._encodeHistoryBytes(tile) };
+                }
+            }
+            surfaces[id] = { width, height, tiles };
+        }
+        return surfaces;
+    },
+    _historyPixelDelta(before, after) {
+        const changes = [];
+        const previous = before || {};
+        const current = after || {};
+        Object.entries(current).forEach(([id, surface]) => {
+            const old = previous[id];
+            const changed = !old || old.width !== surface.width || old.height !== surface.height;
+            const tiles = [];
+            Object.entries(surface.tiles || {}).forEach(([key, tile]) => {
+                if (changed || old.tiles?.[key]?.data !== tile.data || old.tiles?.[key]?.width !== tile.width || old.tiles?.[key]?.height !== tile.height) {
+                    const [x, y] = key.split(':').map(Number);
+                    tiles.push({ x, y, width:tile.width, height:tile.height, data:tile.data });
+                }
+            });
+            if (tiles.length || changed) changes.push({ id, width:surface.width, height:surface.height, tiles });
+        });
+        Object.keys(previous).forEach(id => { if (!Object.prototype.hasOwnProperty.call(current, id)) changes.push({ id, remove:true }); });
+        return changes.length ? { version:1, tileSize:this._historyTileSize, changes } : null;
+    },
+    _applyHistoryPixelDelta(state, delta) {
+        const next = this._cloneHistoryPixelState(state);
+        (delta?.changes || []).forEach(change => {
+            if (change.remove) { delete next[change.id]; return; }
+            const surface = next[change.id] ||= { width:change.width, height:change.height, tiles:{} };
+            surface.width = change.width; surface.height = change.height;
+            (change.tiles || []).forEach(tile => {
+                surface.tiles[`${tile.x}:${tile.y}`] = {
+                    width:tile.width, height:tile.height, data:tile.data
+                };
+            });
+        });
+        return next;
+    },
+    _historySurfaceDataUrl(surface) {
+        const canvas = document.createElement('canvas');
+        canvas.width = surface.width; canvas.height = surface.height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('History tile reconstruction needs a 2D canvas');
+        Object.entries(surface.tiles || {}).forEach(([key, tile]) => {
+            const [x, y] = key.split(':').map(Number);
+            const bytes = this._decodeHistoryBytes(tile.data);
+            context.putImageData(new ImageData(new Uint8ClampedArray(bytes), tile.width, tile.height), x, y);
+        });
+        return canvas.toDataURL('image/png');
+    },
+    _stripHistoryPixelSources(snapshot) {
+        let state;
+        try { state = JSON.parse(snapshot); } catch (_) { return snapshot; }
+        const objects = state?.canvas?.fabric?.objects;
+        if (!Array.isArray(objects)) return snapshot;
+        objects.forEach(object => { if (object?.type === 'image') object.src = null; });
+        return JSON.stringify(state);
+    },
+    _prepareHistorySnapshot(snapshot, pixelState, previousPixelState) {
+        const current = pixelState;
+        if (!current || typeof current !== 'object') return { snapshot, pixelDelta:null, pixelState:null, packed:false };
+        let state;
+        try { state = JSON.parse(snapshot); } catch (_) { return { snapshot, pixelDelta:null, pixelState:null, packed:false }; }
+        if (state?.kind !== 'openshop-document' || !Array.isArray(state.canvas?.fabric?.objects)) {
+            return { snapshot, pixelDelta:null, pixelState:null, packed:false };
+        }
+        state.canvas.fabric.objects.forEach(object => { if (object?.type === 'image') object.src = null; });
+        const packed = JSON.stringify(state);
+        return {
+            snapshot:packed,
+            pixelDelta:this._historyPixelDelta(previousPixelState, current),
+            pixelState:this._cloneHistoryPixelState(current),
+            packed:true,
+            fullSnapshot:this._historyTileDebug ? snapshot : null
+        };
+    },
+    _historyPixelsForIndex(targetIndex) {
+        let pixels = this._cloneHistoryPixelState(this._historyBasePixelState);
+        if (targetIndex < 0) return pixels;
+        for (let index = 0; index <= targetIndex && index < this.history.length; index++) pixels = this._applyHistoryPixelDelta(pixels, this.history[index].pixelDelta);
+        return pixels;
+    },
+    _materializeHistorySnapshot(snapshot, targetIndex) {
+        let state;
+        try { state = JSON.parse(snapshot); } catch (_) { return snapshot; }
+        const objects = state?.canvas?.fabric?.objects;
+        if (!Array.isArray(objects)) return snapshot;
+        const pixels = this._historyPixelsForIndex(targetIndex);
+        let changed = false;
+        objects.forEach(object => {
+            if (object?.type !== 'image' || object.src) return;
+            const surface = pixels[object._openShopObjectId];
+            if (!surface) throw new Error('History tile data is missing for an image layer');
+            object.src = this._historySurfaceDataUrl(surface);
+            changed = true;
+        });
+        return changed ? JSON.stringify(state) : snapshot;
+    },
+    _assertHistoryTileReconstruction(targetIndex, expected) {
+        if (!this._historyTileDebug || !expected) return;
+        const actual = this._captureHistoryPixelSurfaces();
+        if (!actual) throw new Error('History tile debug capture failed');
+        const left = JSON.stringify(actual), right = JSON.stringify(this._historyPixelsForIndex(targetIndex));
+        if (left !== right) throw new Error('History tile reconstruction mismatch');
+    },
     _initializeHistory(label = 'Document Baseline') {
         this.history = [];
         this.historyIdx = -1;
         this._historyBaseLabel = this._safeText(label, 100) || 'Document Baseline';
-        this._historyBaseSnapshot = JSON.stringify(this._captureDocumentState());
+        const snapshot = JSON.stringify(this._captureDocumentState());
+        const pixels = this._captureHistoryPixelSurfaces();
+        const prepared = this._prepareHistorySnapshot(snapshot, pixels, null);
+        this._historyBaseSnapshot = prepared.snapshot;
+        this._historyBasePixelState = prepared.pixelState;
+        this._historyPixelState = prepared.pixelState ? this._cloneHistoryPixelState(prepared.pixelState) : null;
         this._historyCursorSnapshot = this._historyBaseSnapshot;
         this._historyTransaction = null;
         this._lastAction = this._historyBaseLabel;
@@ -11331,6 +11503,12 @@ self.onmessage = function(event) {
         this.updateStatus();
     },
     _pushHistoryEntry(action, snapshot, { markDirty = true, command = null, coalesceKey = null, recordMacro = true, beforeSnapshot = null } = {}) {
+        const pixelState = this._captureHistoryPixelSurfaces();
+        const prepared = this._prepareHistorySnapshot(snapshot, pixelState, this._historyPixelState);
+        snapshot = prepared.snapshot;
+        const packedBeforeSnapshot = beforeSnapshot && prepared.packed
+            ? this._stripHistoryPixelSources(beforeSnapshot)
+            : beforeSnapshot;
         const previousSnapshot = this._currentHistorySnapshot();
         const indexedPreviousSnapshot = this.historyIdx >= 0
             ? this.history[this.historyIdx]?.snapshot
@@ -11349,12 +11527,18 @@ self.onmessage = function(event) {
             action:this._safeText(action, 100) || this._commandLabel(normalizedCommand),
             command:normalizedCommand,
             coalesceKey:coalesceKey ? this._safeText(coalesceKey, 80) : null,
-            beforeSnapshot:beforeSnapshot && beforeSnapshot !== indexedPreviousSnapshot ? beforeSnapshot : null,
-            snapshot
+            beforeSnapshot:packedBeforeSnapshot && packedBeforeSnapshot !== indexedPreviousSnapshot ? packedBeforeSnapshot : null,
+            snapshot,
+            pixelDelta:prepared.pixelDelta,
+            fullSnapshot:prepared.fullSnapshot
         };
         const current = this.history[this.historyIdx];
         if (entry.coalesceKey && this.historyIdx === this.history.length - 1 && current?.coalesceKey === entry.coalesceKey) {
             entry.beforeSnapshot = current.beforeSnapshot;
+            if (prepared.pixelState && current.pixelDelta) {
+                const predecessor = this._historyPixelsForIndex(this.historyIdx - 1);
+                entry.pixelDelta = this._historyPixelDelta(predecessor, prepared.pixelState);
+            }
             this.history[this.historyIdx] = entry;
         } else {
             this.history.push(entry);
@@ -11362,6 +11546,7 @@ self.onmessage = function(event) {
             while (this.history.length > this.maxHistory) this._evictOldestHistoryEntry();
             this._enforceHistoryByteBudget();
         }
+        if (prepared.pixelState) this._historyPixelState = prepared.pixelState;
         this._historyCursorSnapshot = snapshot;
         this._lastAction = entry.action;
         if (markDirty) this._markDocumentDirty();
@@ -11374,6 +11559,7 @@ self.onmessage = function(event) {
     _evictOldestHistoryEntry() {
         if (this.history.length <= 1) return false;
         const dropped = this.history.shift();
+        this._historyBasePixelState = this._applyHistoryPixelDelta(this._historyBasePixelState, dropped.pixelDelta);
         // The retained entry's own starting point is the truthful new baseline;
         // fall back to the dropped entry's result when it has none.
         this._historyBaseSnapshot = this.history[0]?.beforeSnapshot || dropped.snapshot;
@@ -11383,7 +11569,11 @@ self.onmessage = function(event) {
     },
     historyByteSize() {
         return this.history.reduce(
-            (total, entry) => total + (entry.snapshot?.length || 0) + (entry.beforeSnapshot?.length || 0),
+            (total, entry) => total
+                + (entry.snapshot?.length || 0)
+                + (entry.beforeSnapshot?.length || 0)
+                + (entry.fullSnapshot?.length || 0)
+                + (entry.pixelDelta ? JSON.stringify(entry.pixelDelta).length : 0),
             0
         );
     },
@@ -11558,16 +11748,19 @@ self.onmessage = function(event) {
         return this._enqueueRestore(() => ({ targetIndex, snapshot: snapshotOverride }));
     },
     async _restoreHistoryNow(targetIndex = this.historyIdx, snapshotOverride = null) {
-        const snapshot = snapshotOverride || (targetIndex >= 0
+        const rawSnapshot = snapshotOverride || (targetIndex >= 0
             ? this.history[targetIndex]?.snapshot
             : this.history[0]?.beforeSnapshot || this._historyBaseSnapshot);
-        if (!snapshot) return false;
+        if (!rawSnapshot) return false;
         try {
+            const snapshot = this._materializeHistorySnapshot(rawSnapshot, targetIndex);
             await this._loadDocumentState(JSON.parse(snapshot), { trusted:true });
             this.historyIdx = targetIndex;
-            this._historyCursorSnapshot = snapshot;
+            this._historyPixelState = this._historyPixelsForIndex(targetIndex);
+            this._historyCursorSnapshot = rawSnapshot;
             this._lastAction = targetIndex >= 0 ? this.history[targetIndex].action : this._historyBaseLabel;
-            this._restorePersistenceForSnapshot(snapshot);
+            this._assertHistoryTileReconstruction(targetIndex, this._historyTileDebug ? this._historyPixelState : null);
+            this._restorePersistenceForSnapshot(JSON.stringify(this._captureDocumentState()));
             this.updateHistoryPanel();
             this.updateStatus();
             return true;

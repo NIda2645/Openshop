@@ -16,8 +16,6 @@ testing gates.
 ### AI / ML (Transformers.js)
 
 ### Performance
-- Tiled undo history (dirty-tile deltas, not full layer snapshots) to raise 60-step cap
-  Research note (2026-07-31): Canonical shape is Krita's 64×64 copy-on-write tile grid with a centralised history (they removed the Memento pattern because each memento cost two ≥4 KiB hash tables) plus Aseprite's `app::cmd::CopyRegion`, which stores only the changed `gfx::Region` and budgets by `onMemSize()` in MB rather than a step count. Coalesce one transaction per *stroke*, not per event. Land it behind a debug mode that also keeps full snapshots and asserts tile-reconstruction equality — dirty-region bookkeeping fails silently and several undos late, which the Chromium-only screenshot baseline will not catch.
 
 ## Competitive Research
 - **Photopea** — closest peer; strong PSD parity and SVG editing. Lesson: invest in SVG-as-layers and smart-object fidelity.
