@@ -1676,6 +1676,106 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   expect(pageErrors).toEqual([]);
 });
 
+test('traces a raster layer into editable paths that survive SVG and PDF export @cross-browser', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await openApp(page);
+  await page.getByRole('button', { name: 'Enter Studio' }).click();
+
+  const traced = await page.evaluate(async () => {
+    const size = 64;
+    const element = document.createElement('canvas');
+    element.width = size;
+    element.height = size;
+    const context = element.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, size, size);
+    context.fillStyle = '#d61f4e';
+    context.beginPath();
+    context.arc(32, 32, 20, 0, Math.PI * 2);
+    context.fill();
+    const image = await fabric.FabricImage.fromURL(element.toDataURL('image/png'));
+    image.set({ left: 0, top: 0 });
+    OS.canvas.add(image);
+    OS.layers[OS.activeLayerIdx].objects.push(image);
+    OS.canvas.setActiveObject(image);
+
+    const lazyBefore = OS._runtimeAssetPromises.has('imageTracer');
+    const layersBefore = OS.layers.length;
+    const ok = await OS.traceRasterLayer({ colors: 4, smoothing: 1, detail: 8 });
+    const group = OS.canvas.getActiveObject();
+    const shapes = group?.getObjects?.() || [];
+    const svg = OS.canvas.toSVG();
+    return {
+      lazyBefore,
+      lazyAfter: OS._runtimeAssetPromises.has('imageTracer'),
+      verified: OS._runtimeAssets.imageTracer.integrity.startsWith('sha384-'),
+      ok,
+      newLayer: OS.layers.length - layersBefore,
+      layerName: OS.layers[OS.activeLayerIdx].name,
+      pathCount: shapes.length,
+      // Editable means real Path objects with real commands, not an <image>.
+      allPaths: shapes.length > 0 && shapes.every(shape => shape.type === 'path' && Array.isArray(shape.path) && shape.path.length > 2),
+      tracedColors: [...new Set(shapes.map(shape => String(shape.fill).toLowerCase()))].length,
+      svgHasPaths: (svg.match(/<path/g) || []).length,
+      svgHasRasterImage: /<image[\s>]/.test(svg),
+      history: OS._historyLabels ? null : true
+    };
+  });
+
+  expect(traced.lazyBefore).toBe(false);
+  expect(traced.lazyAfter).toBe(true);
+  expect(traced.verified).toBe(true);
+  expect(traced.ok).toBe(true);
+  expect(traced.newLayer).toBe(1);
+  expect(traced.layerName).toBe('Traced (4 colors)');
+  expect(traced.pathCount).toBeGreaterThan(0);
+  expect(traced.allPaths).toBe(true);
+  expect(traced.tracedColors).toBeGreaterThan(1);
+  // SVG export carries the traced geometry, not a re-embedded bitmap of it.
+  expect(traced.svgHasPaths).toBeGreaterThanOrEqual(traced.pathCount);
+
+  // The same paths reach the PDF page as path operators, not a bitmap of them.
+  const pdf = await page.evaluate(async () => {
+    const { jsPDF } = window.jspdf;
+    await OS._loadSvgToPdf();
+    const read = async (options) => {
+      let bytes = null;
+      // jsPDF copies jsPDF.API onto the instance as it is built, so the API
+      // object is where a stub has to go to reach this export's own method.
+      const originalSave = jsPDF.API.save;
+      jsPDF.API.save = function() { bytes = new Uint8Array(this.output('arraybuffer')); return this; };
+      const ok = await OS.exportPDF(options);
+      jsPDF.API.save = originalSave;
+      let text = '';
+      for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+      return { ok, bytes: bytes.length, hasImage: /\/Subtype\s*\/Image/.test(text), text };
+    };
+    const auto = await read(undefined);
+    const forcedRaster = await read({ vector: false });
+    return {
+      isVector: OS._documentIsVector(),
+      auto: { ok: auto.ok, bytes: auto.bytes, hasImage: auto.hasImage },
+      forcedRaster: { ok: forcedRaster.ok, bytes: forcedRaster.bytes, hasImage: forcedRaster.hasImage }
+    };
+  });
+  expect(pdf.isVector).toBe(true);
+  expect(pdf.auto.ok).toBe(true);
+  // No embedded image XObject: the page is drawn, not photographed.
+  expect(pdf.auto.hasImage).toBe(false);
+  expect(pdf.forcedRaster.hasImage).toBe(true);
+  expect(pdf.auto.bytes).toBeGreaterThan(0);
+
+  const guard = await page.evaluate(async () => {
+    OS._traceMaxPaths = 1;
+    const refused = await OS.traceRasterLayer({ colors: 16 });
+    OS._traceMaxPaths = 4000;
+    return refused;
+  });
+  expect(guard).toBe(false);
+  expect(pageErrors).toEqual([]);
+});
+
 test('reconstructs an enlargement with a real model and falls back honestly @cross-browser', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: 'Enter Studio' }).click();
@@ -2092,7 +2192,9 @@ test('exports real alpha or matte pixels and presents format loss before downloa
         save(filename) { window.__pdfProbe.filename = filename; }
       }
     };
-    const pdfSucceeded = OS.exportPDF({ matte: '#00ff00' });
+    // `vector: false` keeps this probe on the raster page it is measuring; the
+    // stub jsPDF above has no SVG writer either way.
+    const pdfSucceeded = await OS.exportPDF({ matte: '#00ff00', vector: false });
     const pdfPixel = await sample(window.__pdfProbe.dataUrl, 30, 22);
 
     const originalToDataURL = OS.canvas.toDataURL;
