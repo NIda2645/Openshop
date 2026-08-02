@@ -358,6 +358,8 @@ npm run test:e2e
 npm run test:release
 ```
 
+Runtime CDN URLs, integrity hashes, cache policy, and package metadata share one canonical manifest. After changing a pinned runtime dependency, run `npm run runtime:sync` followed by `npm run security:write` before running the release gate.
+
 `npm test` runs Vitest unit coverage for the core editor object with canvas mocks. `npm run test:e2e` runs Playwright against `index.html`, including onboarding and dialog checks at 320×568, 375×667, 768×1024, and their landscape equivalents.
 `npm run test:release` adds a high/critical advisory gate before running both suites.
 
@@ -406,6 +408,7 @@ Issues and PRs welcome. The codebase is a single file — just open `index.html`
 
 When contributing:
 - Run `npm test` and `npm run test:e2e`; run `npm run test:cross-browser` before changing anything the browser-support table claims
+- Run `npm run runtime:sync` and `npm run security:write` after changing a runtime asset or its inline loader
 - Maintain the single-file architecture
 - Keep the dark theme consistent with existing CSS variables
 - Route replayable edits through a schema-v1 command and one history transaction; use `saveHistory()` only for a completed synchronous mutation

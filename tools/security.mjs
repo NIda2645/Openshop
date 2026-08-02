@@ -2,14 +2,24 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  OPENSHOP_BOOT_ASSETS,
+  OPENSHOP_CACHEABLE_RUNTIME_ASSETS,
+  OPENSHOP_LOCAL_SHELL_ASSETS,
+  OPENSHOP_OPTIONAL_RUNTIME_KEYS,
+  OPENSHOP_REQUIRED_BOOT_KEYS,
+  OPENSHOP_RUNTIME_ASSETS,
+  OPENSHOP_RUNTIME_ORIGINS,
+  OPENSHOP_SHELL_FONT_ASSETS,
+  assetsForKeys
+} from './runtime-assets.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexPath = join(root, 'index.html');
+const serviceWorkerPath = join(root, 'sw.js');
 const write = process.argv.includes('--write');
 const EXPECTED_INLINE_SCRIPTS = 2;
-const EXPECTED_BOOT_ASSETS = 3;
-const EXPECTED_RUNTIME_ASSETS = 23;
-const VERIFIED_ASSET_ORIGINS = new Set(['https://cdn.jsdelivr.net']);
+const VERIFIED_ASSET_ORIGINS = new Set(OPENSHOP_RUNTIME_ORIGINS);
 const SCRIPT_SOURCE_TOKENS = new Set(["'self'", "'wasm-unsafe-eval'", 'blob:']);
 const REQUIRED_POLICY_DIRECTIVES = new Map([
   ['base-uri', ["'none'"]],
@@ -59,17 +69,18 @@ export function updatePolicy(html) {
   return html.replace(policy.full, () => nextTag);
 }
 
-function verifiedAssets(block, label, expectedCount, failures) {
+function verifiedAssets(block, label, expectedAssets, failures) {
   const assets = [...block.matchAll(
-    /url\s*:\s*'([^']+)'\s*,\s*\n\s*integrity\s*:\s*'(sha384-[A-Za-z0-9+/=]+)'/g
+    /url\s*:\s*["']([^"']+)["']\s*,\s*\n\s*integrity\s*:\s*["'](sha384-[A-Za-z0-9+/=]+)["']/g
   )].map(([, url, integrity]) => ({ url, integrity }));
 
-  if (assets.length !== expectedCount) {
-    failures.push(`expected ${expectedCount} verified ${label} assets, found ${assets.length}`);
+  if (assets.length !== expectedAssets.length) {
+    failures.push(`expected ${expectedAssets.length} verified ${label} assets, found ${assets.length}`);
   }
   if (new Set(assets.map(asset => asset.url)).size !== assets.length) {
     failures.push(`verified ${label} asset URLs are not unique`);
   }
+  const expectedByUrl = new Map(expectedAssets.map(asset => [asset.url, asset.integrity]));
   for (const asset of assets) {
     let origin;
     try {
@@ -81,8 +92,86 @@ function verifiedAssets(block, label, expectedCount, failures) {
     if (!VERIFIED_ASSET_ORIGINS.has(origin)) {
       failures.push(`verified ${label} asset uses an unauthorized origin: ${asset.url}`);
     }
+    if (!expectedByUrl.has(asset.url)) {
+      failures.push(`verified ${label} asset is not in the canonical runtime manifest: ${asset.url}`);
+    } else if (expectedByUrl.get(asset.url) !== asset.integrity) {
+      failures.push(`verified ${label} asset integrity differs from the canonical runtime manifest: ${asset.url}`);
+    }
+  }
+  const actualUrls = new Set(assets.map(asset => asset.url));
+  for (const expected of expectedAssets) {
+    if (!actualUrls.has(expected.url)) {
+      failures.push(`canonical ${label} asset is missing from the shipped manifest: ${expected.url}`);
+    }
   }
   return assets;
+}
+
+function arrayValues(source, name) {
+  const match = source.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n\\];`));
+  if (!match) return null;
+  return [...match[1].matchAll(/["']([^"']+)["']/g)].map(([, value]) => value);
+}
+
+function compareArray(actual, expected, label, failures) {
+  if (!actual) {
+    failures.push(`${label} manifest is missing`);
+    return;
+  }
+  if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) {
+    failures.push(`${label} manifest does not match the canonical runtime manifest`);
+  }
+}
+
+export function checkServiceWorker(source) {
+  const failures = [];
+  const required = [
+    ...OPENSHOP_LOCAL_SHELL_ASSETS,
+    ...assetsForKeys(OPENSHOP_REQUIRED_BOOT_KEYS).map(asset => asset.url)
+  ];
+  const optional = [
+    ...OPENSHOP_SHELL_FONT_ASSETS,
+    ...assetsForKeys(OPENSHOP_OPTIONAL_RUNTIME_KEYS).map(asset => asset.url)
+  ];
+  compareArray(arrayValues(source, 'REQUIRED_ASSETS'), required, 'required shell asset', failures);
+  compareArray(arrayValues(source, 'OPTIONAL_ASSETS'), optional, 'optional shell asset', failures);
+
+  const originMatch = source.match(/const RUNTIME_ORIGINS = new Set\(\[([\s\S]*?)\n\]\);/);
+  const origins = originMatch
+    ? [...originMatch[1].matchAll(/["']([^"']+)["']/g)].map(([, value]) => value)
+    : null;
+  compareArray(origins, [...OPENSHOP_RUNTIME_ORIGINS], 'runtime origin', failures);
+
+  const cacheMatch = source.match(/const CACHEABLE_RUNTIME_URLS = new Set\(\[([\s\S]*?)\n\]\.map\(resolveAsset\)\);/);
+  if (!cacheMatch) {
+    failures.push('cacheable runtime asset manifest is missing');
+  } else {
+    const directValues = [...cacheMatch[1].matchAll(/["']([^"']+)["']/g)].map(([, value]) => value);
+    const cacheable = new Set([...required, ...optional, ...directValues]);
+    const expected = [
+      ...OPENSHOP_CACHEABLE_RUNTIME_ASSETS.map(asset => asset.url),
+      ...OPENSHOP_SHELL_FONT_ASSETS
+    ];
+    for (const url of expected) {
+      if (!cacheable.has(url)) failures.push(`runtime asset is not cache-allowlisted: ${url}`);
+    }
+    const allowed = new Set([...required, ...optional, ...OPENSHOP_CACHEABLE_RUNTIME_ASSETS.map(asset => asset.url)]);
+    for (const url of directValues) {
+      if (!allowed.has(url)) failures.push(`cacheable runtime manifest contains an unknown URL: ${url}`);
+    }
+    if (new Set(directValues).size !== directValues.length) {
+      failures.push('cacheable runtime asset URLs are not unique');
+    }
+  }
+
+  if (failures.length) {
+    throw new Error(`Service worker runtime asset contract failed:\n- ${failures.join('\n- ')}`);
+  }
+  return {
+    requiredAssets: required.length,
+    optionalAssets: optional.length,
+    cacheableAssets: OPENSHOP_CACHEABLE_RUNTIME_ASSETS.length + OPENSHOP_SHELL_FONT_ASSETS.length
+  };
 }
 
 export function check(html) {
@@ -173,14 +262,14 @@ export function check(html) {
   if (!bootBlock) {
     failures.push('verified boot asset manifest is missing');
   } else {
-    verifiedAssets(bootBlock[1], 'boot', EXPECTED_BOOT_ASSETS, failures);
+    verifiedAssets(bootBlock[1], 'boot', OPENSHOP_BOOT_ASSETS, failures);
   }
 
-  const runtimeBlock = html.match(/_runtimeAssets:\s*Object\.freeze\(\{([\s\S]*?)\n\s*\}\),\n\s*_runtimeAssetPromises:/);
+  const runtimeBlock = html.match(/_runtimeAssets:\s*Object\.freeze\(\{([\s\S]*?)\n\s*\}\),\n(?:\s*\/\* OPENSHOP_RUNTIME_MANIFEST:LAZY:END \*\/\n)?\s*_runtimeAssetPromises:/);
   if (!runtimeBlock) {
     failures.push('verified runtime asset manifest is missing');
   } else {
-    verifiedAssets(runtimeBlock[1], 'lazy', EXPECTED_RUNTIME_ASSETS, failures);
+    verifiedAssets(runtimeBlock[1], 'lazy', OPENSHOP_RUNTIME_ASSETS, failures);
   }
 
   if (/(?:import|importScripts)\s*\(\s*['"`]https?:/i.test(html)
@@ -196,8 +285,8 @@ export function check(html) {
     inlineScripts: inlineHashes.length,
     actions: declaredActions.length,
     registryEntries: registryIds.size,
-    lazyAssets: EXPECTED_RUNTIME_ASSETS,
-    bootAssets: EXPECTED_BOOT_ASSETS
+    lazyAssets: OPENSHOP_RUNTIME_ASSETS.length,
+    bootAssets: OPENSHOP_BOOT_ASSETS.length
   };
 }
 
@@ -208,5 +297,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     writeFileSync(indexPath, html);
   }
   const result = check(html);
+  const worker = checkServiceWorker(readFileSync(serviceWorkerPath, 'utf8'));
   console.log(`Security contract OK: ${result.inlineScripts} hashed scripts, ${result.actions} controls, ${result.registryEntries} actions, ${result.bootAssets} verified boot assets, ${result.lazyAssets} verified lazy assets.`);
+  console.log(`Runtime manifest OK: ${worker.requiredAssets} required shell assets, ${worker.optionalAssets} optional shell assets, ${worker.cacheableAssets} cacheable runtime assets.`);
 }

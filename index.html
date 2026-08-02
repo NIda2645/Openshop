@@ -9,7 +9,7 @@
 <meta property="og:description" content="Professional image editing in your browser. Layers, AI tools, selections, filters, PSD import. Zero install.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#0a0c10">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-5kJSAxk4u2/AA+KnTEEZkcuc4AsPxVayZDJOVePl7rQ=' 'sha256-f5BIkh5j2rQGg/sUvgK0d8i1v1A2c34hJhFM45PtWuc=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'sha256-TTEy0EeOrma0v69IJlQrFG5I1W91DDTkWvj1XqErTTw=' 'sha256-nPsmDxif3LqMefxW1begbTvtnq4ewokllGW3//Kjl04=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.28.0 — Online Image Editor</title>
 <script>
 // Keep existing project files and editing commands stable across Fabric's
@@ -214,23 +214,25 @@ window.__openshopNetwork = OPENSHOP_NETWORK;
 // because CSP does not require SRI on CDN scripts. They are fetched, SHA-384
 // verified in page and executed from blob: URLs now — the same path the eight
 // lazy assets already take — so script-src names no CDN at all.
+/* OPENSHOP_RUNTIME_MANIFEST:BOOT:BEGIN */
 const OPENSHOP_BOOT_ASSETS = Object.freeze([
     Object.freeze({
-        name:'Fabric.js',
-        url:'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js',
-        integrity:'sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6'
+        name:"Fabric.js",
+        url:"https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js",
+        integrity:"sha384-T2IWa4YW4tn/gJpR880CrMehXQvwxwaRgQszdzYPA6jBbKH9sPZuTf9YrN/PqNP6"
     }),
     Object.freeze({
-        name:'ag-psd',
-        url:'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
-        integrity:'sha384-9dhx2Gx3cKvCuBJwLZxPUmqz77LqKJIAzYABzUhCaCPDK5Rz+CFt6/jeKu84tBA6'
+        name:"ag-psd",
+        url:"https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js",
+        integrity:"sha384-9dhx2Gx3cKvCuBJwLZxPUmqz77LqKJIAzYABzUhCaCPDK5Rz+CFt6/jeKu84tBA6"
     }),
     Object.freeze({
-        name:'jsPDF',
-        url:'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js',
-        integrity:'sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3'
+        name:"jsPDF",
+        url:"https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js",
+        integrity:"sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3"
     })
 ]);
+/* OPENSHOP_RUNTIME_MANIFEST:BOOT:END */
 
 const bootDigest = async bytes => {
     const digest = await globalThis.crypto.subtle.digest('SHA-384', bytes);
@@ -3419,132 +3421,125 @@ registerDeclarativeEvents();
 
 const OS = {
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
+    /* OPENSHOP_RUNTIME_MANIFEST:LAZY:BEGIN */
     _runtimeAssets: Object.freeze({
         psdDecoder: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
-            integrity:'sha384-9dhx2Gx3cKvCuBJwLZxPUmqz77LqKJIAzYABzUhCaCPDK5Rz+CFt6/jeKu84tBA6',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js",
+            integrity:"sha384-9dhx2Gx3cKvCuBJwLZxPUmqz77LqKJIAzYABzUhCaCPDK5Rz+CFt6/jeKu84tBA6",
+            type:"application/javascript"
         }),
         photonModule: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',
-            integrity:'sha384-2poc6y7WarCbgFC86zFZ0ce5oBR0hkYUGIB2ySfyuYwEZ0KsRA51rtlAe7bnMEr0',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js",
+            integrity:"sha384-2poc6y7WarCbgFC86zFZ0ce5oBR0hkYUGIB2ySfyuYwEZ0KsRA51rtlAe7bnMEr0",
+            type:"application/javascript"
         }),
         photonWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm',
-            integrity:'sha384-XTalmX4dqxgWAOn0b1wPMbNs/bZhF/kkmL4ttacTyF6/8aeRN3JWlFPF9rLT8ST4',
-            type:'application/wasm'
+            url:"https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm",
+            integrity:"sha384-XTalmX4dqxgWAOn0b1wPMbNs/bZhF/kkmL4ttacTyF6/8aeRN3JWlFPF9rLT8ST4",
+            type:"application/wasm"
         }),
         gifCodec: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/index.js',
-            integrity:'sha384-yCVLlNDdLotEs4WM1HtMcWyV942aZDf0ylFBfb3DWJ2kPNBIpDA5SJa3CJgMUzUv',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/index.js",
+            integrity:"sha384-yCVLlNDdLotEs4WM1HtMcWyV942aZDf0ylFBfb3DWJ2kPNBIpDA5SJa3CJgMUzUv",
+            type:"application/javascript"
         }),
         gifWorker: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/worker.js',
-            integrity:'sha384-/AE2XoJ6rgtq/wlcIHqFn5/zSGrXTfrwuH5NQ2BjgflUjtjIJAz9/C0JSldf8Hr+',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/worker.js",
+            integrity:"sha384-/AE2XoJ6rgtq/wlcIHqFn5/zSGrXTfrwuH5NQ2BjgflUjtjIJAz9/C0JSldf8Hr+",
+            type:"application/javascript"
         }),
-                pdfModule: Object.freeze({
-                    url:'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.min.mjs',
-                    integrity:'sha384-Lu/+LFD+sBPeBR+46Ob8a/rd6aBbHktYM/B5wIPKkThU1sW5cY7EyGNX/LV5mv4A',
-                    type:'text/javascript'
-                }),
-                pdfWorker: Object.freeze({
-                    url:'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs',
-                    integrity:'sha384-lS/cXbzefVJPqzSsLi430d1UtgZaucPKENmu9LpJTCLiIsjid1N/bYxkzDBvGYMS',
-                    type:'text/javascript'
-                }),
-                rawIndex: Object.freeze({
-                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/index.js',
-                    integrity:'sha384-IPc84Xt0caNODxmuJ0QRTalkSnpgUi4vcKJKA0qQZ3XTYl1q30DZgEtq2iHXFZcL',
-                    type:'text/javascript'
-                }),
-                rawWorker: Object.freeze({
-                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/worker.js',
-                    integrity:'sha384-7JQfQ2BWV1nukA5F91bEBWv2NWw8SEqG8F6i3GTZyi++2KR2V7FhpXt+dviu21xy',
-                    type:'text/javascript'
-                }),
-                rawLib: Object.freeze({
-                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.js',
-                    integrity:'sha384-T8EoHnvoSgGVvZD4H9LA9IZqIWyac+pSzS22Q768TIC7l1e6Y4ZDL4RrSZzPi21D',
-                    type:'text/javascript'
-                }),
-                rawWasm: Object.freeze({
-                    url:'https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.wasm',
-                    integrity:'sha384-Bb2q2WPqAGNUd9bIiwHDZ8jTKdC5ESZvSkG+3fQLEvGHXV8pYBxY3okzxmDnaWW4',
-                    type:'application/wasm'
-                }),
-                avifEncoderModule: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.js',
-            integrity:'sha384-CSCv5W4tWhwNEV016b7Cf+Z7a+XAf4Z8tY/79BEKL+PJSO96cZrxu+ryYFU+den3',
-            type:'application/javascript'
+        pdfModule: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.min.mjs",
+            integrity:"sha384-Lu/+LFD+sBPeBR+46Ob8a/rd6aBbHktYM/B5wIPKkThU1sW5cY7EyGNX/LV5mv4A",
+            type:"text/javascript"
+        }),
+        pdfWorker: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs",
+            integrity:"sha384-lS/cXbzefVJPqzSsLi430d1UtgZaucPKENmu9LpJTCLiIsjid1N/bYxkzDBvGYMS",
+            type:"text/javascript"
+        }),
+        rawIndex: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/index.js",
+            integrity:"sha384-IPc84Xt0caNODxmuJ0QRTalkSnpgUi4vcKJKA0qQZ3XTYl1q30DZgEtq2iHXFZcL",
+            type:"text/javascript"
+        }),
+        rawWorker: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/worker.js",
+            integrity:"sha384-7JQfQ2BWV1nukA5F91bEBWv2NWw8SEqG8F6i3GTZyi++2KR2V7FhpXt+dviu21xy",
+            type:"text/javascript"
+        }),
+        rawLib: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.js",
+            integrity:"sha384-T8EoHnvoSgGVvZD4H9LA9IZqIWyac+pSzS22Q768TIC7l1e6Y4ZDL4RrSZzPi21D",
+            type:"text/javascript"
+        }),
+        rawWasm: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.wasm",
+            integrity:"sha384-Bb2q2WPqAGNUd9bIiwHDZ8jTKdC5ESZvSkG+3fQLEvGHXV8pYBxY3okzxmDnaWW4",
+            type:"application/wasm"
+        }),
+        avifEncoderModule: Object.freeze({
+            url:"https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.js",
+            integrity:"sha384-CSCv5W4tWhwNEV016b7Cf+Z7a+XAf4Z8tY/79BEKL+PJSO96cZrxu+ryYFU+den3",
+            type:"application/javascript"
         }),
         avifEncoderWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.wasm',
-            integrity:'sha384-05Hrg6MAEOyGEl+DBp138l7mH4bs/srHNfuLKY1bXS0R9WI/amgsW509B8FkaZWr',
-            type:'application/wasm'
+            url:"https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.wasm",
+            integrity:"sha384-05Hrg6MAEOyGEl+DBp138l7mH4bs/srHNfuLKY1bXS0R9WI/amgsW509B8FkaZWr",
+            type:"application/wasm"
         }),
         avifDecoderModule: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.js',
-            integrity:'sha384-pQijokcrYgIbNNMYKnZu0dEAsqNQJ0lC/666Tk0hVjrDNVx5QZJ9Y3fXt34Ad39p',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.js",
+            integrity:"sha384-pQijokcrYgIbNNMYKnZu0dEAsqNQJ0lC/666Tk0hVjrDNVx5QZJ9Y3fXt34Ad39p",
+            type:"application/javascript"
         }),
         avifDecoderWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.wasm',
-            integrity:'sha384-WXzHutwoBnplk2hri8J5IvzXrMqwzK8SJSgK71upLLSvawD7CtQd7Ylgs5nMkpuh',
-            type:'application/wasm'
+            url:"https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.wasm",
+            integrity:"sha384-WXzHutwoBnplk2hri8J5IvzXrMqwzK8SJSgK71upLLSvawD7CtQd7Ylgs5nMkpuh",
+            type:"application/wasm"
         }),
-        // Draws an SVG into a jsPDF page as real PDF path operators. Without
-        // it a traced document would be flattened back to a bitmap on export,
-        // which defeats the point of tracing it.
         svg2pdf: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.7.0/dist/svg2pdf.umd.min.js',
-            integrity:'sha384-UMdplNeJF/mRqnsNO/vfK5po5eKyTMGCymHkdARQ9NFscA4DX3buGxfhUJcPLbWj',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/svg2pdf.js@2.7.0/dist/svg2pdf.umd.min.js",
+            integrity:"sha384-UMdplNeJF/mRqnsNO/vfK5po5eKyTMGCymHkdARQ9NFscA4DX3buGxfhUJcPLbWj",
+            type:"application/javascript"
         }),
-        // Unlicense (public domain). Every browser-usable potrace build is
-        // GPL-2.0, which this project cannot ship, and the Rust vectorizers
-        // publish native Node bindings rather than WASM.
         imageTracer: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.js',
-            integrity:'sha384-YcOTH4/N9eULF5JC2kvcrQ7ZDfV1VOCErlPHqmUk77bzeZN9vJbYsi2gM8bJHgWc',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.js",
+            integrity:"sha384-YcOTH4/N9eULF5JC2kvcrQ7ZDfV1VOCErlPHqmUk77bzeZN9vJbYsi2gM8bJHgWc",
+            type:"application/javascript"
         }),
-        // Fabric ships its interactive control extensions as a second UMD
-        // bundle, not inside dist/index.min.js, so they cost their own pinned
-        // fetch. It is 21 KB and only the gradient tool needs it.
         fabricExtensions: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist-extensions/fabric-extensions.min.js',
-            integrity:'sha384-6rc+3DCy0kNV0pFM9+GP1741c0pd6ZL++m828n3irFmgRIFqnLdegK6IK7FP1w7K',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist-extensions/fabric-extensions.min.js",
+            integrity:"sha384-6rc+3DCy0kNV0pFM9+GP1741c0pd6ZL++m828n3irFmgRIFqnLdegK6IK7FP1w7K",
+            type:"application/javascript"
         }),
         transformers: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
-            integrity:'sha384-3TA7bWonh/FGdhkvnr9EMFCoFqikJ5aJQEV8RlUgOmBFIF9z3W+h67aRdQPRxN9d',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0",
+            integrity:"sha384-3TA7bWonh/FGdhkvnr9EMFCoFqikJ5aJQEV8RlUgOmBFIF9z3W+h67aRdQPRxN9d",
+            type:"application/javascript"
         }),
         onnxWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.wasm',
-            integrity:'sha384-ppxy8GpR5oK0pciZqI/PSDs0fl2gPFvA509fIkdyEwIAvXabDahpzW9fPyZq/fLs',
-            type:'application/wasm'
+            url:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.wasm",
+            integrity:"sha384-ppxy8GpR5oK0pciZqI/PSDs0fl2gPFvA509fIkdyEwIAvXabDahpzW9fPyZq/fLs",
+            type:"application/wasm"
         }),
         onnxWasmFactory: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.mjs',
-            integrity:'sha384-3PtbyJKPDRoZCNL6u5IQ3uw3aYqeALuxedvWoGF8Syni60K8769ZoBCVSyxZVllq',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.mjs",
+            integrity:"sha384-3PtbyJKPDRoZCNL6u5IQ3uw3aYqeALuxedvWoGF8Syni60K8769ZoBCVSyxZVllq",
+            type:"application/javascript"
         }),
         onnxSafariWasm: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm',
-            integrity:'sha384-ac1etqJINZEQKCzyc73jLkiBdavxbNEJ9zaX0uKADcjBIU3+Uj5sx7bW2kasMiZA',
-            type:'application/wasm'
+            url:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm",
+            integrity:"sha384-ac1etqJINZEQKCzyc73jLkiBdavxbNEJ9zaX0uKADcjBIU3+Uj5sx7bW2kasMiZA",
+            type:"application/wasm"
         }),
         onnxSafariWasmFactory: Object.freeze({
-            url:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.mjs',
-            integrity:'sha384-CclkOX/Bse5EM7hBknuVBkrt9XxuaHzaSDsqYGa8L7gW9g9aVQJmmeuWugYUKPGs',
-            type:'application/javascript'
+            url:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.mjs",
+            integrity:"sha384-CclkOX/Bse5EM7hBknuVBkrt9XxuaHzaSDsqYGa8L7gW9g9aVQJmmeuWugYUKPGs",
+            type:"application/javascript"
         })
     }),
+    /* OPENSHOP_RUNTIME_MANIFEST:LAZY:END */
     _runtimeAssetPromises: new Map(),
     _runtimeBlobPromises: new Map(),
     _pdfJsPromise: null,

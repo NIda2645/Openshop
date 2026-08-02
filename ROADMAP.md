@@ -60,13 +60,6 @@ testing gates.
 
 ### P0 — Release and trust
 
-- [ ] P0 — Drive runtime asset verification from one manifest
-  Why: CDN libraries and AI/font assets are separately enumerated in `index.html`, `sw.js`, and `tools/security.mjs`, making version, hash, cache, and license drift possible even though the shell is designed to work offline.
-  Evidence: `index.html` boot/lazy asset tables, `sw.js` required/optional/runtime allowlists, `tools/security.mjs`, the 2026-08-02 security result (3 boot and 23 lazy assets), and the ORT nightly blocker in `Roadmap_Blocked.md`.
-  Touches: `index.html`, `sw.js`, `tools/security.mjs`, package metadata, runtime-asset tests.
-  Acceptance: One machine-readable manifest drives page verification, service-worker precaching/allowlisting, release checks, and third-party license reporting; URL/version/hash/license drift fails with the asset name; every runtime URL is covered exactly once; offline-shell availability is reported separately from optional AI availability.
-  Complexity: M
-
 ### P1 — Trust, accessibility, and interoperability
 
 - [ ] P1 — Implement keyboard-complete Layers and History semantics

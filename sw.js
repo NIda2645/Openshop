@@ -32,45 +32,57 @@ const MAX_TRIAL_NAVIGATIONS = 3;
 const SCOPE_URL = new URL('./', self.registration.scope).href;
 const STATE_URL = new URL('./__openshop_offline_state__', self.registration.scope).href;
 
+/* OPENSHOP_RUNTIME_MANIFEST:SHELL:BEGIN */
 const REQUIRED_ASSETS = [
-    './',
-    './index.html',
-    './plugin-sandbox.html',
-    './plugin-sandbox.js',
-    './manifest.webmanifest',
-    './icon-192.png',
-    './icon-512.png',
-    'https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js',
-    'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
-    'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js'
+    "./",
+    "./index.html",
+    "./plugin-sandbox.html",
+    "./plugin-sandbox.js",
+    "./manifest.webmanifest",
+    "./icon-192.png",
+    "./icon-512.png",
+    "https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist/index.min.js",
+    "https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js",
+    "https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"
 ];
 
 const OPTIONAL_ASSETS = [
-    'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap',
-    'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js',
-    'https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm',
-    'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/index.js',
-    'https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/worker.js'
+    "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap",
+    "https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs.js",
+    "https://cdn.jsdelivr.net/npm/@silvia-odwyer/photon@0.3.3/photon_rs_bg.wasm",
+    "https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/index.js",
+    "https://cdn.jsdelivr.net/npm/modern-gif@2.1.0/dist/worker.js"
 ];
 
 const RUNTIME_ORIGINS = new Set([
-    'https://cdn.jsdelivr.net',
-    'https://fonts.googleapis.com',
-    'https://fonts.gstatic.com'
+    "https://cdn.jsdelivr.net",
+    "https://fonts.googleapis.com",
+    "https://fonts.gstatic.com"
 ]);
 
-// Cache only the executable/font resources the shipped app names. A blanket
-// same-origin cache would also capture authenticated responses from unrelated
-// applications when OpenShop is installed at a shared web root.
 const CACHEABLE_RUNTIME_URLS = new Set([
     ...REQUIRED_ASSETS,
     ...OPTIONAL_ASSETS,
-    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.wasm',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.mjs',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.mjs'
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.min.mjs",
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs",
+    "https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/index.js",
+    "https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/worker.js",
+    "https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.js",
+    "https://cdn.jsdelivr.net/npm/libraw-wasm@1.6.0/dist/libraw.wasm",
+    "https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.js",
+    "https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/enc/avif_enc.wasm",
+    "https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.js",
+    "https://cdn.jsdelivr.net/npm/@jsquash/avif@2.1.1/codec/dec/avif_dec.wasm",
+    "https://cdn.jsdelivr.net/npm/svg2pdf.js@2.7.0/dist/svg2pdf.umd.min.js",
+    "https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.js",
+    "https://cdn.jsdelivr.net/npm/fabric@7.4.0/dist-extensions/fabric-extensions.min.js",
+    "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0",
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.wasm",
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.asyncify.mjs",
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm",
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.mjs"
 ].map(resolveAsset));
+/* OPENSHOP_RUNTIME_MANIFEST:SHELL:END */
 
 function shellCacheName(revision) {
     return `${SHELL_CACHE_PREFIX}${revision}`;

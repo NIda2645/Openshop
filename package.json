@@ -14,6 +14,7 @@
     "test:e2e": "playwright test --project=chromium --project=chromium-http",
     "security:check": "node tools/security.mjs --check",
     "security:write": "node tools/security.mjs --write",
+    "runtime:sync": "node tools/sync-runtime-assets.mjs",
     "test:release": "npm run security:check && npm audit --audit-level=high && npm run test:coverage && npm run test:e2e && npm run test:cross-browser",
     "test:cross-browser": "playwright test --project=firefox --project=webkit"
   },
