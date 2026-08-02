@@ -14,6 +14,7 @@ All notable changes to Openshop will be documented in this file.
 - Add re-editable embedded Smart Objects with source replacement that preserves the placed object transform and keeps the original source in the `.openshop` project.
 - Add vector-shape conversion to editable Fabric paths with draggable anchors and Bezier control handles before SVG or raster export.
 - Add text-on-path groups with editable source text plus ligature, small-caps, and tabular-number feature controls.
+- Run parity-verified invert filters through a WebGPU compute worker, fall back to WebGL2 on OffscreenCanvas, and retain the existing CPU worker as the final fallback; expose measured per-filter backend/FPS data for diagnostics.
 
 ## [v0.27.0] - 2026-08-01
 

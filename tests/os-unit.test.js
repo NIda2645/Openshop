@@ -675,6 +675,7 @@ describe('OpenShop core object', () => {
     const photonResult = { data: new Uint8ClampedArray([245, 235, 225, 255]) };
     const fallbackResult = { data: new Uint8ClampedArray([0, 0, 0, 255]) };
 
+    OS._gpuFilterDisabled = true;
     OS._runPhotonFilterInWorker = vi.fn().mockResolvedValueOnce(photonResult);
     OS._runFilterInWorker = vi.fn();
 
@@ -701,6 +702,25 @@ describe('OpenShop core object', () => {
     expect(OS._photonFilterDisabled).toBe(true);
     expect(OS._runFilterInWorker).toHaveBeenCalledWith('invert', input, 1, 1, {});
     warn.mockRestore();
+  });
+
+  it('routes parity-verified filters through the accelerated worker and publishes FPS samples', async () => {
+    const OS = loadOpenShop();
+    const input = { data: new Uint8ClampedArray([10, 20, 30, 255]) };
+    const accelerated = { data: new Uint8ClampedArray([245, 235, 225, 255]) };
+    OS._runGPUFilterInWorker = vi.fn().mockResolvedValue(accelerated);
+    OS._runPhotonFilterInWorker = vi.fn();
+
+    await expect(OS._runFilterWithPhoton('invert', input, 1, 1, {})).resolves.toBe(accelerated);
+    expect(OS._runGPUFilterInWorker).toHaveBeenCalledWith('invert', input, 1, 1, {});
+    expect(OS._runPhotonFilterInWorker).not.toHaveBeenCalled();
+
+    OS._recordFilterBenchmark('invert', 'webgpu', 4);
+    OS._recordFilterBenchmark('invert', 'webgpu', 6);
+    const report = OS.filterBackendReport();
+    expect(report.invert.backends.webgpu).toMatchObject({ samples:2, lastMs:6 });
+    expect(report.invert.backends.webgpu.fps).toBeCloseTo(200, 5);
+    expect(OS.aiBackendReport().filterBackends).toEqual(report);
   });
 
   it('routes one-click direct filters through the image-data backend', async () => {

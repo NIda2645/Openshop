@@ -14,16 +14,8 @@ testing gates.
 ### Editor Core
 
 ### AI / ML (Transformers.js)
-- Generative fill for selections (in-browser SDXL-turbo lite or remote-optional)
-- Inpainting brush backed by LaMa or MI-GAN webgpu builds
-- Prompt-driven text-to-image panel that lands output as a new layer
-- AI denoise + face restoration pass (Real-ESRGAN + GFPGAN webgpu)
 
 ### Performance
-- OffscreenCanvas + Web Worker render pipeline for filters so UI never blocks
-- WebGPU filter path with CPU fallback — publish per-filter FPS matrix
-  Research note (2026-07-29): Measure transfer copies, dispatch overhead, peak memory, and output parity before selecting JS worker, WASM, or WebGPU per operation.
-  Research note (2026-07-31): WebGPU is still not a single fallback away from universal — Firefox 141+ is **Windows only** (145 adds Apple Silicon; no Linux, no Intel macOS, no service workers), and Chrome 144 Linux is Intel Gen12+ only. Plan **three** tiers: WebGPU compute → WebGL2 fragment shaders (Baseline-widely since Safari 15) → the existing JS worker. WebGL2 alone already covers every engine in the Playwright matrix, so it is the higher-value first build. A GPU kernel can be written to match the JS worker's maths exactly, which is what would finally retire the `_photonParityOps` allowlist.
 - Tiled undo history (dirty-tile deltas, not full layer snapshots) to raise 60-step cap
   Research note (2026-07-31): Canonical shape is Krita's 64×64 copy-on-write tile grid with a centralised history (they removed the Memento pattern because each memento cost two ≥4 KiB hash tables) plus Aseprite's `app::cmd::CopyRegion`, which stores only the changed `gfx::Region` and budgets by `onMemSize()` in MB rather than a step count. Coalesce one transaction per *stroke*, not per event. Land it behind a debug mode that also keeps full snapshots and asserts tile-reconstruction equality — dirty-region bookkeeping fails silently and several undos late, which the Chromium-only screenshot baseline will not catch.
 
