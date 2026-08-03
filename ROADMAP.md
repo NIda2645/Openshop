@@ -63,10 +63,3 @@ testing gates.
 ### P1 — Trust, accessibility, and interoperability
 
 ### P2 — Performance, mobile, extensibility, and workflow depth
-
-- [ ] P2 — Render supported ABR tips as real raster brush stamps
-  Why: The current ABR path preserves selectable preset metadata but README calls it the closest native stroke adapter; brush appearance is therefore not yet a faithful round-trip.
-  Evidence: `README.md` ABR note, `index.html` ABR import/brush code, and [Aseprite brush documentation](https://www.aseprite.org/docs/brushes/).
-  Touches: `index.html` brush engine and persistence, ABR fixtures, unit/e2e tests, `README.md`.
-  Acceptance: Supported ABR tip textures, spacing, size, opacity, scatter, and pressure dynamics produce pixel-stamped strokes; unsupported features are reported by name; bounded fixtures test deterministic output, memory limits, and reopening the saved document.
-  Complexity: L
